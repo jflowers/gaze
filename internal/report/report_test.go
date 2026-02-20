@@ -1,0 +1,206 @@
+package report
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/jflowers/gaze/internal/taxonomy"
+)
+
+func sampleResults() []taxonomy.AnalysisResult {
+	return []taxonomy.AnalysisResult{
+		{
+			Target: taxonomy.FunctionTarget{
+				Package:   "example.com/store",
+				Function:  "Save",
+				Receiver:  "*Store",
+				Signature: "func (s *Store) Save(item Item) (int64, error)",
+				Location:  "store.go:42:1",
+			},
+			SideEffects: []taxonomy.SideEffect{
+				{
+					ID:          "se-abc12345",
+					Type:        taxonomy.ReturnValue,
+					Tier:        taxonomy.TierP0,
+					Location:    "store.go:42:49",
+					Description: "returns int64 at position 0",
+					Target:      "int64",
+				},
+				{
+					ID:          "se-def67890",
+					Type:        taxonomy.ErrorReturn,
+					Tier:        taxonomy.TierP0,
+					Location:    "store.go:42:56",
+					Description: "returns error at position 1",
+					Target:      "error",
+				},
+				{
+					ID:          "se-ghi11111",
+					Type:        taxonomy.ReceiverMutation,
+					Tier:        taxonomy.TierP0,
+					Location:    "store.go:55:2",
+					Description: "mutates receiver field 'lastSaved'",
+					Target:      "lastSaved",
+				},
+			},
+			Metadata: taxonomy.Metadata{
+				GazeVersion: "0.1.0",
+				GoVersion:   "go1.24.0",
+			},
+		},
+	}
+}
+
+func TestWriteJSON_ValidJSON(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteJSON(&buf, sampleResults())
+	if err != nil {
+		t.Fatalf("WriteJSON failed: %v", err)
+	}
+
+	// Must be valid JSON.
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+}
+
+func TestWriteJSON_HasVersion(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, sampleResults()); err != nil {
+		t.Fatal(err)
+	}
+
+	var report JSONReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Version == "" {
+		t.Error("expected non-empty version")
+	}
+}
+
+func TestWriteJSON_HasResults(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, sampleResults()); err != nil {
+		t.Fatal(err)
+	}
+
+	var report JSONReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(report.Results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(report.Results))
+	}
+	if len(report.Results[0].SideEffects) != 3 {
+		t.Errorf("expected 3 side effects, got %d",
+			len(report.Results[0].SideEffects))
+	}
+}
+
+func TestWriteJSON_ContainsAllFields(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, sampleResults()); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	requiredFields := []string{
+		`"version"`, `"results"`, `"target"`, `"side_effects"`,
+		`"id"`, `"type"`, `"tier"`, `"location"`,
+		`"description"`, `"package"`, `"function"`,
+		`"signature"`, `"gaze_version"`, `"go_version"`,
+	}
+
+	for _, field := range requiredFields {
+		if !strings.Contains(output, field) {
+			t.Errorf("JSON output missing field %s", field)
+		}
+	}
+}
+
+func TestWriteText_HasFunctionName(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteText(&buf, sampleResults()); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "(*Store).Save") {
+		t.Error("text output missing function name '(*Store).Save'")
+	}
+}
+
+func TestWriteText_HasSideEffects(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteText(&buf, sampleResults()); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "ReturnValue") {
+		t.Error("text output missing ReturnValue")
+	}
+	if !strings.Contains(output, "ErrorReturn") {
+		t.Error("text output missing ErrorReturn")
+	}
+	if !strings.Contains(output, "ReceiverMutation") {
+		t.Error("text output missing ReceiverMutation")
+	}
+}
+
+func TestWriteText_HasSummary(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteText(&buf, sampleResults()); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "1 function(s) analyzed") {
+		t.Error("text output missing function count summary")
+	}
+	if !strings.Contains(output, "3 side effect(s) detected") {
+		t.Error("text output missing side effect count summary")
+	}
+}
+
+func TestWriteText_EmptyResults(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteText(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "0 function(s) analyzed") {
+		t.Error("text output should show 0 functions for empty results")
+	}
+}
+
+func TestWriteText_NoSideEffects(t *testing.T) {
+	results := []taxonomy.AnalysisResult{
+		{
+			Target: taxonomy.FunctionTarget{
+				Package:   "example.com/pkg",
+				Function:  "Pure",
+				Signature: "func Pure()",
+				Location:  "pure.go:1:1",
+			},
+			SideEffects: nil,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := WriteText(&buf, results); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No side effects detected") {
+		t.Error("expected 'No side effects detected' for pure function")
+	}
+}
