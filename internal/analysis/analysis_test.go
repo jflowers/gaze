@@ -1,6 +1,7 @@
 package analysis_test
 
 import (
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -10,12 +11,17 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// loadTestPackage loads one of the test fixture packages from testdata.
-func loadTestPackage(t *testing.T, pkgName string) *packages.Package {
-	t.Helper()
-
+// testdataPath returns the absolute path to a testdata fixture package.
+func testdataPath(pkgName string) string {
 	_, thisFile, _, _ := runtime.Caller(0)
-	testdataDir := filepath.Join(filepath.Dir(thisFile), "testdata", "src", pkgName)
+	return filepath.Join(filepath.Dir(thisFile), "testdata", "src", pkgName)
+}
+
+// loadTestdataPackage loads a testdata fixture package using the
+// given directory. This is the shared implementation for both test
+// and benchmark helpers.
+func loadTestdataPackage(pkgName string) (*packages.Package, error) {
+	testdataDir := testdataPath(pkgName)
 
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
@@ -33,15 +39,35 @@ func loadTestPackage(t *testing.T, pkgName string) *packages.Package {
 
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
-		t.Fatalf("failed to load test package %q: %v", pkgName, err)
+		return nil, err
 	}
 	if len(pkgs) == 0 {
-		t.Fatalf("no packages loaded for %q", pkgName)
+		return nil, fmt.Errorf("no packages loaded for %q", pkgName)
 	}
 	if len(pkgs[0].Errors) > 0 {
-		t.Fatalf("package %q has errors: %v", pkgName, pkgs[0].Errors)
+		return nil, fmt.Errorf("package %q has errors: %v", pkgName, pkgs[0].Errors)
 	}
-	return pkgs[0]
+	return pkgs[0], nil
+}
+
+// loadTestPackage loads one of the test fixture packages from testdata.
+func loadTestPackage(t *testing.T, pkgName string) *packages.Package {
+	t.Helper()
+	pkg, err := loadTestdataPackage(pkgName)
+	if err != nil {
+		t.Fatalf("failed to load test package %q: %v", pkgName, err)
+	}
+	return pkg
+}
+
+// loadTestPackageBench loads one of the test fixture packages for benchmarks.
+func loadTestPackageBench(b *testing.B, pkgName string) *packages.Package {
+	b.Helper()
+	pkg, err := loadTestdataPackage(pkgName)
+	if err != nil {
+		b.Fatalf("failed to load test package %q: %v", pkgName, err)
+	}
+	return pkg
 }
 
 // hasEffect checks if a side effect of the given type exists in the list.
@@ -527,6 +553,53 @@ func TestAnalysis_StableIDs(t *testing.T) {
 			t.Errorf("unstable ID for effect %d: %q vs %q",
 				i, result1.SideEffects[i].ID, result2.SideEffects[i].ID)
 		}
+	}
+}
+
+// --- Analyze() option tests ---
+
+func TestAnalyze_ExportedOnlyByDefault(t *testing.T) {
+	pkg := loadTestPackage(t, "returns")
+
+	results, err := analysis.Analyze(pkg, analysis.Options{
+		IncludeUnexported: false,
+	})
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	for _, r := range results {
+		if r.Target.Function == "<package>" {
+			continue
+		}
+		// All returned functions should be exported.
+		if len(r.Target.Function) > 0 {
+			first := r.Target.Function[0]
+			if first >= 'a' && first <= 'z' {
+				t.Errorf("unexported function %q should not appear with IncludeUnexported=false",
+					r.Target.Function)
+			}
+		}
+	}
+}
+
+func TestAnalyze_FunctionFilter(t *testing.T) {
+	pkg := loadTestPackage(t, "returns")
+
+	results, err := analysis.Analyze(pkg, analysis.Options{
+		IncludeUnexported: true,
+		FunctionFilter:    "SingleReturn",
+	})
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// FunctionFilter also suppresses sentinel analysis.
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result with FunctionFilter, got %d", len(results))
+	}
+	if results[0].Target.Function != "SingleReturn" {
+		t.Errorf("expected 'SingleReturn', got %q", results[0].Target.Function)
 	}
 }
 

@@ -3,6 +3,7 @@ module github.com/jflowers/gaze
 go 1.24.0
 
 require (
+	github.com/fzipp/gocyclo v0.6.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/tools v0.42.0
 )

@@ -4,13 +4,13 @@
 package analysis
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"runtime"
 	"time"
 
+	"github.com/jflowers/gaze/internal/loader"
 	"github.com/jflowers/gaze/internal/taxonomy"
 	"golang.org/x/tools/go/packages"
 )
@@ -46,10 +46,7 @@ func Analyze(pkg *packages.Package, opts Options) ([]taxonomy.AnalysisResult, er
 				continue
 			}
 			if !opts.IncludeUnexported && !fd.Name.IsExported() {
-				// For methods, check if the method name is exported.
-				if fd.Recv == nil || !fd.Name.IsExported() {
-					continue
-				}
+				continue
 			}
 
 			result := analyzeFunction(fset, pkg, file, fd)
@@ -199,32 +196,9 @@ func FindMethodDecl(pkg *packages.Package, recvType, methodName string) *ast.Fun
 // LoadAndAnalyze is a convenience function that loads a package and
 // runs analysis with the given options.
 func LoadAndAnalyze(pattern string, opts Options) ([]taxonomy.AnalysisResult, error) {
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedCompiledGoFiles |
-			packages.NeedImports |
-			packages.NeedDeps |
-			packages.NeedTypes |
-			packages.NeedSyntax |
-			packages.NeedTypesInfo |
-			packages.NeedTypesSizes,
-		Tests: false,
-	}
-
-	pkgs, err := packages.Load(cfg, pattern)
+	result, err := loader.Load(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("loading package %q: %w", pattern, err)
+		return nil, err
 	}
-
-	if len(pkgs) == 0 {
-		return nil, fmt.Errorf("no packages found for pattern %q", pattern)
-	}
-
-	pkg := pkgs[0]
-	if len(pkg.Errors) > 0 {
-		return nil, fmt.Errorf("package %q has errors: %v", pattern, pkg.Errors[0])
-	}
-
-	return Analyze(pkg, opts)
+	return Analyze(result.Pkg, opts)
 }
