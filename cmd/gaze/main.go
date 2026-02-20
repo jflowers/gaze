@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jflowers/gaze/internal/analysis"
 	"github.com/jflowers/gaze/internal/crap"
@@ -145,10 +146,37 @@ automatically.`,
 				}
 			}
 
+			// CI summary line (when thresholds are set).
+			if maxCrapload > 0 || maxGazeCrapload > 0 {
+				var parts []string
+				if maxCrapload > 0 {
+					status := "PASS"
+					if rpt.Summary.CRAPload > maxCrapload {
+						status = "FAIL"
+					}
+					parts = append(parts, fmt.Sprintf("CRAPload: %d/%d (%s)",
+						rpt.Summary.CRAPload, maxCrapload, status))
+				}
+				if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil {
+					status := "PASS"
+					if *rpt.Summary.GazeCRAPload > maxGazeCrapload {
+						status = "FAIL"
+					}
+					parts = append(parts, fmt.Sprintf("GazeCRAPload: %d/%d (%s)",
+						*rpt.Summary.GazeCRAPload, maxGazeCrapload, status))
+				}
+				fmt.Fprintln(os.Stderr, strings.Join(parts, " | "))
+			}
+
 			// CI enforcement.
 			if maxCrapload > 0 && rpt.Summary.CRAPload > maxCrapload {
 				return fmt.Errorf("CRAPload %d exceeds maximum %d",
 					rpt.Summary.CRAPload, maxCrapload)
+			}
+			if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil &&
+				*rpt.Summary.GazeCRAPload > maxGazeCrapload {
+				return fmt.Errorf("GazeCRAPload %d exceeds maximum %d",
+					*rpt.Summary.GazeCRAPload, maxGazeCrapload)
 			}
 
 			return nil

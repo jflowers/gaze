@@ -619,3 +619,208 @@ func TestAnalysis_AllP0EffectsAreP0(t *testing.T) {
 		}
 	}
 }
+
+// --- P1 Side Effect Tests ---
+
+func TestP1_GlobalMutation(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "MutateGlobal")
+	if fd == nil {
+		t.Fatal("MutateGlobal not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.GlobalMutation) {
+		t.Error("expected GlobalMutation for MutateGlobal")
+	}
+}
+
+func TestP1_GlobalMutation_TwoGlobals(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "MutateTwoGlobals")
+	if fd == nil {
+		t.Fatal("MutateTwoGlobals not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if count := countEffects(result.SideEffects, taxonomy.GlobalMutation); count != 2 {
+		t.Errorf("expected 2 GlobalMutation effects, got %d", count)
+	}
+}
+
+func TestP1_GlobalMutation_ReadOnly(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "ReadGlobal")
+	if fd == nil {
+		t.Fatal("ReadGlobal not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if hasEffect(result.SideEffects, taxonomy.GlobalMutation) {
+		t.Error("ReadGlobal should NOT produce GlobalMutation")
+	}
+}
+
+func TestP1_ChannelSend(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "SendOnChannel")
+	if fd == nil {
+		t.Fatal("SendOnChannel not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.ChannelSend) {
+		t.Error("expected ChannelSend for SendOnChannel")
+	}
+}
+
+func TestP1_ChannelClose(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "CloseChannel")
+	if fd == nil {
+		t.Fatal("CloseChannel not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.ChannelClose) {
+		t.Error("expected ChannelClose for CloseChannel")
+	}
+}
+
+func TestP1_ChannelSendAndClose(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "SendAndClose")
+	if fd == nil {
+		t.Fatal("SendAndClose not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.ChannelSend) {
+		t.Error("expected ChannelSend")
+	}
+	if !hasEffect(result.SideEffects, taxonomy.ChannelClose) {
+		t.Error("expected ChannelClose")
+	}
+}
+
+func TestP1_WriterOutput(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "WriteToWriter")
+	if fd == nil {
+		t.Fatal("WriteToWriter not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.WriterOutput) {
+		t.Error("expected WriterOutput for WriteToWriter")
+	}
+}
+
+func TestP1_WriterOutput_ReadOnly(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "ReadFromWriter")
+	if fd == nil {
+		t.Fatal("ReadFromWriter not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if hasEffect(result.SideEffects, taxonomy.WriterOutput) {
+		t.Error("ReadFromWriter should NOT produce WriterOutput")
+	}
+}
+
+func TestP1_HttpResponseWrite(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "HandleHTTP")
+	if fd == nil {
+		t.Fatal("HandleHTTP not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.HttpResponseWrite) {
+		t.Error("expected HttpResponseWrite for HandleHTTP")
+	}
+}
+
+func TestP1_MapMutation(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "WriteToMap")
+	if fd == nil {
+		t.Fatal("WriteToMap not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.MapMutation) {
+		t.Error("expected MapMutation for WriteToMap")
+	}
+}
+
+func TestP1_MapMutation_ReadOnly(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "ReadFromMap")
+	if fd == nil {
+		t.Fatal("ReadFromMap not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if hasEffect(result.SideEffects, taxonomy.MapMutation) {
+		t.Error("ReadFromMap should NOT produce MapMutation")
+	}
+}
+
+func TestP1_SliceMutation(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "WriteToSlice")
+	if fd == nil {
+		t.Fatal("WriteToSlice not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if !hasEffect(result.SideEffects, taxonomy.SliceMutation) {
+		t.Error("expected SliceMutation for WriteToSlice")
+	}
+}
+
+func TestP1_SliceMutation_ReadOnly(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "ReadFromSlice")
+	if fd == nil {
+		t.Fatal("ReadFromSlice not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	if hasEffect(result.SideEffects, taxonomy.SliceMutation) {
+		t.Error("ReadFromSlice should NOT produce SliceMutation")
+	}
+}
+
+func TestP1_PureFunction(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "PureP1")
+	if fd == nil {
+		t.Fatal("PureP1 not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	// Should only have ReturnValue, no P1 effects.
+	for _, e := range result.SideEffects {
+		if e.Tier == taxonomy.TierP1 {
+			t.Errorf("PureP1 should have no P1 effects, got %s", e.Type)
+		}
+	}
+}
+
+func TestP1_EffectsAreP1Tier(t *testing.T) {
+	pkg := loadTestPackage(t, "p1effects")
+	fd := analysis.FindFuncDecl(pkg, "SendOnChannel")
+	if fd == nil {
+		t.Fatal("SendOnChannel not found")
+	}
+	result := analysis.AnalyzeFunction(pkg, fd)
+
+	for _, e := range result.SideEffects {
+		if e.Type == taxonomy.ChannelSend && e.Tier != taxonomy.TierP1 {
+			t.Errorf("ChannelSend should be P1, got %s", e.Tier)
+		}
+	}
+}

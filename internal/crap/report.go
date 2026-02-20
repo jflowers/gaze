@@ -67,6 +67,26 @@ func WriteText(w io.Writer, report *Report) error {
 	}
 	fmt.Fprintln(w)
 
+	// GazeCRAP and quadrant stats (when available).
+	if report.Summary.GazeCRAPload != nil {
+		fmt.Fprintf(w, "GazeCRAP threshold: %.0f\n", *report.Summary.GazeCRAPThreshold)
+		fmt.Fprintf(w, "GazeCRAPload:       %d", *report.Summary.GazeCRAPload)
+		if *report.Summary.GazeCRAPload > 0 {
+			fmt.Fprintf(w, " (functions at or above threshold)")
+		}
+		fmt.Fprintln(w)
+	}
+
+	// Quadrant breakdown.
+	if len(report.Summary.QuadrantCounts) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "--- Quadrant Breakdown ---\n")
+		for _, q := range []Quadrant{Q1Safe, Q2ComplexButTested, Q3SimpleButUnderspecified, Q4Dangerous} {
+			count := report.Summary.QuadrantCounts[q]
+			fmt.Fprintf(w, "  %-30s  %d\n", string(q), count)
+		}
+	}
+
 	// Worst offenders.
 	if len(report.Summary.WorstCRAP) > 0 {
 		fmt.Fprintln(w)

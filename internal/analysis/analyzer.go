@@ -139,6 +139,10 @@ func analyzeFunction(
 		}
 	}
 
+	// 3. P1-tier effects (AST-based).
+	p1Effects := AnalyzeP1Effects(fset, pkg.TypesInfo, fd, pkgPath, funcName)
+	effects = append(effects, p1Effects...)
+
 	return taxonomy.AnalysisResult{
 		Target:      target,
 		SideEffects: effects,

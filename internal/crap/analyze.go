@@ -111,7 +111,7 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 		covPct := lookupCoverage(stat, coverMap)
 		crapScore := Formula(stat.Complexity, covPct)
 
-		scores = append(scores, Score{
+		score := Score{
 			Package:      stat.PkgName,
 			Function:     stat.FuncName,
 			File:         stat.Pos.Filename,
@@ -119,8 +119,18 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 			Complexity:   stat.Complexity,
 			LineCoverage: covPct,
 			CRAP:         crapScore,
-			// ContractCoverage, GazeCRAP, Quadrant left nil for US1.
-		})
+		}
+
+		// When contract coverage is unavailable, GazeCRAP uses
+		// line coverage as a fallback (same as classic CRAP).
+		// This keeps quadrant classification functional: Q1/Q4
+		// only until contract coverage diverges the axes.
+		gazeCRAP := crapScore
+		score.GazeCRAP = &gazeCRAP
+		q := ClassifyQuadrant(crapScore, gazeCRAP, opts.CRAPThreshold, opts.GazeCRAPThreshold)
+		score.Quadrant = &q
+
+		scores = append(scores, score)
 	}
 
 	// Step 6: Build summary.
@@ -245,6 +255,9 @@ func buildSummary(scores []Score, opts Options) Summary {
 
 	var totalComp, totalCov, totalCRAP float64
 	crapload := 0
+	gazeCRAPload := 0
+	quadrantCounts := make(map[Quadrant]int)
+	hasGazeCRAP := false
 
 	for _, s := range scores {
 		totalComp += float64(s.Complexity)
@@ -252,6 +265,15 @@ func buildSummary(scores []Score, opts Options) Summary {
 		totalCRAP += s.CRAP
 		if s.CRAP >= opts.CRAPThreshold {
 			crapload++
+		}
+		if s.GazeCRAP != nil {
+			hasGazeCRAP = true
+			if *s.GazeCRAP >= opts.GazeCRAPThreshold {
+				gazeCRAPload++
+			}
+		}
+		if s.Quadrant != nil {
+			quadrantCounts[*s.Quadrant]++
 		}
 	}
 
@@ -268,7 +290,7 @@ func buildSummary(scores []Score, opts Options) Summary {
 		worst = worst[:5]
 	}
 
-	return Summary{
+	summary := Summary{
 		TotalFunctions:  len(scores),
 		AvgComplexity:   totalComp / n,
 		AvgLineCoverage: totalCov / n,
@@ -277,4 +299,12 @@ func buildSummary(scores []Score, opts Options) Summary {
 		CRAPThreshold:   opts.CRAPThreshold,
 		WorstCRAP:       worst,
 	}
+
+	if hasGazeCRAP {
+		summary.GazeCRAPload = &gazeCRAPload
+		summary.GazeCRAPThreshold = &opts.GazeCRAPThreshold
+		summary.QuadrantCounts = quadrantCounts
+	}
+
+	return summary
 }
