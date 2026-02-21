@@ -1,0 +1,17 @@
+# Build artifacts
+gaze
+*.exe
+
+# Test artifacts
+cover.out
+*.test
+
+# MegaLinter reports
+megalinter-reports/
+mega-linter.log
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*~
