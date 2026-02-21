@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -33,6 +34,48 @@ produced by their test targets.`,
 	}
 }
 
+// analyzeParams holds the parsed flags for the analyze command.
+type analyzeParams struct {
+	pkgPath           string
+	format            string
+	function          string
+	includeUnexported bool
+	stdout            io.Writer
+	stderr            io.Writer
+}
+
+// runAnalyze is the extracted, testable body of the analyze command.
+func runAnalyze(p analyzeParams) error {
+	if p.format != "text" && p.format != "json" {
+		return fmt.Errorf("invalid format %q: must be 'text' or 'json'", p.format)
+	}
+
+	opts := analysis.Options{
+		IncludeUnexported: p.includeUnexported,
+		FunctionFilter:    p.function,
+	}
+
+	results, err := analysis.LoadAndAnalyze(p.pkgPath, opts)
+	if err != nil {
+		return err
+	}
+
+	if len(results) == 0 {
+		if p.function != "" {
+			return fmt.Errorf("function %q not found in package %q", p.function, p.pkgPath)
+		}
+		fmt.Fprintln(p.stderr, "no functions found to analyze")
+		return nil
+	}
+
+	switch p.format {
+	case "json":
+		return report.WriteJSON(p.stdout, results)
+	default:
+		return report.WriteText(p.stdout, results)
+	}
+}
+
 func newAnalyzeCmd() *cobra.Command {
 	var (
 		function          string
@@ -47,36 +90,14 @@ func newAnalyzeCmd() *cobra.Command {
 observable side effects each function produces.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pkgPath := args[0]
-
-			if format != "text" && format != "json" {
-				return fmt.Errorf("invalid format %q: must be 'text' or 'json'", format)
-			}
-
-			opts := analysis.Options{
-				IncludeUnexported: includeUnexported,
-				FunctionFilter:    function,
-			}
-
-			results, err := analysis.LoadAndAnalyze(pkgPath, opts)
-			if err != nil {
-				return err
-			}
-
-			if len(results) == 0 {
-				if function != "" {
-					return fmt.Errorf("function %q not found in package %q", function, pkgPath)
-				}
-				fmt.Fprintln(os.Stderr, "no functions found to analyze")
-				return nil
-			}
-
-			switch format {
-			case "json":
-				return report.WriteJSON(os.Stdout, results)
-			default:
-				return report.WriteText(os.Stdout, results)
-			}
+			return runAnalyze(analyzeParams{
+				pkgPath:           args[0],
+				format:            format,
+				function:          function,
+				includeUnexported: includeUnexported,
+				stdout:            os.Stdout,
+				stderr:            os.Stderr,
+			})
 		},
 	}
 
@@ -88,6 +109,89 @@ observable side effects each function produces.`,
 		"include unexported functions")
 
 	return cmd
+}
+
+// crapParams holds the parsed flags for the crap command.
+type crapParams struct {
+	patterns        []string
+	format          string
+	opts            crap.Options
+	maxCrapload     int
+	maxGazeCrapload int
+	moduleDir       string
+	stdout          io.Writer
+	stderr          io.Writer
+}
+
+// runCrap is the extracted, testable body of the crap command.
+func runCrap(p crapParams) error {
+	if p.format != "text" && p.format != "json" {
+		return fmt.Errorf("invalid format %q: must be 'text' or 'json'", p.format)
+	}
+
+	rpt, err := crap.Analyze(p.patterns, p.moduleDir, p.opts)
+	if err != nil {
+		return err
+	}
+
+	if err := writeCrapReport(p.stdout, p.format, rpt); err != nil {
+		return err
+	}
+
+	printCISummary(p.stderr, rpt, p.maxCrapload, p.maxGazeCrapload)
+
+	return checkCIThresholds(rpt, p.maxCrapload, p.maxGazeCrapload)
+}
+
+// writeCrapReport outputs the CRAP report in the requested format.
+func writeCrapReport(w io.Writer, format string, rpt *crap.Report) error {
+	switch format {
+	case "json":
+		return crap.WriteJSON(w, rpt)
+	default:
+		return crap.WriteText(w, rpt)
+	}
+}
+
+// printCISummary prints a one-line CI summary to stderr when
+// threshold flags are set.
+func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload int) {
+	if maxCrapload <= 0 && maxGazeCrapload <= 0 {
+		return
+	}
+
+	var parts []string
+	if maxCrapload > 0 {
+		status := "PASS"
+		if rpt.Summary.CRAPload > maxCrapload {
+			status = "FAIL"
+		}
+		parts = append(parts, fmt.Sprintf("CRAPload: %d/%d (%s)",
+			rpt.Summary.CRAPload, maxCrapload, status))
+	}
+	if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil {
+		status := "PASS"
+		if *rpt.Summary.GazeCRAPload > maxGazeCrapload {
+			status = "FAIL"
+		}
+		parts = append(parts, fmt.Sprintf("GazeCRAPload: %d/%d (%s)",
+			*rpt.Summary.GazeCRAPload, maxGazeCrapload, status))
+	}
+	fmt.Fprintln(w, strings.Join(parts, " | "))
+}
+
+// checkCIThresholds returns an error if any CI thresholds are exceeded.
+func checkCIThresholds(rpt *crap.Report, maxCrapload, maxGazeCrapload int) error {
+	if maxCrapload > 0 && rpt.Summary.CRAPload > maxCrapload {
+		return fmt.Errorf("CRAPload %d exceeds maximum %d",
+			rpt.Summary.CRAPload, maxCrapload)
+	}
+	if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil &&
+		*rpt.Summary.GazeCRAPload > maxGazeCrapload {
+		return fmt.Errorf("GazeCRAPload %d exceeds maximum %d",
+			*rpt.Summary.GazeCRAPload, maxGazeCrapload)
+	}
+	return nil
 }
 
 func newCrapCmd() *cobra.Command {
@@ -112,74 +216,27 @@ If no coverage profile is provided, runs 'go test -coverprofile'
 automatically.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if format != "text" && format != "json" {
-				return fmt.Errorf("invalid format %q: must be 'text' or 'json'", format)
-			}
-
 			moduleDir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
-
-			opts := crap.Options{
-				CoverProfile:      coverProfile,
-				CRAPThreshold:     crapThreshold,
-				GazeCRAPThreshold: gazeCrapThreshold,
-				MaxCRAPload:       maxCrapload,
-				MaxGazeCRAPload:   maxGazeCrapload,
-				IgnoreGenerated:   true,
-			}
-
-			rpt, err := crap.Analyze(args, moduleDir, opts)
-			if err != nil {
-				return err
-			}
-
-			switch format {
-			case "json":
-				if err := crap.WriteJSON(os.Stdout, rpt); err != nil {
-					return err
-				}
-			default:
-				if err := crap.WriteText(os.Stdout, rpt); err != nil {
-					return err
-				}
-			}
-
-			// CI summary line (when thresholds are set).
-			if maxCrapload > 0 || maxGazeCrapload > 0 {
-				var parts []string
-				if maxCrapload > 0 {
-					status := "PASS"
-					if rpt.Summary.CRAPload > maxCrapload {
-						status = "FAIL"
-					}
-					parts = append(parts, fmt.Sprintf("CRAPload: %d/%d (%s)",
-						rpt.Summary.CRAPload, maxCrapload, status))
-				}
-				if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil {
-					status := "PASS"
-					if *rpt.Summary.GazeCRAPload > maxGazeCrapload {
-						status = "FAIL"
-					}
-					parts = append(parts, fmt.Sprintf("GazeCRAPload: %d/%d (%s)",
-						*rpt.Summary.GazeCRAPload, maxGazeCrapload, status))
-				}
-				fmt.Fprintln(os.Stderr, strings.Join(parts, " | "))
-			}
-
-			// CI enforcement.
-			if maxCrapload > 0 && rpt.Summary.CRAPload > maxCrapload {
-				return fmt.Errorf("CRAPload %d exceeds maximum %d",
-					rpt.Summary.CRAPload, maxCrapload)
-			}
-			if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil &&
-				*rpt.Summary.GazeCRAPload > maxGazeCrapload {
-				return fmt.Errorf("GazeCRAPload %d exceeds maximum %d",
-					*rpt.Summary.GazeCRAPload, maxGazeCrapload)
-			}
-
-			return nil
+			return runCrap(crapParams{
+				patterns: args,
+				format:   format,
+				opts: crap.Options{
+					CoverProfile:      coverProfile,
+					CRAPThreshold:     crapThreshold,
+					GazeCRAPThreshold: gazeCrapThreshold,
+					MaxCRAPload:       maxCrapload,
+					MaxGazeCRAPload:   maxGazeCrapload,
+					IgnoreGenerated:   true,
+				},
+				maxCrapload:     maxCrapload,
+				maxGazeCrapload: maxGazeCrapload,
+				moduleDir:       moduleDir,
+				stdout:          os.Stdout,
+				stderr:          os.Stderr,
+			})
 		},
 	}
 
