@@ -266,6 +266,149 @@ func TestWriteText_FitsIn80Columns(t *testing.T) {
 	}
 }
 
+// sampleClassifiedResults returns sample results with classification
+// populated for testing the classify output path.
+func sampleClassifiedResults() []taxonomy.AnalysisResult {
+	results := sampleResults()
+	for i := range results {
+		for j := range results[i].SideEffects {
+			results[i].SideEffects[j].Classification = &taxonomy.Classification{
+				Label:      taxonomy.Contractual,
+				Confidence: 85,
+				Signals: []taxonomy.Signal{
+					{
+						Source:    "interface",
+						Weight:    30,
+						Reasoning: "implements io.Writer",
+					},
+					{
+						Source: "naming",
+						Weight: 10,
+					},
+				},
+			}
+		}
+	}
+	return results
+}
+
+func TestWriteTextOptions_ClassifyColumn(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteTextOptions(&buf, sampleClassifiedResults(), TextOptions{Classify: true})
+	if err != nil {
+		t.Fatalf("WriteTextOptions failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "CLASSIFICATION") {
+		t.Error("expected CLASSIFICATION column header in classified text output")
+	}
+	if !strings.Contains(output, "contractual") {
+		t.Error("expected 'contractual' label in classified text output")
+	}
+	if !strings.Contains(output, "85%") {
+		t.Error("expected confidence '85%' in classified text output")
+	}
+}
+
+func TestWriteTextOptions_VerboseSignalBreakdown(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteTextOptions(&buf, sampleClassifiedResults(), TextOptions{
+		Classify: true,
+		Verbose:  true,
+	})
+	if err != nil {
+		t.Fatalf("WriteTextOptions verbose failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "interface") {
+		t.Error("expected signal source 'interface' in verbose output")
+	}
+	if !strings.Contains(output, "implements io.Writer") {
+		t.Error("expected signal reasoning in verbose output")
+	}
+}
+
+func TestWriteTextOptions_ClassifyFitsIn80Columns(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteTextOptions(&buf, sampleClassifiedResults(), TextOptions{Classify: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	const maxWidth = 80
+	lines := strings.Split(buf.String(), "\n")
+	for i, line := range lines {
+		plain := stripANSI(line)
+		width := utf8.RuneCountInString(plain)
+		if width > maxWidth {
+			t.Errorf("classify line %d exceeds %d columns (%d runes): %q",
+				i+1, maxWidth, width, plain)
+		}
+	}
+}
+
+func TestWriteJSON_ClassifiedOutput_ValidAgainstSchema(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(Schema))
+	if err != nil {
+		t.Fatalf("failed to parse schema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("schema.json", sch); err != nil {
+		t.Fatalf("failed to add schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile schema: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, sampleClassifiedResults(), "0.1.0"); err != nil {
+		t.Fatalf("WriteJSON failed: %v", err)
+	}
+
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("failed to parse JSON output: %v", err)
+	}
+	if err := compiled.Validate(inst); err != nil {
+		t.Errorf("classified JSON output does not conform to schema:\n%v", err)
+	}
+}
+
+func TestWriteJSON_ClassifiedOutput_ContainsClassification(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, sampleClassifiedResults(), "0.1.0"); err != nil {
+		t.Fatalf("WriteJSON failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, `"classification"`) {
+		t.Error("classified JSON output missing 'classification' field")
+	}
+	if !strings.Contains(output, `"contractual"`) {
+		t.Error("classified JSON output missing 'contractual' label")
+	}
+	if !strings.Contains(output, `"confidence"`) {
+		t.Error("classified JSON output missing 'confidence' field")
+	}
+	if !strings.Contains(output, `"signals"`) {
+		t.Error("classified JSON output missing 'signals' field")
+	}
+}
+
+func TestClassificationStyle(t *testing.T) {
+	s := DefaultStyles()
+
+	// Just verify the function returns without panic for all labels.
+	labels := []string{"contractual", "incidental", "ambiguous", "unknown", ""}
+	for _, label := range labels {
+		style := s.ClassificationStyle(label)
+		// Render something to ensure no panic.
+		_ = style.Render("test")
+	}
+}
+
 func TestWriteJSON_EmptyResults_ValidAgainstSchema(t *testing.T) {
 	// Empty results should also validate.
 	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(Schema))

@@ -103,6 +103,62 @@ const Schema = `{
         "target": {
           "type": "string",
           "description": "Affected entity (field, variable, type, etc.)"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification",
+          "description": "Contractual classification (only present when --classify is used)"
+        }
+      }
+    },
+    "Classification": {
+      "type": "object",
+      "required": ["label", "confidence", "signals"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["contractual", "incidental", "ambiguous"],
+          "description": "Classification result"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Confidence score (0-100)"
+        },
+        "signals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Signal" },
+          "description": "Evidence signals that contributed to the score"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Human-readable summary of the classification"
+        }
+      }
+    },
+    "Signal": {
+      "type": "object",
+      "required": ["source", "weight"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Signal source (e.g., 'interface', 'caller', 'naming', 'godoc', 'readme')"
+        },
+        "weight": {
+          "type": "integer",
+          "description": "Numeric contribution to confidence score (can be negative)"
+        },
+        "source_file": {
+          "type": "string",
+          "description": "File path that provided this signal (verbose mode only)"
+        },
+        "excerpt": {
+          "type": "string",
+          "description": "Short quote from the source (verbose mode only)"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Explanation of why this signal was applied (verbose mode only)"
         }
       }
     },

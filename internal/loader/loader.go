@@ -65,3 +65,54 @@ func Load(pattern string) (*Result, error) {
 		Fset: pkg.Fset,
 	}, nil
 }
+
+// ModuleResult holds all packages loaded from a Go module.
+type ModuleResult struct {
+	// Packages is the list of all loaded packages in the module.
+	Packages []*packages.Package
+
+	// Fset is the shared file set for position information.
+	Fset *token.FileSet
+}
+
+// LoadModule loads all packages in the Go module using the ./...
+// pattern. This provides access to sibling packages for caller
+// analysis. The dir parameter specifies the module root directory;
+// if empty, the current directory is used.
+func LoadModule(dir string) (*ModuleResult, error) {
+	cfg := &packages.Config{
+		Mode:  LoadMode,
+		Tests: false,
+		Dir:   dir,
+	}
+
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		return nil, fmt.Errorf("loading module packages: %w", err)
+	}
+
+	if len(pkgs) == 0 {
+		return nil, fmt.Errorf("no packages found in module")
+	}
+
+	// Collect only packages without errors.
+	var valid []*packages.Package
+	var fset *token.FileSet
+	for _, pkg := range pkgs {
+		if len(pkg.Errors) == 0 {
+			valid = append(valid, pkg)
+			if fset == nil {
+				fset = pkg.Fset
+			}
+		}
+	}
+
+	if len(valid) == 0 {
+		return nil, fmt.Errorf("all packages in module have errors")
+	}
+
+	return &ModuleResult{
+		Packages: valid,
+		Fset:     fset,
+	}, nil
+}

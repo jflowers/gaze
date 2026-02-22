@@ -82,6 +82,59 @@ const (
 	TierP4 Tier = "P4"
 )
 
+// ClassificationLabel represents the contractual classification of
+// a side effect.
+type ClassificationLabel string
+
+// Classification label constants.
+const (
+	Contractual ClassificationLabel = "contractual"
+	Incidental  ClassificationLabel = "incidental"
+	Ambiguous   ClassificationLabel = "ambiguous"
+)
+
+// Signal represents a single piece of evidence contributing to a
+// classification confidence score.
+type Signal struct {
+	// Source identifies the signal type (e.g., "interface",
+	// "caller", "naming", "godoc", "readme", "architecture_doc").
+	Source string `json:"source"`
+
+	// Weight is the numeric contribution to the confidence score.
+	// Can be negative for contradiction penalties.
+	Weight int `json:"weight"`
+
+	// SourceFile is the file path that provided this signal.
+	// Omitted from JSON when empty (non-verbose mode).
+	SourceFile string `json:"source_file,omitempty"`
+
+	// Excerpt is the relevant text from the source.
+	// Omitted from JSON when empty (non-verbose mode).
+	Excerpt string `json:"excerpt,omitempty"`
+
+	// Reasoning explains why this signal was applied.
+	// Omitted from JSON when empty (non-verbose mode).
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
+// Classification represents the contractual classification of a
+// single side effect, including the confidence score and the
+// signals that contributed to it.
+type Classification struct {
+	// Label is the classification result.
+	Label ClassificationLabel `json:"label"`
+
+	// Confidence is the numeric confidence score (0-100).
+	Confidence int `json:"confidence"`
+
+	// Signals is the list of evidence that contributed to the
+	// confidence score.
+	Signals []Signal `json:"signals"`
+
+	// Reasoning is a human-readable summary of the classification.
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
 // SideEffect represents a single detected observable change in a
 // function.
 type SideEffect struct {
@@ -104,6 +157,10 @@ type SideEffect struct {
 	// Target is the affected entity (field name, variable name,
 	// channel name, return type, etc.).
 	Target string `json:"target"`
+
+	// Classification is the contractual classification of this
+	// side effect. Nil when classification has not been performed.
+	Classification *Classification `json:"classification,omitempty"`
 }
 
 // FunctionTarget identifies the function under analysis.

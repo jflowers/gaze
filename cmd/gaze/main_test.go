@@ -453,6 +453,106 @@ func TestSchemaCmd_ContainsSchemaFields(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// runDocscan tests
+// ---------------------------------------------------------------------------
+
+func TestRunDocscan_OutputsJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runDocscan(docscanParams{
+		pkgPath: ".",
+		stdout:  &stdout,
+		stderr:  &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runDocscan() error: %v", err)
+	}
+
+	// Output should be a JSON array.
+	var docs interface{}
+	if jsonErr := json.Unmarshal(stdout.Bytes(), &docs); jsonErr != nil {
+		t.Errorf("docscan output is not valid JSON: %v\noutput:\n%s",
+			jsonErr, stdout.String())
+	}
+}
+
+func TestRunDocscan_EmptyPkg(t *testing.T) {
+	// An empty/non-existent package path should not cause a crash;
+	// docscan uses CWD for the repo root.
+	var stdout, stderr bytes.Buffer
+	err := runDocscan(docscanParams{
+		pkgPath: ".",
+		stdout:  &stdout,
+		stderr:  &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runDocscan() error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runAnalyze --classify tests
+// ---------------------------------------------------------------------------
+
+func TestRunAnalyze_ClassifyFlag_TextFormat(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		pkgPath:  "github.com/jflowers/gaze/internal/analysis/testdata/src/returns",
+		format:   "text",
+		classify: true,
+		stdout:   &stdout,
+		stderr:   &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runAnalyze --classify error: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "CLASSIFICATION") {
+		t.Errorf("expected CLASSIFICATION column in text output, got:\n%s", output)
+	}
+}
+
+func TestRunAnalyze_ClassifyFlag_JSONFormat(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		pkgPath:  "github.com/jflowers/gaze/internal/analysis/testdata/src/returns",
+		format:   "json",
+		classify: true,
+		stdout:   &stdout,
+		stderr:   &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runAnalyze --classify --format=json error: %v", err)
+	}
+
+	// Output should be valid JSON with classification fields.
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
+		t.Errorf("output is not valid JSON: %v\noutput:\n%s", err, stdout.String())
+	}
+}
+
+func TestRunAnalyze_VerboseImpliesClassify(t *testing.T) {
+	// --verbose without --classify should still produce classification output.
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		pkgPath: "github.com/jflowers/gaze/internal/analysis/testdata/src/returns",
+		format:  "text",
+		verbose: true,
+		stdout:  &stdout,
+		stderr:  &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runAnalyze --verbose error: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "CLASSIFICATION") {
+		t.Errorf("--verbose should imply --classify, expected CLASSIFICATION column, got:\n%s", output)
+	}
+}
+
 func TestRunCrap_InvalidFormat(t *testing.T) {
 	err := runCrap(crapParams{
 		patterns: []string{"./..."},
