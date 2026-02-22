@@ -1,3 +1,4 @@
+// Package classify implements the contractual classification engine.
 package classify
 
 import (

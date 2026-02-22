@@ -1,3 +1,4 @@
+// Package classify implements the contractual classification engine.
 package classify
 
 import (
@@ -29,7 +30,7 @@ const maxInterfaceWeight = 30
 func analyzeInterfaceSignal(
 	funcName string,
 	receiverType types.Type,
-	effectType taxonomy.SideEffectType,
+	_ taxonomy.SideEffectType,
 	ifaces []namedInterface,
 ) taxonomy.Signal {
 	if receiverType == nil {

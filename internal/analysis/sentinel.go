@@ -1,3 +1,4 @@
+// Package analysis provides the core side effect detection engine.
 package analysis
 
 import (

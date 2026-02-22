@@ -1,3 +1,4 @@
+// Package report provides output formatters for Gaze analysis results.
 package report
 
 // Schema is the JSON Schema (Draft 2020-12) for the Gaze analysis

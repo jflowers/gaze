@@ -1,3 +1,4 @@
+// Package main implements the gaze CLI.
 package main
 
 import (

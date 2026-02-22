@@ -1,3 +1,4 @@
+// Package classify implements the contractual classification engine.
 package classify
 
 import (
@@ -19,7 +20,7 @@ const maxCallerWeight = 15
 // side effect.
 func AnalyzeCallerSignal(
 	funcObj types.Object,
-	effectType taxonomy.SideEffectType,
+	_ taxonomy.SideEffectType,
 	modulePkgs []*packages.Package,
 ) taxonomy.Signal {
 	if funcObj == nil {

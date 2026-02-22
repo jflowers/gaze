@@ -1,3 +1,4 @@
+// Package taxonomy defines the side effect type system and domain types.
 package taxonomy
 
 // TierOf returns the priority tier for a given side effect type.

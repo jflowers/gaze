@@ -1,3 +1,4 @@
+// Package docscan discovers and prioritizes documentation files.
 package docscan
 
 import (

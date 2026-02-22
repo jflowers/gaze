@@ -397,7 +397,7 @@ func TestWriteJSON_ClassifiedOutput_ContainsClassification(t *testing.T) {
 	}
 }
 
-func TestClassificationStyle(t *testing.T) {
+func TestClassificationStyle(_ *testing.T) {
 	s := DefaultStyles()
 
 	// Just verify the function returns without panic for all labels.

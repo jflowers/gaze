@@ -1,3 +1,4 @@
+// Package classify implements the contractual classification engine.
 package classify
 
 import (
@@ -27,7 +28,7 @@ const (
 func AnalyzeVisibilitySignal(
 	funcDecl *ast.FuncDecl,
 	funcObj types.Object,
-	effectType taxonomy.SideEffectType,
+	_ taxonomy.SideEffectType,
 ) taxonomy.Signal {
 	if funcDecl == nil || funcObj == nil {
 		return taxonomy.Signal{}
