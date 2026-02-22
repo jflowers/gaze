@@ -47,7 +47,7 @@ produced by their test targets.`,
 	root.AddCommand(newDocscanCmd())
 
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
@@ -276,7 +276,7 @@ observable side effects each function produces.
 Use --classify to attach contractual classification (mechanical signals).
 Use /classify-docs in OpenCode for document-enhanced classification.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return runAnalyze(analyzeParams{
 				pkgPath:           args[0],
 				format:            format,
@@ -336,7 +336,7 @@ func newSchemaCmd() *cobra.Command {
 structure of gaze analyze --format=json output. Useful for
 validating output or generating client types.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), report.Schema)
 			return err
 		},
@@ -356,6 +356,14 @@ func runCrap(p crapParams) error {
 	}
 
 	logger.Info("analysis complete", "functions", len(rpt.Scores))
+
+	// FR-015: Warn when GazeCRAP is unavailable (contract coverage
+	// requires Spec 003). This helps users understand the omission
+	// rather than silently excluding GazeCRAP from output.
+	if rpt.Summary.GazeCRAPload == nil {
+		_, _ = fmt.Fprintln(p.stderr,
+			"note: GazeCRAP unavailable — contract coverage not yet implemented (Spec 003)")
+	}
 
 	if err := writeCrapReport(p.stdout, p.format, rpt); err != nil {
 		return err
@@ -400,7 +408,7 @@ func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload 
 		parts = append(parts, fmt.Sprintf("GazeCRAPload: %d/%d (%s)",
 			*rpt.Summary.GazeCRAPload, maxGazeCrapload, status))
 	}
-	fmt.Fprintln(w, strings.Join(parts, " | "))
+	_, _ = fmt.Fprintln(w, strings.Join(parts, " | "))
 }
 
 // checkCIThresholds returns an error if any CI thresholds are exceeded.
@@ -438,7 +446,7 @@ the threshold).
 If no coverage profile is provided, runs 'go test -coverprofile'
 automatically.`,
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			moduleDir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -447,8 +455,7 @@ automatically.`,
 			opts.CoverProfile = coverProfile
 			opts.CRAPThreshold = crapThreshold
 			opts.GazeCRAPThreshold = gazeCrapThreshold
-			opts.MaxCRAPload = maxCrapload
-			opts.MaxGazeCRAPload = maxGazeCrapload
+			opts.Stderr = os.Stderr
 			return runCrap(crapParams{
 				patterns:        args,
 				format:          format,
@@ -541,7 +548,7 @@ Priority:
   2 = module root
   3 = other locations`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			pkgPath := "."
 			if len(args) > 0 {
 				pkgPath = args[0]

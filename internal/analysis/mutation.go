@@ -1,3 +1,4 @@
+// Package analysis provides the core side effect detection engine.
 package analysis
 
 import (
@@ -72,7 +73,11 @@ func findSSAFunction(ssaPkg *ssa.Package, fnObj *types.Func, fd *ast.FuncDecl) *
 		} else {
 			// Method: look up via the method set of the
 			// receiver type (both value and pointer).
-			recv := fnObj.Type().(*types.Signature).Recv()
+			sig, ok := fnObj.Type().(*types.Signature)
+			if !ok {
+				return nil
+			}
+			recv := sig.Recv()
 			if recv != nil {
 				mset := types.NewMethodSet(recv.Type())
 				for i := 0; i < mset.Len(); i++ {
