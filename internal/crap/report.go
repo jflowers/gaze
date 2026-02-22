@@ -25,7 +25,7 @@ func WriteText(w io.Writer, rpt *Report) error {
 	styles := report.DefaultStyles()
 
 	if len(rpt.Scores) == 0 {
-		fmt.Fprintln(w, styles.Muted.Render("No functions analyzed."))
+		_, _ = fmt.Fprintln(w, styles.Muted.Render("No functions analyzed."))
 		return nil
 	}
 
@@ -74,47 +74,47 @@ func WriteText(w io.Writer, rpt *Report) error {
 		Headers("CRAP", "COMPLEXITY", "COVERAGE", "FUNCTION", "FILE").
 		Rows(rows...)
 
-	fmt.Fprintln(w, t)
+	_, _ = fmt.Fprintln(w, t)
 
 	// Summary.
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, styles.Header.Render("--- Summary ---"))
-	fmt.Fprintf(w, "%s  %d\n", styles.SummaryLabel.Render("Functions analyzed:"), rpt.Summary.TotalFunctions)
-	fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg complexity:"), rpt.Summary.AvgComplexity)
-	fmt.Fprintf(w, "%s  %.1f%%\n", styles.SummaryLabel.Render("Avg line coverage:"), rpt.Summary.AvgLineCoverage)
-	fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg CRAP score:"), rpt.Summary.AvgCRAP)
-	fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("CRAP threshold:"), rpt.Summary.CRAPThreshold)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, styles.Header.Render("--- Summary ---"))
+	_, _ = fmt.Fprintf(w, "%s  %d\n", styles.SummaryLabel.Render("Functions analyzed:"), rpt.Summary.TotalFunctions)
+	_, _ = fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg complexity:"), rpt.Summary.AvgComplexity)
+	_, _ = fmt.Fprintf(w, "%s  %.1f%%\n", styles.SummaryLabel.Render("Avg line coverage:"), rpt.Summary.AvgLineCoverage)
+	_, _ = fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg CRAP score:"), rpt.Summary.AvgCRAP)
+	_, _ = fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("CRAP threshold:"), rpt.Summary.CRAPThreshold)
 
 	craploadStr := fmt.Sprintf("%d", rpt.Summary.CRAPload)
 	if rpt.Summary.CRAPload > 0 {
 		craploadStr = styles.CRAPBad.Render(craploadStr) + styles.Muted.Render(" (functions at or above threshold)")
 	}
-	fmt.Fprintf(w, "%s  %s\n", styles.SummaryLabel.Render("CRAPload:"), craploadStr)
+	_, _ = fmt.Fprintf(w, "%s  %s\n", styles.SummaryLabel.Render("CRAPload:"), craploadStr)
 
 	// GazeCRAP and quadrant stats (when available).
 	if rpt.Summary.GazeCRAPload != nil && rpt.Summary.GazeCRAPThreshold != nil {
-		fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("GazeCRAP threshold:"), *rpt.Summary.GazeCRAPThreshold)
+		_, _ = fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("GazeCRAP threshold:"), *rpt.Summary.GazeCRAPThreshold)
 		gazeCRAPloadStr := fmt.Sprintf("%d", *rpt.Summary.GazeCRAPload)
 		if *rpt.Summary.GazeCRAPload > 0 {
 			gazeCRAPloadStr = styles.CRAPBad.Render(gazeCRAPloadStr) + styles.Muted.Render(" (functions at or above threshold)")
 		}
-		fmt.Fprintf(w, "%s  %s\n", styles.SummaryLabel.Render("GazeCRAPload:"), gazeCRAPloadStr)
+		_, _ = fmt.Fprintf(w, "%s  %s\n", styles.SummaryLabel.Render("GazeCRAPload:"), gazeCRAPloadStr)
 	}
 
 	// Quadrant breakdown.
 	if len(rpt.Summary.QuadrantCounts) > 0 {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, styles.Header.Render("--- Quadrant Breakdown ---"))
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, styles.Header.Render("--- Quadrant Breakdown ---"))
 		for _, q := range []Quadrant{Q1Safe, Q2ComplexButTested, Q3SimpleButUnderspecified, Q4Dangerous} {
 			count := rpt.Summary.QuadrantCounts[q]
-			fmt.Fprintf(w, "  %-30s  %d\n", string(q), count)
+			_, _ = fmt.Fprintf(w, "  %-30s  %d\n", string(q), count)
 		}
 	}
 
 	// Worst offenders.
 	if len(rpt.Summary.WorstCRAP) > 0 {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, styles.Header.Render(
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, styles.Header.Render(
 			fmt.Sprintf("--- Worst Offenders (top %d by CRAP) ---", len(rpt.Summary.WorstCRAP))))
 		for i, s := range rpt.Summary.WorstCRAP {
 			score := fmt.Sprintf("%.1f", s.CRAP)
@@ -123,7 +123,7 @@ func WriteText(w io.Writer, rpt *Report) error {
 			} else {
 				score = styles.CRAPGood.Render(score)
 			}
-			fmt.Fprintf(w, "  %d. %s  %s  %s\n",
+			_, _ = fmt.Fprintf(w, "  %d. %s  %s  %s\n",
 				i+1, score, s.Function,
 				styles.Muted.Render(fmt.Sprintf("(%s:%d)", shortenPath(s.File), s.Line)))
 		}

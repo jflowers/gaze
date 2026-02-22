@@ -61,7 +61,7 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 		if err != nil {
 			return nil, fmt.Errorf("generating coverage: %w", err)
 		}
-		defer os.Remove(coverProfile)
+		defer func() { _ = os.Remove(coverProfile) }()
 	} else {
 		// Validate user-supplied cover profile path.
 		coverProfile = filepath.Clean(coverProfile)
@@ -154,7 +154,7 @@ func generateCoverProfile(moduleDir string, patterns []string) (string, error) {
 		return "", fmt.Errorf("creating temp cover profile: %w", err)
 	}
 	profilePath := tmpFile.Name()
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Build args for go test. Patterns come from Cobra positional
 	// args (already past flag parsing) and Go package patterns
@@ -168,7 +168,7 @@ func generateCoverProfile(moduleDir string, patterns []string) (string, error) {
 	cmd.Dir = moduleDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		os.Remove(profilePath)
+		_ = os.Remove(profilePath)
 		return "", fmt.Errorf("go test failed: %s\n%s", err, string(output))
 	}
 
@@ -254,7 +254,7 @@ func isGeneratedFile(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {

@@ -69,7 +69,7 @@ func ParseCoverProfile(profilePath string, moduleDir string, stderr io.Writer) (
 		funcs, err := findFunctions(filePath)
 		if err != nil {
 			if stderr != nil {
-				fmt.Fprintf(stderr, "warning: skipping %s: %v\n", filePath, err)
+				_, _ = fmt.Fprintf(stderr, "warning: skipping %s: %v\n", filePath, err)
 			}
 			continue
 		}

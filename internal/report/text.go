@@ -35,7 +35,7 @@ func WriteTextOptions(w io.Writer, results []taxonomy.AnalysisResult, opts TextO
 
 	for i, result := range results {
 		if i > 0 {
-			fmt.Fprintln(w)
+			_, _ = fmt.Fprintln(w)
 		}
 		if err := writeOneResultOpts(w, result, s, opts); err != nil {
 			return err
@@ -47,7 +47,7 @@ func WriteTextOptions(w io.Writer, results []taxonomy.AnalysisResult, opts TextO
 	for _, r := range results {
 		total += len(r.SideEffects)
 	}
-	fmt.Fprintf(w, "\n%s\n",
+	_, _ = fmt.Fprintf(w, "\n%s\n",
 		s.Header.Render(fmt.Sprintf(
 			"%d function(s) analyzed, %d side effect(s) detected",
 			len(results), total)))
@@ -62,16 +62,16 @@ func writeOneResultOpts(w io.Writer, result taxonomy.AnalysisResult, s Styles, o
 func writeOneResult(w io.Writer, result taxonomy.AnalysisResult, s Styles, showClassify, verbose bool) error {
 	// Header.
 	name := result.Target.QualifiedName()
-	fmt.Fprintln(w, s.Header.Render(fmt.Sprintf("=== %s ===", name)))
-	fmt.Fprintln(w, s.SubHeader.Render(fmt.Sprintf("    %s", result.Target.Signature)))
-	fmt.Fprintln(w, s.SubHeader.Render(fmt.Sprintf("    %s", result.Target.Location)))
+	_, _ = fmt.Fprintln(w, s.Header.Render(fmt.Sprintf("=== %s ===", name)))
+	_, _ = fmt.Fprintln(w, s.SubHeader.Render(fmt.Sprintf("    %s", result.Target.Signature)))
+	_, _ = fmt.Fprintln(w, s.SubHeader.Render(fmt.Sprintf("    %s", result.Target.Location)))
 
 	if len(result.SideEffects) == 0 {
-		fmt.Fprintln(w, s.Muted.Render("    No side effects detected."))
+		_, _ = fmt.Fprintln(w, s.Muted.Render("    No side effects detected."))
 		return nil
 	}
 
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 
 	if showClassify {
 		// With classification column: budget 80 cols.
@@ -124,7 +124,7 @@ func writeOneResult(w io.Writer, result taxonomy.AnalysisResult, s Styles, showC
 			Headers("TIER", "TYPE", "DESCRIPTION", "CLASSIFICATION").
 			Rows(rows...)
 
-		fmt.Fprintln(w, t)
+		_, _ = fmt.Fprintln(w, t)
 
 		// Verbose: print signal breakdown for each side effect.
 		if verbose {
@@ -132,19 +132,19 @@ func writeOneResult(w io.Writer, result taxonomy.AnalysisResult, s Styles, showC
 				if e.Classification == nil || len(e.Classification.Signals) == 0 {
 					continue
 				}
-				fmt.Fprintf(w, "\n  Signals for %s (%s):\n",
+				_, _ = fmt.Fprintf(w, "\n  Signals for %s (%s):\n",
 					string(e.Type), e.Location)
 				for _, sig := range e.Classification.Signals {
 					line := fmt.Sprintf("    %s: %+d", sig.Source, sig.Weight)
 					if sig.Reasoning != "" {
 						line += " — " + sig.Reasoning
 					}
-					fmt.Fprintln(w, line)
+					_, _ = fmt.Fprintln(w, line)
 					if sig.SourceFile != "" {
-						fmt.Fprintf(w, "      source: %s\n", sig.SourceFile)
+						_, _ = fmt.Fprintf(w, "      source: %s\n", sig.SourceFile)
 					}
 					if sig.Excerpt != "" {
-						fmt.Fprintf(w, "      excerpt: %q\n", sig.Excerpt)
+						_, _ = fmt.Fprintf(w, "      excerpt: %q\n", sig.Excerpt)
 					}
 				}
 			}
@@ -185,7 +185,7 @@ func writeOneResult(w io.Writer, result taxonomy.AnalysisResult, s Styles, showC
 			Headers("TIER", "TYPE", "DESCRIPTION").
 			Rows(rows...)
 
-		fmt.Fprintln(w, t)
+		_, _ = fmt.Fprintln(w, t)
 	}
 
 	// Tier summary.
@@ -205,7 +205,7 @@ func writeOneResult(w io.Writer, result taxonomy.AnalysisResult, s Styles, showC
 			parts = append(parts, styled)
 		}
 	}
-	fmt.Fprintf(w, "    Summary: %s\n", strings.Join(parts, ", "))
+	_, _ = fmt.Fprintf(w, "    Summary: %s\n", strings.Join(parts, ", "))
 
 	return nil
 }
