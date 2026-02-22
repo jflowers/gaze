@@ -49,6 +49,15 @@ type Styles struct {
 
 	// Muted is used for de-emphasized text.
 	Muted lipgloss.Style
+
+	// ClassContractual styles the "contractual" classification label.
+	ClassContractual lipgloss.Style
+
+	// ClassIncidental styles the "incidental" classification label.
+	ClassIncidental lipgloss.Style
+
+	// ClassAmbiguous styles the "ambiguous" classification label.
+	ClassAmbiguous lipgloss.Style
 }
 
 // DefaultStyles returns the default color scheme for terminal reports.
@@ -78,6 +87,25 @@ func DefaultStyles() Styles {
 		Border: lipgloss.NewStyle().Foreground(lipgloss.Color("63")),
 
 		Muted: lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+
+		ClassContractual: lipgloss.NewStyle().Foreground(lipgloss.Color("40")).Bold(true),
+		ClassIncidental:  lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+		ClassAmbiguous:   lipgloss.NewStyle().Foreground(lipgloss.Color("220")),
+	}
+}
+
+// ClassificationStyle returns the appropriate style for a given
+// classification label string.
+func (s Styles) ClassificationStyle(label string) lipgloss.Style {
+	switch label {
+	case "contractual":
+		return s.ClassContractual
+	case "incidental":
+		return s.ClassIncidental
+	case "ambiguous":
+		return s.ClassAmbiguous
+	default:
+		return s.Muted
 	}
 }
 

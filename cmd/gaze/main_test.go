@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -450,6 +451,229 @@ func TestSchemaCmd_ContainsSchemaFields(t *testing.T) {
 		if !strings.Contains(output, field) {
 			t.Errorf("schema output missing %s", field)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runDocscan tests
+// ---------------------------------------------------------------------------
+
+func TestRunDocscan_OutputsJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runDocscan(docscanParams{
+		pkgPath: ".",
+		stdout:  &stdout,
+		stderr:  &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runDocscan() error: %v", err)
+	}
+
+	// Output should be a JSON array.
+	var docs interface{}
+	if jsonErr := json.Unmarshal(stdout.Bytes(), &docs); jsonErr != nil {
+		t.Errorf("docscan output is not valid JSON: %v\noutput:\n%s",
+			jsonErr, stdout.String())
+	}
+}
+
+func TestRunDocscan_EmptyPkg(t *testing.T) {
+	// An empty/non-existent package path should not cause a crash;
+	// docscan uses CWD for the repo root.
+	var stdout, stderr bytes.Buffer
+	err := runDocscan(docscanParams{
+		pkgPath: ".",
+		stdout:  &stdout,
+		stderr:  &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runDocscan() error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runAnalyze --classify tests
+// ---------------------------------------------------------------------------
+
+func TestRunAnalyze_ClassifyFlag_TextFormat(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		pkgPath:  "github.com/jflowers/gaze/internal/analysis/testdata/src/returns",
+		format:   "text",
+		classify: true,
+		stdout:   &stdout,
+		stderr:   &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runAnalyze --classify error: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "CLASSIFICATION") {
+		t.Errorf("expected CLASSIFICATION column in text output, got:\n%s", output)
+	}
+}
+
+func TestRunAnalyze_ClassifyFlag_JSONFormat(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		pkgPath:  "github.com/jflowers/gaze/internal/analysis/testdata/src/returns",
+		format:   "json",
+		classify: true,
+		stdout:   &stdout,
+		stderr:   &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runAnalyze --classify --format=json error: %v", err)
+	}
+
+	// Output should be valid JSON with classification fields.
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
+		t.Errorf("output is not valid JSON: %v\noutput:\n%s", err, stdout.String())
+	}
+}
+
+func TestRunAnalyze_VerboseImpliesClassify(t *testing.T) {
+	// --verbose without --classify should still produce classification output.
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		pkgPath: "github.com/jflowers/gaze/internal/analysis/testdata/src/returns",
+		format:  "text",
+		verbose: true,
+		stdout:  &stdout,
+		stderr:  &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runAnalyze --verbose error: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "CLASSIFICATION") {
+		t.Errorf("--verbose should imply --classify, expected CLASSIFICATION column, got:\n%s", output)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// loadConfig threshold override tests (REQUIRED 6 / RECOMMENDED 10)
+// ---------------------------------------------------------------------------
+
+// TestLoadConfig_ContractualThresholdOverride verifies that a positive
+// contractual threshold value is applied to the config.
+func TestLoadConfig_ContractualThresholdOverride(t *testing.T) {
+	cfg, err := loadConfig("", 90, -1)
+	if err != nil {
+		t.Fatalf("loadConfig error: %v", err)
+	}
+	if cfg.Classification.Thresholds.Contractual != 90 {
+		t.Errorf("contractual threshold = %d, want 90",
+			cfg.Classification.Thresholds.Contractual)
+	}
+	// Incidental should remain at the default (50) since we passed -1.
+	if cfg.Classification.Thresholds.Incidental != 50 {
+		t.Errorf("incidental threshold = %d, want 50 (default)",
+			cfg.Classification.Thresholds.Incidental)
+	}
+}
+
+// TestLoadConfig_IncidentalThresholdOverride verifies that a positive
+// incidental threshold value is applied to the config.
+func TestLoadConfig_IncidentalThresholdOverride(t *testing.T) {
+	cfg, err := loadConfig("", -1, 30)
+	if err != nil {
+		t.Fatalf("loadConfig error: %v", err)
+	}
+	// Contractual should remain at the default (80) since we passed -1.
+	if cfg.Classification.Thresholds.Contractual != 80 {
+		t.Errorf("contractual threshold = %d, want 80 (default)",
+			cfg.Classification.Thresholds.Contractual)
+	}
+	if cfg.Classification.Thresholds.Incidental != 30 {
+		t.Errorf("incidental threshold = %d, want 30",
+			cfg.Classification.Thresholds.Incidental)
+	}
+}
+
+// TestLoadConfig_BothThresholdsOverride verifies that both thresholds
+// can be overridden simultaneously.
+func TestLoadConfig_BothThresholdsOverride(t *testing.T) {
+	cfg, err := loadConfig("", 95, 35)
+	if err != nil {
+		t.Fatalf("loadConfig error: %v", err)
+	}
+	if cfg.Classification.Thresholds.Contractual != 95 {
+		t.Errorf("contractual threshold = %d, want 95",
+			cfg.Classification.Thresholds.Contractual)
+	}
+	if cfg.Classification.Thresholds.Incidental != 35 {
+		t.Errorf("incidental threshold = %d, want 35",
+			cfg.Classification.Thresholds.Incidental)
+	}
+}
+
+// TestLoadConfig_NoOverride verifies that -1 sentinel leaves
+// thresholds at their config/default values.
+func TestLoadConfig_NoOverride(t *testing.T) {
+	cfg, err := loadConfig("", -1, -1)
+	if err != nil {
+		t.Fatalf("loadConfig error: %v", err)
+	}
+	// Should be the defaults from DefaultConfig().
+	if cfg.Classification.Thresholds.Contractual != 80 {
+		t.Errorf("contractual threshold = %d, want 80 (default)",
+			cfg.Classification.Thresholds.Contractual)
+	}
+	if cfg.Classification.Thresholds.Incidental != 50 {
+		t.Errorf("incidental threshold = %d, want 50 (default)",
+			cfg.Classification.Thresholds.Incidental)
+	}
+}
+
+// TestLoadConfig_YAMLInvertedThresholdsRejected verifies that a .gaze.yaml
+// file with inverted thresholds (contractual <= incidental) is rejected
+// even when no CLI flags are provided. This distinguishes the YAML-source
+// error from the CLI-source error tested below.
+func TestLoadConfig_YAMLInvertedThresholdsRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := dir + "/.gaze.yaml"
+	content := []byte(`classification:
+  thresholds:
+    contractual: 50
+    incidental: 60
+`)
+	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
+		t.Fatalf("writing temp config: %v", err)
+	}
+
+	_, err := loadConfig(cfgPath, -1, -1)
+	if err == nil {
+		t.Fatal("expected error for inverted YAML thresholds, got nil")
+	}
+	// Error should reference the config file path, not CLI flags.
+	if !strings.Contains(err.Error(), "config file") {
+		t.Errorf("error should mention 'config file', got: %s", err)
+	}
+}
+
+// TestLoadConfig_ZeroThresholdRejected verifies that a threshold of 0
+// is rejected with an error (prevents degenerate all-contractual state).
+func TestLoadConfig_ZeroThresholdRejected(t *testing.T) {
+	_, err := loadConfig("", 0, -1)
+	if err == nil {
+		t.Fatal("expected error for contractual-threshold=0, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid") && !strings.Contains(err.Error(), "[1, 99]") {
+		t.Errorf("unexpected error message: %s", err)
+	}
+}
+
+// TestLoadConfig_InvertedThresholdsRejected verifies that contractual <= incidental
+// is rejected with an error.
+func TestLoadConfig_InvertedThresholdsRejected(t *testing.T) {
+	// contractual=40 < incidental=60 — invalid.
+	_, err := loadConfig("", 40, 60)
+	if err == nil {
+		t.Fatal("expected error for contractual=40 < incidental=60, got nil")
 	}
 }
 

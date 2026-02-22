@@ -1,0 +1,10 @@
+classification:
+  thresholds:
+    contractual: 85
+    incidental: 45
+  doc_scan:
+    exclude:
+      - "vendor/**"
+      - "*.generated.md"
+    include: []
+    timeout: "15s"

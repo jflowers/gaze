@@ -3,16 +3,24 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/jflowers/gaze/internal/analysis"
+	"github.com/jflowers/gaze/internal/classify"
+	"github.com/jflowers/gaze/internal/config"
 	"github.com/jflowers/gaze/internal/crap"
+	"github.com/jflowers/gaze/internal/docscan"
+	"github.com/jflowers/gaze/internal/loader"
 	"github.com/jflowers/gaze/internal/report"
+	"github.com/jflowers/gaze/internal/taxonomy"
 	"github.com/spf13/cobra"
+	"golang.org/x/tools/go/packages"
 )
 
 // logger is the application-wide structured logger (writes to stderr).
@@ -36,6 +44,7 @@ produced by their test targets.`,
 	root.AddCommand(newAnalyzeCmd())
 	root.AddCommand(newCrapCmd())
 	root.AddCommand(newSchemaCmd())
+	root.AddCommand(newDocscanCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -50,8 +59,76 @@ type analyzeParams struct {
 	function          string
 	includeUnexported bool
 	interactive       bool
+	classify          bool
+	verbose           bool
+	configPath        string
+	contractualThresh int
+	incidentalThresh  int
 	stdout            io.Writer
 	stderr            io.Writer
+}
+
+// loadConfig loads the GazeConfig from the given path (or searches
+// the current directory if path is empty), then applies any CLI
+// threshold overrides. A threshold value of -1 means "not set"
+// (use config/default). Any other value overrides the loaded config.
+//
+// Valid threshold values are in [1, 99]. The contractual threshold
+// must be strictly greater than the incidental threshold to prevent
+// degenerate classifications (e.g., contractual=0 would classify
+// every side effect as contractual regardless of signal strength).
+func loadConfig(path string, contractualThresh, incidentalThresh int) (*config.GazeConfig, error) {
+	if path == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return config.DefaultConfig(), nil
+		}
+		path = filepath.Join(cwd, ".gaze.yaml")
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if contractualThresh >= 0 {
+		if contractualThresh < 1 || contractualThresh > 99 {
+			return nil, fmt.Errorf(
+				"--contractual-threshold=%d is invalid: must be in [1, 99]",
+				contractualThresh,
+			)
+		}
+		cfg.Classification.Thresholds.Contractual = contractualThresh
+	}
+	if incidentalThresh >= 0 {
+		if incidentalThresh < 1 || incidentalThresh > 99 {
+			return nil, fmt.Errorf(
+				"--incidental-threshold=%d is invalid: must be in [1, 99]",
+				incidentalThresh,
+			)
+		}
+		cfg.Classification.Thresholds.Incidental = incidentalThresh
+	}
+	// Validate the final thresholds are coherent.
+	if cfg.Classification.Thresholds.Contractual <= cfg.Classification.Thresholds.Incidental {
+		// Produce an actionable error that tells the user where the bad
+		// values came from: CLI flags, the config file, or both.
+		source := fmt.Sprintf("config file %s", path)
+		if contractualThresh >= 0 || incidentalThresh >= 0 {
+			source = "--contractual-threshold / --incidental-threshold flags"
+			if contractualThresh >= 0 && incidentalThresh < 0 {
+				source = "--contractual-threshold flag"
+			} else if incidentalThresh >= 0 && contractualThresh < 0 {
+				source = "--incidental-threshold flag"
+			}
+		}
+		return nil, fmt.Errorf(
+			"contractual threshold (%d) must be greater than incidental threshold (%d); "+
+				"check %s",
+			cfg.Classification.Thresholds.Contractual,
+			cfg.Classification.Thresholds.Incidental,
+			source,
+		)
+	}
+	return cfg, nil
 }
 
 // runAnalyze is the extracted, testable body of the analyze command.
@@ -82,6 +159,34 @@ func runAnalyze(p analyzeParams) error {
 
 	logger.Info("analysis complete", "functions", len(results))
 
+	// --verbose implies --classify.
+	if p.verbose {
+		p.classify = true
+	}
+
+	// Run mechanical classification if requested.
+	if p.classify {
+		// Normalize zero to -1 (not set). The flag default is -1 but
+		// struct literals in tests may leave these fields at their Go
+		// zero value (0). Both mean "use config/default".
+		contractualThresh := p.contractualThresh
+		if contractualThresh == 0 {
+			contractualThresh = -1
+		}
+		incidentalThresh := p.incidentalThresh
+		if incidentalThresh == 0 {
+			incidentalThresh = -1
+		}
+		cfg, cfgErr := loadConfig(p.configPath, contractualThresh, incidentalThresh)
+		if cfgErr != nil {
+			return fmt.Errorf("loading config: %w", cfgErr)
+		}
+		results, err = runClassify(results, p.pkgPath, cfg, p.verbose)
+		if err != nil {
+			return fmt.Errorf("classification: %w", err)
+		}
+	}
+
 	if p.interactive {
 		return runInteractiveAnalyze(results)
 	}
@@ -90,8 +195,63 @@ func runAnalyze(p analyzeParams) error {
 	case "json":
 		return report.WriteJSON(p.stdout, results, version)
 	default:
-		return report.WriteText(p.stdout, results)
+		textOpts := report.TextOptions{
+			Classify: p.classify,
+			Verbose:  p.verbose,
+		}
+		return report.WriteTextOptions(p.stdout, results, textOpts)
 	}
+}
+
+// runClassify runs the mechanical classification pipeline on
+// analysis results and returns classified results. It adds a
+// metadata warning noting that document-enhanced classification
+// is not applied (that requires the /classify-docs command).
+func runClassify(
+	results []taxonomy.AnalysisResult,
+	pkgPath string,
+	cfg *config.GazeConfig,
+	verbose bool,
+) ([]taxonomy.AnalysisResult, error) {
+	// Load the target package for AST access.
+	targetResult, err := loader.Load(pkgPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading target package: %w", err)
+	}
+
+	// Load the module for caller/interface analysis. Use the
+	// directory containing the target package if possible.
+	logger.Info("loading module packages for classification")
+	cwd, _ := os.Getwd()
+	modResult, modErr := loader.LoadModule(cwd)
+	var modPkgs []*packages.Package
+	if modErr != nil {
+		// Non-fatal: module loading failure means caller analysis
+		// and interface signals will be degraded but not broken.
+		logger.Warn("module loading failed; caller/interface signals degraded", "err", modErr)
+	} else {
+		modPkgs = modResult.Packages
+	}
+
+	clOpts := classify.Options{
+		Config:         cfg,
+		ModulePackages: modPkgs,
+		TargetPkg:      targetResult.Pkg,
+		Verbose:        verbose,
+	}
+
+	classified := classify.Classify(results, clOpts)
+
+	// Add a warning to each result noting mechanical-only mode.
+	for i := range classified {
+		classified[i].Metadata.Warnings = append(
+			classified[i].Metadata.Warnings,
+			"classification: mechanical signals only; "+
+				"run /classify-docs for document-enhanced results",
+		)
+	}
+
+	return classified, nil
 }
 
 func newAnalyzeCmd() *cobra.Command {
@@ -100,13 +260,21 @@ func newAnalyzeCmd() *cobra.Command {
 		format            string
 		includeUnexported bool
 		interactive       bool
+		classifyFlag      bool
+		verboseFlag       bool
+		configPath        string
+		contractualThresh int
+		incidentalThresh  int
 	)
 
 	cmd := &cobra.Command{
 		Use:   "analyze [package]",
 		Short: "Analyze side effects of Go functions",
 		Long: `Analyze a Go package (or specific function) and report all
-observable side effects each function produces.`,
+observable side effects each function produces.
+
+Use --classify to attach contractual classification (mechanical signals).
+Use /classify-docs in OpenCode for document-enhanced classification.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAnalyze(analyzeParams{
@@ -115,6 +283,11 @@ observable side effects each function produces.`,
 				function:          function,
 				includeUnexported: includeUnexported,
 				interactive:       interactive,
+				classify:          classifyFlag,
+				verbose:           verboseFlag,
+				configPath:        configPath,
+				contractualThresh: contractualThresh,
+				incidentalThresh:  incidentalThresh,
 				stdout:            os.Stdout,
 				stderr:            os.Stderr,
 			})
@@ -129,6 +302,16 @@ observable side effects each function produces.`,
 		"include unexported functions")
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false,
 		"launch interactive TUI for browsing results")
+	cmd.Flags().BoolVar(&classifyFlag, "classify", false,
+		"classify side effects as contractual, incidental, or ambiguous")
+	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false,
+		"print full signal breakdown (implies --classify)")
+	cmd.Flags().StringVar(&configPath, "config", "",
+		"path to .gaze.yaml config file (default: search CWD)")
+	cmd.Flags().IntVar(&contractualThresh, "contractual-threshold", -1,
+		"override contractual confidence threshold (default: from config or 80)")
+	cmd.Flags().IntVar(&incidentalThresh, "incidental-threshold", -1,
+		"override incidental confidence threshold (default: from config or 50)")
 
 	return cmd
 }
@@ -291,6 +474,89 @@ automatically.`,
 		"fail if CRAPload exceeds this (0 = no limit)")
 	cmd.Flags().IntVar(&maxGazeCrapload, "max-gaze-crapload", 0,
 		"fail if GazeCRAPload exceeds this (0 = no limit)")
+
+	return cmd
+}
+
+// docscanParams holds the parsed flags for the docscan command.
+type docscanParams struct {
+	pkgPath    string
+	configPath string
+	stdout     io.Writer
+	stderr     io.Writer
+}
+
+// runDocscan is the extracted, testable body of the docscan command.
+func runDocscan(p docscanParams) error {
+	cfg, err := loadConfig(p.configPath, -1, -1)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Determine the repo root: walk up from the package directory
+	// to find the go.mod file, defaulting to cwd.
+	repoRoot, err := os.Getwd()
+	if err != nil {
+		repoRoot = "."
+	}
+
+	// Resolve PackageDir from the import path if it corresponds
+	// to a local path pattern, otherwise use the repo root.
+	pkgDir := ""
+	if strings.HasPrefix(p.pkgPath, "./") || strings.HasPrefix(p.pkgPath, "../") {
+		abs, absErr := filepath.Abs(p.pkgPath)
+		if absErr == nil {
+			pkgDir = abs
+		}
+	}
+
+	scanOpts := docscan.ScanOptions{
+		Config:     cfg,
+		PackageDir: pkgDir,
+	}
+
+	docs, err := docscan.Scan(repoRoot, scanOpts)
+	if err != nil {
+		return fmt.Errorf("scanning documents: %w", err)
+	}
+
+	enc := json.NewEncoder(p.stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(docs)
+}
+
+func newDocscanCmd() *cobra.Command {
+	var configPath string
+
+	cmd := &cobra.Command{
+		Use:   "docscan [package]",
+		Short: "Scan project documentation for classification signals",
+		Long: `Scan the repository for Markdown documentation files and
+output a prioritized list of documents as JSON. Useful as input
+to the /classify-docs OpenCode command for document-enhanced
+classification.
+
+Priority:
+  1 = same directory as the target package (highest relevance)
+  2 = module root
+  3 = other locations`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pkgPath := "."
+			if len(args) > 0 {
+				pkgPath = args[0]
+			}
+			return runDocscan(docscanParams{
+				pkgPath:    pkgPath,
+				configPath: configPath,
+				stdout:     os.Stdout,
+				stderr:     os.Stderr,
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&configPath, "config", "",
+		"path to .gaze.yaml config file (default: search CWD)")
 
 	return cmd
 }

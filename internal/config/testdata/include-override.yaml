@@ -1,0 +1,5 @@
+classification:
+  doc_scan:
+    include:
+      - "docs/**"
+      - "README.md"
