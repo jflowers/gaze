@@ -276,7 +276,7 @@ observable side effects each function produces.
 Use --classify to attach contractual classification (mechanical signals).
 Use /classify-docs in OpenCode for document-enhanced classification.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return runAnalyze(analyzeParams{
 				pkgPath:           args[0],
 				format:            format,
@@ -336,7 +336,7 @@ func newSchemaCmd() *cobra.Command {
 structure of gaze analyze --format=json output. Useful for
 validating output or generating client types.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), report.Schema)
 			return err
 		},
@@ -446,7 +446,7 @@ the threshold).
 If no coverage profile is provided, runs 'go test -coverprofile'
 automatically.`,
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			moduleDir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
@@ -548,7 +548,7 @@ Priority:
   2 = module root
   3 = other locations`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			pkgPath := "."
 			if len(args) > 0 {
 				pkgPath = args[0]

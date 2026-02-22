@@ -1,3 +1,4 @@
+// Package crap computes CRAP scores for Go functions.
 package crap
 
 import (
