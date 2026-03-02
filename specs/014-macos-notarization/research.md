@@ -38,16 +38,19 @@
 
 ## Decision 3: Notarization Wait Strategy
 
-**Decision**: Set `wait: true` with a `timeout: 20m`.
+**Decision**: Set `wait: false` (fire-and-forget).
 
-**Rationale**: Without `wait: true`, GoReleaser submits the notarization request as fire-and-forget. The binary would be signed but Apple's notarization ticket would not be confirmed before the release artifacts are published. Setting `wait: true` ensures the release only completes after Apple confirms the notarization, guaranteeing end users see a trusted binary. The 20-minute timeout accommodates Apple's variable processing times (typically <10 minutes, occasionally longer) while staying within the global GoReleaser timeout.
+**Rationale**: `wait: true` causes quill to poll Apple's notary service repeatedly until completion. In practice, quill's polling interval is aggressive enough to exhaust Apple's App Store Connect API hourly rate limit during a single notarization wait, resulting in a 429 "Too Many Requests" error that fails the entire release. This was observed in production: the arm64 binary signed successfully but notarization polling hit the rate limit after ~13 minutes, preventing the release from completing.
+
+With `wait: false`, GoReleaser submits the notarization request and proceeds without polling. The binary is still signed and the notarization request is still submitted — Apple processes it asynchronously. macOS verifies notarization status online at runtime (via `spctl` / Gatekeeper), so stapling is not required. For a CLI tool distributed via Homebrew, this is fully sufficient: Apple typically completes notarization within 5-15 minutes, well before most users download a new release.
 
 **Alternatives considered**:
 
 | Alternative | Status | Reason rejected |
 |-------------|--------|-----------------|
-| `wait: false` (fire-and-forget) | Risky | Binary would be published before Apple confirms notarization. First users to download could still face Gatekeeper warnings. |
-| Default 10m timeout | Too tight | Apple's service occasionally takes >10 minutes. A 20m timeout provides safety margin without being excessive. |
+| `wait: true` with `timeout: 20m` | Originally chosen, failed in production | quill's polling exhausts Apple's hourly API rate limit, causing 429 errors that fail the release. |
+| `wait: true` with longer timeout | Same problem | The issue is polling frequency, not timeout duration. A longer timeout means more polls and faster rate limit exhaustion. |
+| Retry after rate limit reset | Viable but fragile | Requires manual re-run ~1 hour later for every release. Unacceptable for CI automation. |
 
 ## Decision 4: Credential Format and Secrets
 
@@ -106,8 +109,7 @@ notarize:
         issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
         key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
         key: "{{.Env.MACOS_NOTARY_KEY}}"
-        wait: true
-        timeout: 20m
+        wait: false
 ```
 
 ### `.github/workflows/release.yml` Addition
