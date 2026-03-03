@@ -76,7 +76,7 @@ jobs:
 
       - name: Download darwin archives
         run: |
-          gh release download "${GITHUB_REF_NAME}" --pattern "gaze_*_darwin_*.tar.gz" --dir ./artifacts
+          gh release download "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" --pattern "gaze_*_darwin_*.tar.gz" --dir ./artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -121,10 +121,10 @@ jobs:
       - name: Replace release assets and update checksums
         run: |
           # Upload signed darwin archives (replaces unsigned)
-          gh release upload "${GITHUB_REF_NAME}" ./signed/*.tar.gz --clobber
+          gh release upload "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" ./signed/*.tar.gz --clobber
 
           # Download existing checksums
-          gh release download "${GITHUB_REF_NAME}" --pattern "checksums.txt" --dir ./
+          gh release download "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" --pattern "checksums.txt" --dir ./
 
           # Remove darwin lines from checksums (keep linux and other lines)
           grep -v darwin checksums.txt > checksums_updated.txt || true
@@ -136,6 +136,6 @@ jobs:
 
           # Replace checksums file
           mv checksums_updated.txt checksums.txt
-          gh release upload "${GITHUB_REF_NAME}" checksums.txt --clobber
+          gh release upload "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" checksums.txt --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
