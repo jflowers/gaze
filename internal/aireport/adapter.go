@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// maxAdapterOutputBytes caps AI adapter output (subprocess stdout or HTTP
+// response body) at 64 MiB to prevent OOM on unexpectedly large responses.
+const maxAdapterOutputBytes = 64 << 20 // 64 MiB
+
+// maxAdapterStderrBytes caps stderr included in error messages at 512 bytes
+// to avoid leaking secrets from AI CLI output into error strings.
+const maxAdapterStderrBytes = 512
+
 // AIAdapter formats an analysis payload using an external AI CLI or API.
 // Implementations must be safe to call with a context that may be cancelled.
 type AIAdapter interface {
@@ -100,9 +108,29 @@ func (f *FakeAdapter) Format(_ context.Context, systemPrompt string, payload io.
 		SystemPrompt: systemPrompt,
 		Payload:      payloadBytes,
 	})
+	// Read Err and Response under the lock so concurrent mutations are safe.
+	err := f.Err
+	resp := f.Response
 	f.mu.Unlock()
-	if f.Err != nil {
-		return "", f.Err
+	if err != nil {
+		return "", err
 	}
-	return f.Response, nil
+	return resp, nil
+}
+
+// AdapterValidator is an optional interface that adapters may implement to
+// perform pre-flight validation before the analysis pipeline runs. CLI-based
+// adapters use it to verify the binary is on PATH (FR-012).
+type AdapterValidator interface {
+	ValidateBinary() error
+}
+
+// ValidateAdapterBinary calls adapter.ValidateBinary() if the adapter
+// implements AdapterValidator. Returns nil for adapters that don't (e.g.
+// OllamaAdapter, FakeAdapter).
+func ValidateAdapterBinary(adapter AIAdapter) error {
+	if v, ok := adapter.(AdapterValidator); ok {
+		return v.ValidateBinary()
+	}
+	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 )
@@ -122,13 +121,4 @@ func TestNewAdapter_AcceptsAllValidNames(t *testing.T) {
 		}
 		_ = adapter
 	}
-}
-
-// TestFakeAdapter_ImplementsAIAdapter ensures FakeAdapter satisfies the
-// AIAdapter interface at compile time (also enforced by package-level var _ check).
-func TestFakeAdapter_ImplementsAIAdapter(t *testing.T) {
-	// Also verify via io.Reader argument type compatibility.
-	fa := &FakeAdapter{Response: "ok"}
-	var r io.Reader = strings.NewReader("test")
-	_, _ = fa.Format(context.Background(), "", r)
 }

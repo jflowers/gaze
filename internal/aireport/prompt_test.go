@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// scaffoldPromptPath is the path to the canonical gaze-reporter.md in the
+// scaffoldPromptRelPath is the path to the canonical gaze-reporter.md in the
 // scaffold package, relative to the module root.
 const scaffoldPromptRelPath = "internal/scaffold/assets/agents/gaze-reporter.md"
 
@@ -103,7 +103,7 @@ func TestLoadPrompt_EmbeddedDefaultHasNoFrontmatter(t *testing.T) {
 //
 //	cp internal/scaffold/assets/agents/gaze-reporter.md internal/aireport/assets/agents/gaze-reporter.md
 func TestEmbeddedPromptMatchesScaffold(t *testing.T) {
-	modRoot := findModuleRootForTest(t)
+	modRoot := findModuleRoot(t)
 	scaffoldPath := filepath.Join(modRoot, scaffoldPromptRelPath)
 
 	scaffoldData, err := os.ReadFile(scaffoldPath)
@@ -120,37 +120,18 @@ func TestEmbeddedPromptMatchesScaffold(t *testing.T) {
 	}
 }
 
-// findModuleRootForTest walks upward from the test's working directory to
-// find the directory containing go.mod.
-func findModuleRootForTest(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("go.mod not found")
-		}
-		dir = parent
-	}
-}
-
-// TestStripFrontmatter_RemovesBlock verifies the stripping logic directly.
+// TestStripFrontmatter_RemovesBlock verifies the stripping logic directly
+// using exact equality assertions.
 func TestStripFrontmatter_RemovesBlock(t *testing.T) {
 	cases := []struct {
 		name    string
 		input   string
-		wantOut string // expected content after stripping (exact match)
+		wantOut string // expected exact output after stripping
 	}{
 		{
 			name:    "standard YAML block",
 			input:   "---\nkey: value\n---\n\n# Body",
-			wantOut: "# Body",
+			wantOut: "\n# Body",
 		},
 		{
 			name:    "no frontmatter",
@@ -167,11 +148,8 @@ func TestStripFrontmatter_RemovesBlock(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := stripFrontmatter(tc.input)
-			if !strings.Contains(got, tc.wantOut) {
-				t.Errorf("expected %q in output, got: %q", tc.wantOut, got)
-			}
-			if strings.HasPrefix(got, "---") && tc.wantOut != "---\nno closing" {
-				t.Errorf("result starts with frontmatter delimiter: %q", got)
+			if got != tc.wantOut {
+				t.Errorf("stripFrontmatter(%q):\nwant: %q\ngot:  %q", tc.input, tc.wantOut, got)
 			}
 		})
 	}

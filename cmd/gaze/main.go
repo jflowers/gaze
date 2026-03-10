@@ -1250,9 +1250,9 @@ func runReport(p reportParams) error {
 		Timeout: timeout,
 	}
 
-	// Resolve AI adapter (validates allowlist, but only in text mode).
-	// In text mode, also verify the binary is on PATH before running the full
-	// analysis pipeline (FR-012), so the user gets an immediate error.
+	// Resolve AI adapter (validates allowlist name). The pre-flight binary
+	// check (FR-012) runs inside aireport.Run, before the analysis pipeline,
+	// via ValidateAdapterBinary.
 	var adapter aireport.AIAdapter
 	var systemPrompt string
 	if p.format != "json" {
@@ -1295,11 +1295,7 @@ func runReport(p reportParams) error {
 		runFn = aireport.Run
 	}
 
-	if err := runFn(opts); err != nil {
-		return err
-	}
-
-	return nil
+	return runFn(opts)
 }
 
 // newReportCmd creates the "report" subcommand that orchestrates gaze's four
@@ -1332,8 +1328,13 @@ Examples:
   gaze report ./... --ai=gemini --model=gemini-2.5-pro
   gaze report ./... --ai=ollama --model=llama3.2
   gaze report ./... --format=json`,
-		Args: cobra.MinimumNArgs(1),
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default package pattern is ./... when none specified (FR-014).
+			if len(args) == 0 {
+				args = []string{"./..."}
+			}
+
 			// Build *int threshold values using cmd.Flags().Changed() to
 			// distinguish absent (nil) from explicitly-set zero.
 			var maxCrapload, maxGazeCrapload, minContractCoverage *int

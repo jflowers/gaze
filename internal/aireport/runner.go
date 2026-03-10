@@ -66,12 +66,23 @@ type RunnerOptions struct {
 // writes that to opts.Stdout and optionally to $GITHUB_STEP_SUMMARY.
 //
 // Returns an error when:
+//   - The AI adapter binary is not on PATH (FR-012, text mode only; checked before analysis).
 //   - No packages match the patterns (FR-013).
 //   - The AI adapter returns empty output (FR-016, text mode only).
 //   - The AI adapter invocation fails (text mode only).
 func Run(opts RunnerOptions) error {
 	if opts.Format != "text" && opts.Format != "json" {
 		opts.Format = "text"
+	}
+
+	// Pre-flight binary check (FR-012): verify the AI CLI is on PATH in text
+	// mode BEFORE running the analysis pipeline (which may take minutes).
+	// AnalyzeFunc tests override the pipeline; ValidateAdapterBinary is still
+	// called because opts.Adapter is a FakeAdapter that always returns nil.
+	if opts.Format == "text" && opts.Adapter != nil {
+		if err := ValidateAdapterBinary(opts.Adapter); err != nil {
+			return err
+		}
 	}
 
 	// Step 1: Run the analysis pipeline to produce the payload.

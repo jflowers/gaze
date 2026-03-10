@@ -64,9 +64,10 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 	}
 
 	// Validate the host URL to prevent SSRF from a malformed OLLAMA_HOST value.
+	// Restrict to http/https schemes to reject ftp://, file://, etc.
 	baseURL, err := url.Parse(host)
-	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
-		return "", fmt.Errorf("invalid ollama host URL %q: must be an absolute URL (e.g. http://localhost:11434)", host)
+	if err != nil || (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.Host == "" {
+		return "", fmt.Errorf("invalid ollama host URL %q: must be an absolute http or https URL (e.g. http://localhost:11434)", host)
 	}
 	generateURL := baseURL.JoinPath("/api/generate").String()
 
