@@ -1,31 +1,14 @@
 package aireport
 
-import (
-	"encoding/json"
-	"math"
-)
-
-// crapSummaryJSON is used to extract summary fields from the CRAP payload.
-type crapSummaryJSON struct {
-	Summary struct {
-		CRAPload     int  `json:"crapload"`
-		GazeCRAPload *int `json:"gaze_crapload"`
-	} `json:"summary"`
-}
-
-// qualitySummaryJSON is used to extract summary fields from the quality payload.
-type qualitySummaryJSON struct {
-	QualitySummary *struct {
-		AverageContractCoverage float64 `json:"average_contract_coverage"`
-	} `json:"quality_summary"`
-}
-
 // EvaluateThresholds checks ThresholdConfig against ReportPayload summary
 // data. It returns a slice of ThresholdResult values (one per non-nil
 // threshold) and a boolean indicating whether all thresholds passed.
-// Thresholds that cannot be evaluated (e.g., because the corresponding
-// payload step failed) are treated as passed with a note that the actual
-// value is 0.
+//
+// The typed values in payload.Summary are used directly — no JSON
+// unmarshalling is required. Summary fields are populated by the analysis
+// pipeline step functions before EvaluateThresholds is called.
+//
+// Thresholds that are nil in cfg are skipped entirely.
 func EvaluateThresholds(cfg ThresholdConfig, payload *ReportPayload) ([]ThresholdResult, bool) {
 	if cfg.MaxCrapload == nil && cfg.MaxGazeCrapload == nil && cfg.MinContractCoverage == nil {
 		return nil, true
@@ -34,39 +17,20 @@ func EvaluateThresholds(cfg ThresholdConfig, payload *ReportPayload) ([]Threshol
 	var results []ThresholdResult
 	allPassed := true
 
-	// Extract CRAP summary if payload has CRAP data.
-	var crapActual int
-	var gazeCRAPActual int
-	var hasGazeCRAP bool
-	if payload != nil && len(payload.CRAP) > 0 {
-		var cs crapSummaryJSON
-		if err := json.Unmarshal(payload.CRAP, &cs); err == nil {
-			crapActual = cs.Summary.CRAPload
-			if cs.Summary.GazeCRAPload != nil {
-				gazeCRAPActual = *cs.Summary.GazeCRAPload
-				hasGazeCRAP = true
-			}
-		}
-	}
-
-	// Extract quality summary if payload has quality data.
-	var avgCovActual int
-	if payload != nil && len(payload.Quality) > 0 {
-		var qs qualitySummaryJSON
-		if err := json.Unmarshal(payload.Quality, &qs); err == nil && qs.QualitySummary != nil {
-			avgCovActual = int(math.Round(qs.QualitySummary.AverageContractCoverage))
-		}
+	var summary ReportSummary
+	if payload != nil {
+		summary = payload.Summary
 	}
 
 	if cfg.MaxCrapload != nil {
 		limit := *cfg.MaxCrapload
-		passed := crapActual <= limit
+		passed := summary.CRAPload <= limit
 		if !passed {
 			allPassed = false
 		}
 		results = append(results, ThresholdResult{
 			Name:   "CRAPload",
-			Actual: crapActual,
+			Actual: summary.CRAPload,
 			Limit:  limit,
 			Passed: passed,
 		})
@@ -74,17 +38,13 @@ func EvaluateThresholds(cfg ThresholdConfig, payload *ReportPayload) ([]Threshol
 
 	if cfg.MaxGazeCrapload != nil {
 		limit := *cfg.MaxGazeCrapload
-		actual := 0
-		if hasGazeCRAP {
-			actual = gazeCRAPActual
-		}
-		passed := actual <= limit
+		passed := summary.GazeCRAPload <= limit
 		if !passed {
 			allPassed = false
 		}
 		results = append(results, ThresholdResult{
 			Name:   "GazeCRAPload",
-			Actual: actual,
+			Actual: summary.GazeCRAPload,
 			Limit:  limit,
 			Passed: passed,
 		})
@@ -92,13 +52,13 @@ func EvaluateThresholds(cfg ThresholdConfig, payload *ReportPayload) ([]Threshol
 
 	if cfg.MinContractCoverage != nil {
 		limit := *cfg.MinContractCoverage
-		passed := avgCovActual >= limit
+		passed := summary.AvgContractCoverage >= limit
 		if !passed {
 			allPassed = false
 		}
 		results = append(results, ThresholdResult{
 			Name:   "AvgContractCoverage",
-			Actual: avgCovActual,
+			Actual: summary.AvgContractCoverage,
 			Limit:  limit,
 			Passed: passed,
 		})

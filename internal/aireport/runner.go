@@ -40,6 +40,11 @@ type RunnerOptions struct {
 	// Stderr receives progress signals, threshold summaries, and warnings.
 	Stderr io.Writer
 
+	// Thresholds holds the CI gate configuration. EvaluateThresholds is
+	// called after the pipeline completes. Results are printed to Stderr.
+	// When any threshold fails, Run returns a non-nil error.
+	Thresholds ThresholdConfig
+
 	// StepSummaryPath is the value of $GITHUB_STEP_SUMMARY, if set.
 	// Empty means Step Summary output is disabled.
 	StepSummaryPath string
@@ -85,11 +90,14 @@ func Run(opts RunnerOptions) error {
 		return err
 	}
 
-	// Step 2: --format=json: write payload to stdout and return.
+	// Step 2: --format=json: write payload to stdout, evaluate thresholds, return.
 	if opts.Format == "json" {
 		enc := json.NewEncoder(opts.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(payload)
+		if err := enc.Encode(payload); err != nil {
+			return err
+		}
+		return evaluateAndPrintThresholds(opts.Thresholds, payload, opts.Stderr)
 	}
 
 	// Step 3: --format=text: invoke AI adapter.
@@ -126,6 +134,24 @@ func Run(opts RunnerOptions) error {
 		WriteStepSummary(opts.StepSummaryPath, formatted, opts.Stderr)
 	}
 
+	return evaluateAndPrintThresholds(opts.Thresholds, payload, opts.Stderr)
+}
+
+// evaluateAndPrintThresholds evaluates cfg thresholds against payload and
+// prints results to stderr. Returns a non-nil error if any threshold failed.
+// When cfg has no thresholds set, it is a no-op.
+func evaluateAndPrintThresholds(cfg ThresholdConfig, payload *ReportPayload, stderr io.Writer) error {
+	results, allPassed := EvaluateThresholds(cfg, payload)
+	for _, r := range results {
+		status := "PASS"
+		if !r.Passed {
+			status = "FAIL"
+		}
+		_, _ = fmt.Fprintf(stderr, "%s: %d/%d (%s)\n", r.Name, r.Actual, r.Limit, status)
+	}
+	if !allPassed {
+		return fmt.Errorf("one or more quality thresholds failed")
+	}
 	return nil
 }
 
@@ -151,18 +177,21 @@ func runProductionPipeline(patterns []string, moduleDir string, stderr io.Writer
 
 	// Step 1: CRAP analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (CRAP)")
-	if crapJSON, err := runCRAPStep(patterns, moduleDir, stderr); err != nil {
+	if crapRes, err := runCRAPStep(patterns, moduleDir, stderr); err != nil {
 		payload.Errors.CRAP = errString(err)
 	} else {
-		payload.CRAP = crapJSON
+		payload.CRAP = crapRes.JSON
+		payload.Summary.CRAPload = crapRes.CRAPload
+		payload.Summary.GazeCRAPload = crapRes.GazeCRAPload
 	}
 
 	// Step 2: Quality analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (Quality)")
-	if qualityJSON, err := runQualityStep(patterns, moduleDir, stderr); err != nil {
+	if qualRes, err := runQualityStep(patterns, moduleDir, stderr); err != nil {
 		payload.Errors.Quality = errString(err)
 	} else {
-		payload.Quality = qualityJSON
+		payload.Quality = qualRes.JSON
+		payload.Summary.AvgContractCoverage = qualRes.AvgContractCoverage
 	}
 
 	// Step 3: Classification analysis.

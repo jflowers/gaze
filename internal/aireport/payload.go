@@ -6,9 +6,33 @@ package aireport
 
 import "encoding/json"
 
+// ReportSummary holds pre-extracted threshold-relevant metric values from
+// the analysis pipeline. It is populated during Run() so that
+// EvaluateThresholds can compare typed int values without unmarshalling
+// the raw JSON fields. ReportSummary is internal to the pipeline; it is
+// NOT serialised to the --format=json output (json:"-").
+type ReportSummary struct {
+	// CRAPload is the number of functions whose CRAP score meets or exceeds
+	// the configured threshold (from crap.Report.Summary.CRAPload).
+	CRAPload int
+
+	// GazeCRAPload is the number of Q4 functions (high complexity, low
+	// coverage) from crap.Report.Summary.GazeCRAPload.
+	GazeCRAPload int
+
+	// AvgContractCoverage is the average contract coverage percentage across
+	// all assessed packages (from quality.Summary.AvgContractCoverage).
+	AvgContractCoverage int
+}
+
 // ReportPayload is the combined analysis data passed to the AI adapter
 // and written to stdout in --format=json mode.
 type ReportPayload struct {
+	// Summary holds pre-extracted threshold-relevant values, populated during
+	// pipeline execution. Used by EvaluateThresholds to avoid unmarshalling
+	// the raw JSON fields. Not serialised in --format=json output.
+	Summary ReportSummary `json:"-"`
+
 	// CRAP holds the raw JSON from gaze crap --format=json.
 	// Nil when the CRAP analysis step failed.
 	CRAP json.RawMessage `json:"crap"`
