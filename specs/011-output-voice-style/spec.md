@@ -148,7 +148,7 @@ A developer reads the prioritized recommendations section. Each recommendation i
 
 - What happens when a section has no data? The section is omitted entirely -- no header, no emoji, no placeholder text.
 - What happens when the report contains only one section (e.g., only CRAP data)? The report still uses the full title line, metadata line, and the single section with its emoji marker.
-- What happens when a grade falls on the boundary between two severity levels? The voice standard defines explicit grade-to-emoji mappings: 🟢 for B+ and above, 🟡 for B through C, 🔴 for C- and below. Boundary behavior is deterministic.
+- What happens when a grade falls on the boundary between two severity levels? The voice standard defines explicit grade-to-emoji mappings: 🟢 for grades B+, A-, A; 🟡 for grades B, B-, C+, C; 🔴 for grades C-, D, F. Boundary behavior is deterministic.
 - What happens when a recommendation has no clear severity? Default to 🟡 (moderate) to avoid both under-alarming and over-alarming.
 
 ## Requirements *(mandatory)*
@@ -156,7 +156,7 @@ A developer reads the prioritized recommendations section. Each recommendation i
 ### Functional Requirements
 
 - **FR-001**: Report output MUST use designated emoji prefixes for all major section headers. The mapping is: 🔍 (report title), 📊 (CRAP summary), 🧪 (quality summary), 🏷️ (classification summary), 🏥 (overall health assessment).
-- **FR-002**: Report output MUST use colored circle emojis as severity indicators throughout: 🟢 (good/safe — grades B+ and above), 🟡 (moderate/warning — grades B through C), 🔴 (critical/danger — grades C- and below), ⚪ (neutral/no data/N/A).
+- **FR-002**: Report output MUST use colored circle emojis as severity indicators throughout: 🟢 (good/safe — grades B+, A-, A), 🟡 (moderate/warning — grades B, B-, C+, C), 🔴 (critical/danger — grades C-, D, F), ⚪ (neutral/no data/N/A).
 - **FR-003**: Report output MUST use letter grades (A, A-, B+, B, B-, C+, C, C-, D, F) paired with their corresponding colored circle emoji in the health assessment scorecard.
 - **FR-004**: Report tone MUST be approachable and conversational while remaining precise. Interpretive sentences are allowed (and encouraged) after data tables, limited to one concise sentence per table. The following anti-patterns are banned: excessive exclamation marks (zero or at most one per full report), slang or meme references, puns on metric names, and first-person pronouns ("I", "we").
 - **FR-005**: Report output MUST NOT include pedagogical explanations of what CRAP scores, quadrants, or coverage metrics mean. The reader is assumed to be a developer who already understands the concepts.
