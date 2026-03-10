@@ -318,6 +318,51 @@ This creates 2 files in `.opencode/`:
 - `.opencode/agents/gaze-reporter.md` -- Quality report agent
 - `.opencode/command/gaze.md` -- `/gaze` command
 
+### `gaze report` -- AI-Powered Quality Report
+
+Orchestrate all four gaze analysis operations (CRAP, quality, classification, docscan) and pipe the combined JSON payload to an external AI CLI for formatting into a human-readable markdown report. Optionally appends the report to `$GITHUB_STEP_SUMMARY` for visibility in the GitHub Actions UI.
+
+```bash
+# Generate a report using claude
+gaze report ./... --ai=claude
+
+# Use gemini with a specific model
+gaze report ./... --ai=gemini --model=gemini-2.5-pro
+
+# Use local ollama (model required)
+gaze report ./... --ai=ollama --model=llama3.2
+
+# JSON output (no AI required)
+gaze report ./... --format=json
+
+# CI mode: fail if quality thresholds are breached
+gaze report ./... --ai=claude --max-crapload=10 --max-gaze-crapload=5 --min-contract-coverage=60
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--ai` | AI adapter: `claude`, `gemini`, or `ollama` (required in text mode) |
+| `--model` | Model name (required for ollama; optional for claude/gemini) |
+| `--ai-timeout` | AI adapter timeout (default: `10m`) |
+| `--format` | Output format: `text` or `json` (default: `text`) |
+| `--max-crapload` | Fail if project CRAPload exceeds N (zero is a live threshold) |
+| `--max-gaze-crapload` | Fail if GazeCRAPload exceeds N (zero is a live threshold) |
+| `--min-contract-coverage` | Fail if average contract coverage is below N% |
+
+**GitHub Actions example:**
+
+```yaml
+- name: Gaze quality report
+  run: gaze report ./... --ai=claude --max-crapload=15 --min-contract-coverage=50
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+```
+
+When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), the formatted report is appended to the workflow step summary. Write failures are non-fatal — the command exits 0 with a warning on stderr.
+
 ### `gaze self-check` -- Self-Analysis
 
 Run CRAP analysis on Gaze's own source code, serving as both a dogfooding exercise and a code quality gate.

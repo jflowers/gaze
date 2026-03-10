@@ -20,8 +20,17 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// runCRAPStep runs the CRAP analysis pipeline and returns the JSON output.
-func runCRAPStep(patterns []string, moduleDir string, stderr io.Writer) (json.RawMessage, error) {
+// crapStepResult holds the outputs of runCRAPStep.
+type crapStepResult struct {
+	JSON         json.RawMessage
+	CRAPload     int
+	GazeCRAPload int
+}
+
+// runCRAPStep runs the CRAP analysis pipeline and returns the JSON output
+// alongside the typed CRAPload and GazeCRAPload values for threshold
+// evaluation (avoiding a second JSON unmarshal in EvaluateThresholds).
+func runCRAPStep(patterns []string, moduleDir string, stderr io.Writer) (*crapStepResult, error) {
 	opts := crap.DefaultOptions()
 	opts.Stderr = stderr
 
@@ -29,14 +38,34 @@ func runCRAPStep(patterns []string, moduleDir string, stderr io.Writer) (json.Ra
 	if err != nil {
 		return nil, fmt.Errorf("CRAP analysis: %w", err)
 	}
-	return captureJSON(func(w io.Writer) error {
+
+	raw, err := captureJSON(func(w io.Writer) error {
 		return crap.WriteJSON(w, rpt)
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	res := &crapStepResult{
+		JSON:     raw,
+		CRAPload: rpt.Summary.CRAPload,
+	}
+	if rpt.Summary.GazeCRAPload != nil {
+		res.GazeCRAPload = *rpt.Summary.GazeCRAPload
+	}
+	return res, nil
+}
+
+// qualityStepResult holds the outputs of runQualityStep.
+type qualityStepResult struct {
+	JSON                json.RawMessage
+	AvgContractCoverage int
 }
 
 // runQualityStep runs the quality pipeline across all matched packages and
-// returns the aggregated JSON output.
-func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (json.RawMessage, error) {
+// returns the aggregated JSON output alongside the typed AvgContractCoverage
+// value for threshold evaluation.
+func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qualityStepResult, error) {
 	pkgPaths, err := resolvePackagePaths(patterns, moduleDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolving packages for quality: %w", err)
@@ -54,9 +83,21 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (json
 	}
 
 	summary := quality.BuildPackageSummary(allReports)
-	return captureJSON(func(w io.Writer) error {
+	raw, err := captureJSON(func(w io.Writer) error {
 		return quality.WriteJSON(w, allReports, summary)
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	avgCov := 0
+	if summary != nil {
+		avgCov = int(summary.AverageContractCoverage)
+	}
+	return &qualityStepResult{
+		JSON:                raw,
+		AvgContractCoverage: avgCov,
+	}, nil
 }
 
 // runQualityForPackage runs the quality pipeline on a single package.

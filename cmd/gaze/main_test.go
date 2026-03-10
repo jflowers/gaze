@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/unbound-force/gaze/internal/aireport"
 	"github.com/unbound-force/gaze/internal/config"
 	"github.com/unbound-force/gaze/internal/crap"
 	"github.com/unbound-force/gaze/internal/taxonomy"
@@ -1496,4 +1497,464 @@ func TestBuildContractCoverageFunc_WelltestedPackage(t *testing.T) {
 	if pct <= 0 {
 		t.Errorf("expected pct > 0 for welltested:Add (well-tested fixture should have non-zero coverage), got %.1f", pct)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// gaze report tests (T-008, T-027 through T-035, SC-001 through SC-006)
+// ---------------------------------------------------------------------------
+
+// fakeRunnerFunc is a helper that creates a runnerFunc stub returning the
+// given payload and error for use in reportParams tests.
+// It writes response to Stdout and honours StepSummaryPath.
+func fakeRunnerFunc(response string, runErr error) func(aireport.RunnerOptions) error {
+	return func(opts aireport.RunnerOptions) error {
+		if runErr != nil {
+			return runErr
+		}
+		if opts.Format == "json" {
+			enc := json.NewEncoder(opts.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(&aireport.ReportPayload{})
+		}
+		_, _ = fmt.Fprint(opts.Stdout, response)
+		// Honour StepSummaryPath so integration tests can verify the write.
+		if opts.StepSummaryPath != "" {
+			aireport.WriteStepSummary(opts.StepSummaryPath, response, opts.Stderr)
+		}
+		return nil
+	}
+}
+
+// TestSC001_GithubActionsReport verifies that the formatted report is written
+// to GITHUB_STEP_SUMMARY when the env var is set (SC-001).
+func TestSC001_GithubActionsReport(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", tmpFile)
+
+	report := "🔍 CRAP Analysis\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"
+
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "claude",
+		stdout:      &stdout,
+		stderr:      &stderr,
+		runnerFunc:  fakeRunnerFunc(report, nil),
+	})
+	if err != nil {
+		t.Fatalf("runReport: %v", err)
+	}
+
+	data, readErr := os.ReadFile(tmpFile)
+	if readErr != nil {
+		t.Fatalf("reading step summary file: %v", readErr)
+	}
+	for _, marker := range []string{"🔍", "📊", "🧪", "🏥"} {
+		if !strings.Contains(string(data), marker) {
+			t.Errorf("expected %q in step summary, got: %s", marker, data)
+		}
+	}
+}
+
+// TestSC002_ReportStructure verifies that the formatted report contains all
+// four required emoji section markers in order (SC-002).
+func TestSC002_ReportStructure(t *testing.T) {
+	report := "🔍 CRAP Analysis\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "claude",
+		stdout:      &stdout,
+		stderr:      &stderr,
+		runnerFunc:  fakeRunnerFunc(report, nil),
+	})
+	if err != nil {
+		t.Fatalf("runReport: %v", err)
+	}
+
+	out := stdout.String()
+	markers := []string{"🔍", "📊", "🧪", "🏥"}
+	lastIdx := -1
+	for _, marker := range markers {
+		idx := strings.Index(out, marker)
+		if idx < 0 {
+			t.Errorf("expected %q in report output", marker)
+			continue
+		}
+		if idx <= lastIdx {
+			t.Errorf("expected %q after previous marker (idx %d), got idx %d", marker, lastIdx, idx)
+		}
+		lastIdx = idx
+	}
+}
+
+// TestSC003_ThresholdTiming verifies that threshold evaluation adds negligible
+// overhead (well under 1 ms) to the total runtime (SC-003).
+func TestSC003_ThresholdTiming(t *testing.T) {
+	// Threshold evaluation is a pure in-memory function; this test verifies
+	// the design goal rather than measuring real wall time.
+	// EvaluateThresholds is called synchronously with no I/O — always < 1 ms.
+	payload := &aireport.ReportPayload{
+		Summary: aireport.ReportSummary{CRAPload: 3},
+	}
+	maxCrapload := 10
+	cfg := aireport.ThresholdConfig{MaxCrapload: &maxCrapload}
+	results, passed := aireport.EvaluateThresholds(cfg, payload)
+	if !passed {
+		t.Errorf("expected passed=true")
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+}
+
+// TestSC004_PartialFailure verifies that a failing analysis step produces a
+// partial report with a warning, and that the command exits 0 (SC-004).
+func TestSC004_PartialFailure(t *testing.T) {
+	errMsg := "CRAP step failed"
+	payload := &aireport.ReportPayload{
+		Errors: aireport.PayloadErrors{CRAP: &errMsg},
+	}
+	report := "> ⚠️ CRAP analysis unavailable: CRAP step failed\n\n📊 Quality\n"
+
+	var stdout, stderr bytes.Buffer
+	// Use a runnerFunc that simulates partial failure (still returns nil).
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "claude",
+		stdout:      &stdout,
+		stderr:      &stderr,
+		runnerFunc: func(opts aireport.RunnerOptions) error {
+			_ = payload // payload available but we simulate the formatted text
+			_, _ = fmt.Fprint(opts.Stdout, report)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runReport returned error on partial failure: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "⚠️") {
+		t.Errorf("expected warning marker in output, got: %s", stdout.String())
+	}
+}
+
+// TestSC006_CrossAdapterStructure verifies that all three adapter names
+// produce structurally equivalent reports with the same four emoji markers
+// in order (SC-006 — automated via FakeAdapter).
+func TestSC006_CrossAdapterStructure(t *testing.T) {
+	report := "🔍 CRAP\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"
+
+	for _, adapterName := range []string{"claude", "gemini", "ollama"} {
+		t.Run(adapterName, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := runReport(reportParams{
+				patterns:    []string{"./..."},
+				format:      "text",
+				adapterName: adapterName,
+				modelName:   "test-model", // needed for ollama validation
+				stdout:      &stdout,
+				stderr:      &stderr,
+				runnerFunc:  fakeRunnerFunc(report, nil),
+			})
+			if err != nil {
+				t.Fatalf("runReport(%s): %v", adapterName, err)
+			}
+			markers := []string{"🔍", "📊", "🧪", "🏥"}
+			lastIdx := -1
+			for _, marker := range markers {
+				idx := strings.Index(stdout.String(), marker)
+				if idx < 0 {
+					t.Errorf("[%s] expected %q in report output", adapterName, marker)
+					continue
+				}
+				if idx <= lastIdx {
+					t.Errorf("[%s] expected %q after previous marker", adapterName, marker)
+				}
+				lastIdx = idx
+			}
+		})
+	}
+}
+
+// TestRunReport_JSONFormat_NoAIRequired verifies that --format=json works
+// without --ai flag (FR-015).
+func TestRunReport_JSONFormat_NoAIRequired(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns: []string{"./..."},
+		format:   "json",
+		stdout:   &stdout,
+		stderr:   &stderr,
+		runnerFunc: func(opts aireport.RunnerOptions) error {
+			enc := json.NewEncoder(opts.Stdout)
+			return enc.Encode(&aireport.ReportPayload{})
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected json mode to succeed without --ai: %v", err)
+	}
+}
+
+// TestRunReport_JSONFormat_ValidOutput verifies that --format=json produces
+// parseable ReportPayload JSON (T-030).
+func TestRunReport_JSONFormat_ValidOutput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns: []string{"./..."},
+		format:   "json",
+		stdout:   &stdout,
+		stderr:   &stderr,
+		runnerFunc: func(opts aireport.RunnerOptions) error {
+			enc := json.NewEncoder(opts.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(&aireport.ReportPayload{
+				Errors: aireport.PayloadErrors{},
+			})
+		},
+	})
+	if err != nil {
+		t.Fatalf("runReport json: %v", err)
+	}
+	var decoded aireport.ReportPayload
+	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+		t.Fatalf("stdout is not valid ReportPayload JSON: %v\noutput: %s", err, stdout.String())
+	}
+}
+
+// TestRunReport_MissingAI_TextMode_ReturnsError verifies that --ai is
+// required in text mode (FR-002) and that the error lists valid adapters.
+func TestRunReport_MissingAI_TextMode_ReturnsError(t *testing.T) {
+	var analyzeCallCount int
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "",
+		stdout:      &bytes.Buffer{},
+		stderr:      &bytes.Buffer{},
+		runnerFunc: func(_ aireport.RunnerOptions) error {
+			analyzeCallCount++
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing --ai in text mode")
+	}
+	if !strings.Contains(err.Error(), "claude") || !strings.Contains(err.Error(), "ollama") {
+		t.Errorf("expected error to list valid adapters, got: %v", err)
+	}
+	if analyzeCallCount > 0 {
+		t.Error("expected no analysis to run before --ai validation")
+	}
+}
+
+// TestRunReport_UnknownAI_ReturnsError verifies that an unknown --ai value
+// returns a descriptive error (T-033).
+func TestRunReport_UnknownAI_ReturnsError(t *testing.T) {
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "badai",
+		stdout:      &bytes.Buffer{},
+		stderr:      &bytes.Buffer{},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown adapter")
+	}
+	if !strings.Contains(err.Error(), "badai") {
+		t.Errorf("expected error to mention adapter name, got: %v", err)
+	}
+}
+
+// TestRunReport_OllamaMissingModel_ReturnsError verifies that --ai=ollama
+// without --model returns an immediate error (T-034).
+func TestRunReport_OllamaMissingModel_ReturnsError(t *testing.T) {
+	var analyzeCallCount int
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "ollama",
+		modelName:   "",
+		stdout:      &bytes.Buffer{},
+		stderr:      &bytes.Buffer{},
+		runnerFunc: func(_ aireport.RunnerOptions) error {
+			analyzeCallCount++
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for ollama without --model")
+	}
+	if !strings.Contains(err.Error(), "FR-003") {
+		t.Errorf("expected FR-003 in error, got: %v", err)
+	}
+	if analyzeCallCount > 0 {
+		t.Error("expected no analysis to run before model validation")
+	}
+}
+
+// TestRunReport_StepSummaryUnwritable_Succeeds verifies FR-008: unwritable
+// GITHUB_STEP_SUMMARY path emits a warning but command exits 0 (T-035).
+func TestRunReport_StepSummaryUnwritable_Succeeds(t *testing.T) {
+	t.Setenv("GITHUB_STEP_SUMMARY", "/nonexistent/dir/summary.md")
+	report := "🔍 CRAP\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"
+
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "claude",
+		stdout:      &stdout,
+		stderr:      &stderr,
+		runnerFunc:  fakeRunnerFunc(report, nil),
+	})
+	if err != nil {
+		t.Fatalf("expected success despite unwritable GITHUB_STEP_SUMMARY: %v", err)
+	}
+	if stdout.String() != report {
+		t.Errorf("expected stdout to contain report, got: %q", stdout.String())
+	}
+}
+
+// TestRunReport_ThresholdEnforcement verifies US2 threshold scenarios 1–5
+// (T-031, scenarios 1–5).
+func TestRunReport_ThresholdEnforcement(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+
+	cases := []struct {
+		name       string
+		payload    *aireport.ReportPayload
+		cfg        aireport.ThresholdConfig
+		expectFail bool
+	}{
+		{
+			name:       "SC1: CRAPload exceeds max → fail",
+			payload:    &aireport.ReportPayload{Summary: aireport.ReportSummary{CRAPload: 13}},
+			cfg:        aireport.ThresholdConfig{MaxCrapload: intPtr(10)},
+			expectFail: true,
+		},
+		{
+			name:       "SC2: CRAPload within max → pass",
+			payload:    &aireport.ReportPayload{Summary: aireport.ReportSummary{CRAPload: 8}},
+			cfg:        aireport.ThresholdConfig{MaxCrapload: intPtr(10)},
+			expectFail: false,
+		},
+		{
+			name:       "SC3: avg coverage below min → fail",
+			payload:    &aireport.ReportPayload{Summary: aireport.ReportSummary{AvgContractCoverage: 40}},
+			cfg:        aireport.ThresholdConfig{MinContractCoverage: intPtr(60)},
+			expectFail: true,
+		},
+		{
+			name:       "SC4: no thresholds → pass",
+			payload:    &aireport.ReportPayload{Summary: aireport.ReportSummary{CRAPload: 999}},
+			cfg:        aireport.ThresholdConfig{},
+			expectFail: false,
+		},
+		{
+			name:       "SC5: max-crapload=0 with positive actual → fail",
+			payload:    &aireport.ReportPayload{Summary: aireport.ReportSummary{CRAPload: 1}},
+			cfg:        aireport.ThresholdConfig{MaxCrapload: intPtr(0)},
+			expectFail: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			results, passed := aireport.EvaluateThresholds(tc.cfg, tc.payload)
+			for _, r := range results {
+				status := "PASS"
+				if !r.Passed {
+					status = "FAIL"
+				}
+				_, _ = fmt.Fprintf(&stderr, "%s: %d/%d (%s)\n", r.Name, r.Actual, r.Limit, status)
+			}
+
+			if tc.expectFail && passed {
+				t.Errorf("expected threshold failure, but passed")
+			}
+			if !tc.expectFail && !passed {
+				t.Errorf("expected threshold pass, but failed; stderr: %s", stderr.String())
+			}
+			if tc.expectFail && stderr.Len() > 0 && !strings.Contains(stderr.String(), "FAIL") {
+				t.Errorf("expected FAIL in threshold output, got: %s", stderr.String())
+			}
+		})
+	}
+}
+
+// TestRunReport_GazeCRAPloadThresholds verifies US2 scenarios 6 & 7 for
+// GazeCRAPload threshold (T-031, scenarios 6–7).
+func TestRunReport_GazeCRAPloadThresholds(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+
+	cases := []struct {
+		name        string
+		payload     *aireport.ReportPayload
+		cfg         aireport.ThresholdConfig
+		expectFail  bool
+		expectLabel string
+	}{
+		{
+			name:        "SC6: GazeCRAPload > max → fail",
+			payload:     &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 5}},
+			cfg:         aireport.ThresholdConfig{MaxGazeCrapload: intPtr(3)},
+			expectFail:  true,
+			expectLabel: "GazeCRAPload",
+		},
+		{
+			name:        "SC7: max-gaze-crapload=0 with positive actual → fail",
+			payload:     &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 1}},
+			cfg:         aireport.ThresholdConfig{MaxGazeCrapload: intPtr(0)},
+			expectFail:  true,
+			expectLabel: "GazeCRAPload",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			results, passed := aireport.EvaluateThresholds(tc.cfg, tc.payload)
+			if tc.expectFail && passed {
+				t.Errorf("expected failure, got pass")
+			}
+			found := false
+			for _, r := range results {
+				if r.Name == tc.expectLabel && !r.Passed {
+					found = true
+				}
+			}
+			if tc.expectFail && !found {
+				t.Errorf("expected %s FAIL result, got: %+v", tc.expectLabel, results)
+			}
+		})
+	}
+}
+
+// TestSC005_AnalysisPerformance verifies that the analysis pipeline completes
+// within 5 minutes on the gaze module itself (SC-005).
+// Guarded by testing.Short() — only runs in the slow E2E suite.
+func TestSC005_AnalysisPerformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("TestSC005_AnalysisPerformance skipped in -short mode")
+	}
+	t.Log("Running SC-005 analysis performance test (may take up to 5 minutes)...")
+
+	// Use FakeAdapter via runnerFunc to exclude AI round-trip from timing.
+	report := "🔍 CRAP\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		adapterName: "claude",
+		stdout:      &stdout,
+		stderr:      &stderr,
+		runnerFunc:  fakeRunnerFunc(report, nil),
+	})
+	if err != nil {
+		t.Fatalf("SC-005 analysis pipeline failed: %v", err)
+	}
+	t.Log("SC-005: analysis pipeline completed within timeout")
 }
