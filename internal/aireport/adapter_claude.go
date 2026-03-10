@@ -10,18 +10,21 @@ import (
 	"strings"
 )
 
-// maxAdapterOutputBytes caps AI subprocess stdout at 64 MiB to prevent OOM.
-const maxAdapterOutputBytes = 64 << 20 // 64 MiB
-
-// maxAdapterStderrBytes caps stderr captured in error messages at 512 bytes
-// to avoid leaking secrets from AI CLI output.
-const maxAdapterStderrBytes = 512
-
 // ClaudeAdapter invokes the claude CLI to format the analysis payload.
 // The system prompt is written to a temporary file and passed via
 // --system-prompt-file to avoid OS argument length limits (~13 KB prompt).
 type ClaudeAdapter struct {
 	config AdapterConfig
+}
+
+// ValidateBinary implements AdapterValidator. It checks that the claude binary
+// is available on PATH (FR-012). Call this before running the analysis pipeline
+// to give users an immediate error rather than failing after minutes of work.
+func (a *ClaudeAdapter) ValidateBinary() error {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return fmt.Errorf("claude not found on PATH (FR-012): %w", err)
+	}
+	return nil
 }
 
 // Format implements AIAdapter. It writes the system prompt to a temp file,
@@ -30,11 +33,11 @@ type ClaudeAdapter struct {
 // Arguments are passed as distinct Go strings — no shell interpolation.
 // The temp file is removed in a deferred cleanup after the subprocess exits.
 // Returns an error when:
-//   - claude is not found on PATH (FR-012).
+//   - claude is not found on PATH (detected by ValidateBinary; also checked here as defense).
 //   - The subprocess exits non-zero.
 //   - The output is empty or whitespace (FR-016).
 func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload io.Reader) (string, error) {
-	// Verify claude is available (FR-012).
+	// Resolve claude path (defense-in-depth: ValidateBinary should have run first).
 	claudePath, err := exec.LookPath("claude")
 	if err != nil {
 		return "", fmt.Errorf("claude not found on PATH (FR-012): %w", err)

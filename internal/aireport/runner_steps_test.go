@@ -1,0 +1,120 @@
+package aireport
+
+import (
+	"io"
+	"testing"
+)
+
+// TestResolvePackagePaths_ValidPattern verifies that resolvePackagePaths
+// returns non-empty results for a known-good package pattern.
+// Uses the aireport package itself as the target.
+func TestResolvePackagePaths_ValidPattern(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: loads Go packages")
+	}
+	modRoot := findModuleRoot(t)
+	paths, err := resolvePackagePaths([]string{"github.com/unbound-force/gaze/internal/aireport"}, modRoot)
+	if err != nil {
+		t.Fatalf("resolvePackagePaths: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Error("expected at least one package path, got none")
+	}
+	// Verify test-variant packages are excluded.
+	for _, p := range paths {
+		if len(p) > 5 && p[len(p)-5:] == "_test" {
+			t.Errorf("test variant package leaked into results: %q", p)
+		}
+	}
+}
+
+// TestResolvePackagePaths_EmptyPatterns verifies that an empty pattern list
+// returns an empty result without error.
+func TestResolvePackagePaths_EmptyPatterns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: loads Go packages")
+	}
+	modRoot := findModuleRoot(t)
+	paths, err := resolvePackagePaths([]string{}, modRoot)
+	if err != nil {
+		t.Fatalf("resolvePackagePaths: %v", err)
+	}
+	if len(paths) != 0 {
+		t.Errorf("expected empty result for empty patterns, got: %v", paths)
+	}
+}
+
+// TestLoadGazeConfigBestEffort_AlwaysNonNil verifies that the function always
+// returns a non-nil config, even in a directory with no .gaze.yaml.
+func TestLoadGazeConfigBestEffort_AlwaysNonNil(t *testing.T) {
+	cfg := loadGazeConfigBestEffort()
+	if cfg == nil {
+		t.Error("expected non-nil GazeConfig from loadGazeConfigBestEffort")
+	}
+}
+
+// TestRunCRAPStep_RealPackage verifies that runCRAPStep successfully runs on
+// a real package and returns a non-nil JSON payload.
+// Guarded by testing.Short() — spawns the Go analysis pipeline.
+func TestRunCRAPStep_RealPackage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: runs real CRAP analysis pipeline")
+	}
+	modRoot := findModuleRoot(t)
+	res, err := runCRAPStep(
+		[]string{"github.com/unbound-force/gaze/internal/config"},
+		modRoot,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("runCRAPStep: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil crapStepResult")
+	}
+	if res.JSON == nil {
+		t.Error("expected non-nil JSON from runCRAPStep")
+	}
+}
+
+// TestRunDocscanStep_RealModuleDir verifies that runDocscanStep runs without
+// error on the module root and returns a non-nil JSON payload.
+// Guarded by testing.Short().
+func TestRunDocscanStep_RealModuleDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: runs real docscan pipeline")
+	}
+	modRoot := findModuleRoot(t)
+	raw, err := runDocscanStep(modRoot)
+	if err != nil {
+		t.Fatalf("runDocscanStep: %v", err)
+	}
+	if raw == nil {
+		t.Error("expected non-nil JSON from runDocscanStep")
+	}
+}
+
+// TestRunProductionPipeline_RealPackage verifies that runProductionPipeline
+// returns a non-nil payload and exercises all four steps without panicking.
+// Guarded by testing.Short() — runs the full four-step pipeline.
+func TestRunProductionPipeline_RealPackage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: runs full four-step analysis pipeline")
+	}
+	modRoot := findModuleRoot(t)
+	payload, err := runProductionPipeline(
+		[]string{"github.com/unbound-force/gaze/internal/config"},
+		modRoot,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("runProductionPipeline: %v", err)
+	}
+	if payload == nil {
+		t.Fatal("expected non-nil ReportPayload")
+	}
+	// CRAP step must succeed for a real package.
+	if payload.CRAP == nil && payload.Errors.CRAP == nil {
+		t.Error("expected either CRAP JSON or CRAP error, got both nil")
+	}
+}

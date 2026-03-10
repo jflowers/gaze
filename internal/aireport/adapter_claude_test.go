@@ -112,19 +112,7 @@ func TestClaudeAdapter_NonZeroExit_ReturnsError(t *testing.T) {
 		t.Skip("skipping subprocess test in -short mode")
 	}
 	bin := buildFakeClaude(t)
-	withClaudeOnPath(t, bin)
 
-	// Rename bin to "claude" and inject --exit-error via the config.
-	// The fake binary checks for --exit-error flag.
-	// We can't inject flags via config, so we create a wrapper script.
-	dir := filepath.Dir(bin)
-	wrapperPath := filepath.Join(dir, "claude-wrapper")
-
-	// Create a shell wrapper that calls the fake binary with --exit-error.
-	wrapper := "#!/bin/sh\nexec \"" + bin + "\" --exit-error \"$@\"\n"
-	if err := os.WriteFile(wrapperPath, []byte(wrapper), 0755); err != nil {
-		t.Fatal(err)
-	}
 	// Replace PATH with a dir containing a "claude" that exits non-zero.
 	wrapDir := t.TempDir()
 	claudePath := filepath.Join(wrapDir, "claude")
