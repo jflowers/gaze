@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+// scaffoldPromptPath is the path to the canonical gaze-reporter.md in the
+// scaffold package, relative to the module root.
+const scaffoldPromptRelPath = "internal/scaffold/assets/agents/gaze-reporter.md"
+
 // TestLoadPrompt_LocalFileWithFrontmatter verifies that a local
 // .opencode/agents/gaze-reporter.md with YAML frontmatter is loaded and
 // stripped before returning.
@@ -92,30 +96,70 @@ func TestLoadPrompt_EmbeddedDefaultHasNoFrontmatter(t *testing.T) {
 	}
 }
 
+// TestEmbeddedPromptMatchesScaffold verifies that the embedded default prompt
+// in internal/aireport/assets/agents/gaze-reporter.md matches the canonical
+// copy in internal/scaffold/assets/agents/gaze-reporter.md (T-009: single
+// source of truth). If this test fails, run:
+//
+//	cp internal/scaffold/assets/agents/gaze-reporter.md internal/aireport/assets/agents/gaze-reporter.md
+func TestEmbeddedPromptMatchesScaffold(t *testing.T) {
+	modRoot := findModuleRootForTest(t)
+	scaffoldPath := filepath.Join(modRoot, scaffoldPromptRelPath)
+
+	scaffoldData, err := os.ReadFile(scaffoldPath)
+	if err != nil {
+		t.Fatalf("reading scaffold gaze-reporter.md: %v", err)
+	}
+
+	// defaultPromptRaw is the embedded file content.
+	if defaultPromptRaw != string(scaffoldData) {
+		t.Errorf("embedded prompt (internal/aireport/assets/agents/gaze-reporter.md) "+
+			"has drifted from scaffold canonical copy (%s).\n"+
+			"Fix: cp %s internal/aireport/assets/agents/gaze-reporter.md",
+			scaffoldPromptRelPath, scaffoldPath)
+	}
+}
+
+// findModuleRootForTest walks upward from the test's working directory to
+// find the directory containing go.mod.
+func findModuleRootForTest(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found")
+		}
+		dir = parent
+	}
+}
+
 // TestStripFrontmatter_RemovesBlock verifies the stripping logic directly.
 func TestStripFrontmatter_RemovesBlock(t *testing.T) {
 	cases := []struct {
 		name    string
 		input   string
-		wantIn  string
-		wantOut string
+		wantOut string // expected content after stripping (exact match)
 	}{
 		{
 			name:    "standard YAML block",
 			input:   "---\nkey: value\n---\n\n# Body",
-			wantIn:  "",
 			wantOut: "# Body",
 		},
 		{
 			name:    "no frontmatter",
 			input:   "# Just content",
-			wantIn:  "",
 			wantOut: "# Just content",
 		},
 		{
 			name:    "opening delimiter only",
 			input:   "---\nno closing",
-			wantIn:  "",
 			wantOut: "---\nno closing",
 		},
 	}
@@ -123,7 +167,7 @@ func TestStripFrontmatter_RemovesBlock(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := stripFrontmatter(tc.input)
-			if tc.wantOut != "" && !strings.Contains(got, tc.wantOut) {
+			if !strings.Contains(got, tc.wantOut) {
 				t.Errorf("expected %q in output, got: %q", tc.wantOut, got)
 			}
 			if strings.HasPrefix(got, "---") && tc.wantOut != "---\nno closing" {

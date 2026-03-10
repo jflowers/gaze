@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 // buildFakeGemini compiles the fake_gemini binary and returns its path.
@@ -40,6 +39,9 @@ func withGeminiOnPath(t *testing.T, bin string) {
 }
 
 func TestGeminiAdapter_SuccessfulInvocation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 	withGeminiOnPath(t, bin)
 
@@ -54,6 +56,9 @@ func TestGeminiAdapter_SuccessfulInvocation(t *testing.T) {
 }
 
 func TestGeminiAdapter_GEMINIMDWrittenToTempDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 	withGeminiOnPath(t, bin)
 
@@ -67,6 +72,9 @@ func TestGeminiAdapter_GEMINIMDWrittenToTempDir(t *testing.T) {
 }
 
 func TestGeminiAdapter_ModelFlagPassed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 	withGeminiOnPath(t, bin)
 
@@ -94,6 +102,9 @@ func TestGeminiAdapter_NotOnPath_ReturnsError(t *testing.T) {
 }
 
 func TestGeminiAdapter_NonZeroExit_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 
 	wrapDir := t.TempDir()
@@ -112,6 +123,9 @@ func TestGeminiAdapter_NonZeroExit_ReturnsError(t *testing.T) {
 }
 
 func TestGeminiAdapter_EmptyResponse_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 
 	wrapDir := t.TempDir()
@@ -134,6 +148,9 @@ func TestGeminiAdapter_EmptyResponse_ReturnsError(t *testing.T) {
 }
 
 func TestGeminiAdapter_TempDirCleanedUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 	withGeminiOnPath(t, bin)
 
@@ -153,12 +170,15 @@ func TestGeminiAdapter_TempDirCleanedUp(t *testing.T) {
 }
 
 func TestGeminiAdapter_ContextCancellation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeGemini(t)
 	withGeminiOnPath(t, bin)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
-	time.Sleep(5 * time.Millisecond)
+	// Cancel the context before calling Format so no time.Sleep is needed.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	adapter := &GeminiAdapter{config: AdapterConfig{Name: "gemini"}}
 	_, err := adapter.Format(ctx, "prompt", strings.NewReader(`{}`))

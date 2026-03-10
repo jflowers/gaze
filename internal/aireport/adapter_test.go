@@ -125,9 +125,8 @@ func TestNewAdapter_AcceptsAllValidNames(t *testing.T) {
 }
 
 // TestFakeAdapter_ImplementsAIAdapter ensures FakeAdapter satisfies the
-// AIAdapter interface at compile time.
+// AIAdapter interface at compile time (also enforced by package-level var _ check).
 func TestFakeAdapter_ImplementsAIAdapter(t *testing.T) {
-	var _ AIAdapter = &FakeAdapter{}
 	// Also verify via io.Reader argument type compatibility.
 	fa := &FakeAdapter{Response: "ok"}
 	var r io.Reader = strings.NewReader("test")

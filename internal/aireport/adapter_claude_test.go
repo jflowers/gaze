@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 // buildFakeClaude compiles the fake_claude binary and returns its path.
@@ -61,6 +60,9 @@ func withClaudeOnPath(t *testing.T, bin string) {
 }
 
 func TestClaudeAdapter_SuccessfulInvocation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeClaude(t)
 	withClaudeOnPath(t, bin)
 
@@ -75,6 +77,9 @@ func TestClaudeAdapter_SuccessfulInvocation(t *testing.T) {
 }
 
 func TestClaudeAdapter_ModelFlagPassed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeClaude(t)
 	withClaudeOnPath(t, bin)
 
@@ -103,6 +108,9 @@ func TestClaudeAdapter_NotOnPath_ReturnsError(t *testing.T) {
 }
 
 func TestClaudeAdapter_NonZeroExit_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeClaude(t)
 	withClaudeOnPath(t, bin)
 
@@ -134,6 +142,9 @@ func TestClaudeAdapter_NonZeroExit_ReturnsError(t *testing.T) {
 }
 
 func TestClaudeAdapter_EmptyOutput_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeClaude(t)
 
 	// Create a "claude" that returns empty output.
@@ -156,24 +167,29 @@ func TestClaudeAdapter_EmptyOutput_ReturnsError(t *testing.T) {
 }
 
 func TestClaudeAdapter_ContextCancellation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeClaude(t)
 	withClaudeOnPath(t, bin)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
-
-	// Give the context time to expire.
-	time.Sleep(5 * time.Millisecond)
+	// Cancel the context before calling Format so the subprocess is never started
+	// or is immediately killed — no time.Sleep needed for synchronization.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	adapter := &ClaudeAdapter{config: AdapterConfig{Name: "claude"}}
 	_, err := adapter.Format(ctx, "prompt", strings.NewReader(`{}`))
-	// Either context.DeadlineExceeded or a subprocess kill error is acceptable.
+	// Either context.Canceled or a subprocess kill error is acceptable.
 	if err == nil {
 		t.Fatal("expected error on cancelled context")
 	}
 }
 
 func TestClaudeAdapter_TempFileCleanedUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess test in -short mode")
+	}
 	bin := buildFakeClaude(t)
 	withClaudeOnPath(t, bin)
 

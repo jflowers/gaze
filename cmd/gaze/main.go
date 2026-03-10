@@ -1232,43 +1232,52 @@ func runReport(p reportParams) error {
 		return fmt.Errorf("--model is required when using ollama (FR-003)")
 	}
 
-	// Resolve AI adapter (validates allowlist, but only in text mode).
-	var adapter aireport.AIAdapter
-	if p.format != "json" {
-		cfg := aireport.AdapterConfig{
-			Name:    p.adapterName,
-			Model:   p.modelName,
-			Timeout: p.aiTimeout,
-		}
-		var err error
-		adapter, err = aireport.NewAdapter(cfg)
-		if err != nil {
-			return fmt.Errorf("invalid --ai value: %w", err)
-		}
-	}
-
-	// Load system prompt.
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
 	}
-	systemPrompt, err := aireport.LoadPrompt(cwd)
-	if err != nil {
-		return fmt.Errorf("loading system prompt: %w", err)
-	}
-
-	stepSummaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
 
 	timeout := p.aiTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
 
+	// adapterCfg is the single source of adapter configuration used for both
+	// NewAdapter and RunnerOptions.AdapterCfg.
+	adapterCfg := aireport.AdapterConfig{
+		Name:    p.adapterName,
+		Model:   p.modelName,
+		Timeout: timeout,
+	}
+
+	// Resolve AI adapter (validates allowlist, but only in text mode).
+	// In text mode, also verify the binary is on PATH before running the full
+	// analysis pipeline (FR-012), so the user gets an immediate error.
+	var adapter aireport.AIAdapter
+	var systemPrompt string
+	if p.format != "json" {
+		var adapterErr error
+		adapter, adapterErr = aireport.NewAdapter(adapterCfg)
+		if adapterErr != nil {
+			return fmt.Errorf("invalid --ai value: %w", adapterErr)
+		}
+
+		// Load system prompt only in text mode (FR-015): in json mode the
+		// prompt file is never needed and a permission error must not block output.
+		var promptErr error
+		systemPrompt, promptErr = aireport.LoadPrompt(cwd)
+		if promptErr != nil {
+			return fmt.Errorf("loading system prompt: %w", promptErr)
+		}
+	}
+
+	stepSummaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
+
 	opts := aireport.RunnerOptions{
 		Patterns:        p.patterns,
 		ModuleDir:       cwd,
 		Adapter:         adapter,
-		AdapterCfg:      aireport.AdapterConfig{Name: p.adapterName, Model: p.modelName, Timeout: timeout},
+		AdapterCfg:      adapterCfg,
 		SystemPrompt:    systemPrompt,
 		Format:          p.format,
 		Stdout:          p.stdout,
@@ -1350,16 +1359,10 @@ Examples:
 				stdout:              cmd.OutOrStdout(),
 				stderr:              cmd.ErrOrStderr(),
 			}
-			if err := runReport(p); err != nil {
-				return err
-			}
-
-			// Threshold evaluation and exit code.
-			// Re-run with threshold config after the report is done.
-			// Note: runReport already called Run; thresholds need the payload.
-			// For now, threshold evaluation is handled inside runReport via
-			// the runner options. The exit code logic is below.
-			return nil
+			// Threshold evaluation and exit code are handled inside
+			// runReport via aireport.Run; a non-nil error here means
+			// a threshold failed or the pipeline errored.
+			return runReport(p)
 		},
 	}
 

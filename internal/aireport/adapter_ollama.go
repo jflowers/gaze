@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -62,6 +63,13 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 		host = "http://localhost:11434"
 	}
 
+	// Validate the host URL to prevent SSRF from a malformed OLLAMA_HOST value.
+	baseURL, err := url.Parse(host)
+	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
+		return "", fmt.Errorf("invalid ollama host URL %q: must be an absolute URL (e.g. http://localhost:11434)", host)
+	}
+	generateURL := baseURL.JoinPath("/api/generate").String()
+
 	reqBody := ollamaRequest{
 		Model:  a.config.Model,
 		System: systemPrompt,
@@ -74,7 +82,7 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		host+"/api/generate", bytes.NewReader(reqBytes))
+		generateURL, bytes.NewReader(reqBytes))
 	if err != nil {
 		return "", fmt.Errorf("building ollama request: %w", err)
 	}
@@ -92,12 +100,13 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+		// Limit error body read to avoid OOM on malicious/broken servers.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAdapterOutputBytes))
 		return "", fmt.Errorf("ollama returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var ollamaResp ollamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAdapterOutputBytes)).Decode(&ollamaResp); err != nil {
 		return "", fmt.Errorf("parsing ollama response: %w", err)
 	}
 
