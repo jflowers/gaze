@@ -74,7 +74,7 @@ ollama pull llama3.2
 gaze report ./... --ai=ollama --model=llama3.2
 
 # Raw JSON output (no AI required)
-gaze report ./... --format=json | jq .summary
+gaze report ./... --format=json | jq .crap
 ```
 
 ---
@@ -138,8 +138,8 @@ A non-null `errors` field value indicates that pipeline step failed (partial rep
 | SC | Verified by |
 |---|---|
 | SC-001 | `TestSC001_GithubActionsReport` — sets `GITHUB_STEP_SUMMARY` to temp file, verifies file written with expected section markers |
-| SC-002 | `TestSC002_ReportStructure` — uses FakeAdapter returning known markdown, verifies section header patterns `🔍`, `📊`, `🧪`, `🏥` present |
+| SC-002 | `TestSC002_ReportStructure` — uses FakeAdapter returning known markdown, verifies section header patterns `🔍`, `📊`, `🧪`, `🏥` present in order |
 | SC-003 | `TestSC003_ThresholdTiming` — measures threshold evaluation duration: < 1ms |
 | SC-004 | `TestSC004_PartialFailure` — simulates CRAP analysis failure, verifies report produced with `> ⚠️` warning and exit 0 |
-| SC-005 | `BenchmarkReportAnalysis` — measures analysis phase on gaze module itself; enforced ≤ 5m |
-| SC-006 | Manual verification — run with claude, gemini, ollama; verify all four section markers present |
+| SC-005 | `TestSC005_AnalysisPerformance` — runs real pipeline on `./...` with `context.WithTimeout(5*time.Minute)`; timeout error = test failure; guarded by `testing.Short()` |
+| SC-006 | `TestSC006_CrossAdapterStructure` — table-driven test for all three adapter names using FakeAdapter; asserts all four emoji markers appear in same order for every adapter; automated (no real AI CLIs required) |

@@ -92,11 +92,12 @@ specs/
   # 010-report-voice-refinement: deleted — superseded by 011-output-voice-style before implementation began
   011-output-voice-style/        # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   012-consolidate-classify-docs/ # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
-  014-macos-notarization/        # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
+  # 013: reserved/unused — number was skipped; 014 follows directly
+  014-macos-notarization/        # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/ (SUPERSEDED by 015)
   015-native-macos-signing/      # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   016-agent-context-reduction/   # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   017-testing-persona/           # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
-  018-ci-report/                 # spec.md, checklists/ (plan.md and tasks.md pending)
+  018-ci-report/                 # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
 ```
 
 Branch names follow the same numbering pattern (e.g., `001-side-effect-detection`).
@@ -258,11 +259,11 @@ Formatters: gofmt, goimports.
 
 ## Recent Changes
 
-- 018-ci-report: Added AI-powered CI quality report spec (Draft). Introduces `gaze report` subcommand with AI CLI adapter integration (claude, gemini, ollama), GitHub Actions Step Summary output, and optional threshold-based build failure. plan.md and tasks.md pending.
+- 018-ci-report: Added AI-powered CI quality report spec (Planned). Introduces `gaze report` subcommand with AI CLI adapter integration (claude, gemini, ollama), GitHub Actions Step Summary output, and optional threshold-based build failure. Full planning artifacts complete (plan.md, tasks.md, research.md, data-model.md, quickstart.md). Implementation pending.
 - 017-testing-persona: Added The Tester (reviewer-testing agent) as 4th review council member for test quality and testability auditing. Added `/speckit.testreview` command for read-only spec testability analysis. Amended constitution with Principle IV: Testability (v1.0.0 → v1.1.0). Scaffold expanded from 4 to 7 files with mixed ownership model — `isToolOwned` now uses explicit file list (prefix for `references/`, exact match for `command/speckit.testreview.md` and `command/review-council.md`). Review council scaffolded as tool-owned for deployment via `gaze init`.
 - 016-agent-context-reduction: Reduced gaze-reporter agent prompt from 17,775 to 13,050 bytes (26.6% reduction) by externalizing canonical example output and document-enhanced classification scoring model into `.opencode/references/` files loaded on demand via Read tool. Added scaffold overwrite-on-diff behavior for tool-owned reference files (`references/` directory) while preserving skip-if-present for user-owned files (`agents/`, `command/`). Scaffold now manages 4 files (up from 2). Added `Updated` field to scaffold `Result` struct and `isToolOwned` helper. Quadrant labels deduplicated to 2 locations (Quick Reference Example + Emoji Vocabulary table).
 - 015-native-macos-signing: Replaced broken quill-based cross-platform signing with native `codesign`/`notarytool` on `macos-latest` runner. Removed `notarize.macos` from `.goreleaser.yaml`. Added `sign-macos` job to release workflow (Keychain import, codesign with hardened runtime, notarytool submit --wait, asset replacement with --clobber, checksum update). Conditional on `MACOS_SIGN_P12` secret via job output gate.
-- 014-macos-notarization: Added macOS code signing and notarization to GoReleaser release pipeline via built-in `notarize.macos` (quill), conditional on `MACOS_SIGN_P12` secret presence, 20m notarization timeout, 45m job timeout, no runner change (stays ubuntu-latest)
+- 014-macos-notarization: Added macOS code signing and notarization to GoReleaser release pipeline via built-in `notarize.macos` (quill), conditional on `MACOS_SIGN_P12` secret presence, 20m notarization timeout, 45m job timeout, no runner change (stays ubuntu-latest) (SUPERSEDED by 015)
 - 012-consolidate-classify-docs: Removed /classify-docs command and doc-classifier agent, inlined document-signal scoring model into gaze-reporter, added emoji formatting override block and sandwich prompt structure, reduced scaffold from 4 to 2 files
 - 011-output-voice-style: Rewrote gaze-reporter agent prompt for fun, emoji-rich output — emoji section markers (🔍📊🧪🏷️🏥), colored circle severity indicators (🟢🟡🔴⚪), letter grades with emoji, severity-prefixed recommendations, tone anti-pattern bans, canonical example output
 - 009-crapload-reduction: CRAPload reduction — contract-level tests for `docscan.Filter` and `LoadModule`, dependency injection for `runCrap`/`runSelfCheck`, decomposition of `buildContractCoverageFunc` into `resolvePackagePaths`/`analyzePackageCoverage`, and decomposition of `AnalyzeP1Effects`/`AnalyzeP2Effects` into per-node-type handler functions
