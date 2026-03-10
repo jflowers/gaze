@@ -250,6 +250,7 @@ Formatters: gofmt, goimports.
 - Go 1.24+ (scaffold Go code changes); Markdown (agent/command prompts) + `embed.FS` (Go standard library), OpenCode agent runtime (017-testing-persona)
 - Go 1.24+ + Cobra (CLI), `exec.Command` (claude/gemini subprocess), `net/http` (ollama HTTP API), `embed.FS` (embedded default prompt), existing internal packages (`crap`, `quality`, `analysis`, `classify`, `docscan`, `loader`, `taxonomy`) (018-ci-report)
 - N/A — ephemeral pipeline only; no persistent state introduced (018-ci-report)
+- Filesystem only — temp files for system prompt delivery (removed after subprocess exits) (018-ci-report)
 
 - Go 1.24+ + `golang.org/x/tools` (go/packages, go/ssa), Cobra (CLI), Bubble Tea/Lipgloss (TUI)
 - Filesystem only (embedded assets via `embed.FS`)

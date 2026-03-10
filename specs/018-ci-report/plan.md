@@ -5,41 +5,122 @@
 
 ## Summary
 
-Add a `gaze report` subcommand that orchestrates gaze's four analysis operations, assembles a combined JSON payload, and passes it to a user-selected AI CLI (`claude`, `gemini`, or `ollama`) with a formatting prompt to produce a rich markdown quality report. The report is written to stdout and, when `$GITHUB_STEP_SUMMARY` is set, also appended to the GitHub Actions Step Summary file. Optional threshold flags cause the command to exit non-zero when quality metrics breach configured limits. The implementation introduces a new `internal/aireport` package following the project's established testable CLI pattern.
+Add a `gaze report` subcommand that orchestrates gaze's four analysis operations
+(CRAP, quality, classification, docscan), assembles a combined JSON payload, and
+pipes it to a user-specified external AI CLI (`claude`, `gemini`, or `ollama`)
+with a formatting prompt derived from `gaze-reporter.md`. The formatted markdown
+report is written to stdout and optionally appended to `$GITHUB_STEP_SUMMARY`
+for visibility in the GitHub Actions UI. Optional threshold flags allow the step
+to fail the build when CRAPload or contract coverage regresses below configured
+limits.
+
+The core production logic lives in the new `internal/aireport` package. The CLI
+layer in `cmd/gaze` adds `reportParams`, `runReport()`, and `newReportCmd()` following
+the existing testable-CLI pattern. All three AI adapters use distinct subprocess or
+HTTP invocation strategies: claude via `exec.Command` + temp file for the system
+prompt, gemini via `exec.Command` + `GEMINI.md` in a temp directory, and ollama
+via `net/http` POST to `/api/generate`.
 
 ## Technical Context
 
 **Language/Version**: Go 1.24+
-**Primary Dependencies**: Cobra (CLI), `exec.Command` (claude/gemini subprocess), `net/http` (ollama HTTP API), `embed.FS` (embedded default prompt), existing internal packages (`crap`, `quality`, `analysis`, `classify`, `docscan`, `loader`, `taxonomy`)
-**Storage**: N/A — ephemeral pipeline only; no persistent state introduced
-**Testing**: Standard library `testing` package only; `go test -race -count=1`; fake AI CLI binaries in `testdata/` for subprocess adapter tests; fake HTTP server for ollama adapter tests; `FakeAdapter` struct for unit tests
-**Target Platform**: darwin/linux amd64/arm64 (same as existing gaze binary)
-**Performance Goals**: Analysis phase (excluding AI CLI round-trip) completes within 5 minutes for < 50 packages on a standard CI runner (SC-005)
-**Constraints**: No shell interpolation of user-supplied values in subprocess invocations; `exec.Command` args always passed as distinct Go strings; system prompt > 10 KB written to temp file for claude adapter; AI CLI subprocess runs under context timeout (default 10m)
-**Scale/Scope**: Single binary command; no new persistent state; new `internal/aireport` package of ~8 source files + ~8 test files
+**Primary Dependencies**:
+- `exec.Command` (standard library) — claude and gemini subprocess invocation
+- `net/http` (standard library) — ollama HTTP API adapter
+- `embed.FS` (standard library) — embedded default formatting prompt
+- `github.com/spf13/cobra` (existing) — CLI command registration
+- Existing internal packages: `crap`, `quality`, `analysis`, `classify`, `docscan`,
+  `loader`, `taxonomy`, `config`, `report`, `scaffold`
+
+**Storage**: Filesystem only — temp files for system prompt delivery (removed after
+subprocess exits); `$GITHUB_STEP_SUMMARY` append-write; no persistent state.
+
+**Testing**: Standard library `testing` package; `httptest.NewServer` for ollama;
+`testdata/fake_claude/main.go` and `testdata/fake_gemini/main.go` fake binaries
+compiled at test time for subprocess adapter tests.
+
+**Target Platform**: Linux (CI), macOS (local). The binary already distributes for
+both via GoReleaser. No platform-specific behavior introduced.
+
+**Project Type**: Single binary CLI (existing pattern).
+
+**Performance Goals**:
+- SC-005: Gaze-owned analysis phase (excluding AI CLI round-trip) completes within
+  5 minutes for a project with fewer than 50 packages on a standard CI runner.
+- Threshold evaluation adds < 1 ms to total runtime (SC-003).
+
+**Constraints**:
+- No shell interpolation of user-supplied values in `exec.Command` args (FR-012
+  security constraint; args must be passed as separate Go strings).
+- `GITHUB_STEP_SUMMARY` write failure must not abort the command (FR-008).
+- Partial pipeline failure must not abort the command (FR-011).
+- AI adapter output must be non-empty/non-whitespace or command fails (FR-016).
+- `--ai` flag required in `text` mode; skipped entirely in `json` mode (FR-015).
+- `--model` required for ollama; optional for claude and gemini (FR-003).
+
+**Scale/Scope**:
+- Typical target: < 50 packages, standard CI runner (2–4 cores, 8 GB RAM).
+- New package: `internal/aireport` (~9 files, ~500 LOC production, ~600 LOC tests).
+- New code in `cmd/gaze`: ~200 LOC production, ~400 LOC tests.
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principle | Status | Evidence |
+### I. Accuracy
+
+**PASS**. The feature does not modify any analysis engine. It assembles existing
+analysis outputs into a combined payload. Accuracy of the underlying CRAP,
+quality, classification, and docscan analyses is unchanged. The AI formatting
+layer is additive — it formats data already produced by the verified analysis
+engines. No new false-positive or false-negative risk is introduced.
+
+### II. Minimal Assumptions
+
+**PASS**. The feature requires no annotation or restructuring of user code.
+The `--ai` flag makes the adapter choice explicit. The `--model` requirement
+for ollama is enforced with a clear error (no silent default). The embedded
+default prompt works without any local configuration (`gaze init` not
+required). The `--format=json` path requires no AI CLI at all.
+
+### III. Actionable Output
+
+**PASS**. The formatted report produced by `gaze report` contains the same
+structural sections as the `/gaze` OpenCode command: CRAP summary, quality
+summary, classification summary, and prioritized health assessment (SC-002).
+Threshold failure output on stderr is explicit: `CRAPload: 13/10 (FAIL)`.
+The `--format=json` mode provides machine-readable output for downstream
+tooling. Progress signals (FR-017) guide the user during long-running analysis.
+
+### IV. Testability
+
+**PASS** — with the following coverage strategy:
+
+| Layer | Test type | Coverage target |
 |---|---|---|
-| **I. Accuracy** | PASS | `gaze report` reuses existing analysis pipeline (`crap.Analyze`, `quality.Assess`, `analysis.LoadAndAnalyze`, `docscan.Scan`) with no changes to detection logic. No new side effect detection introduced; accuracy claims are unchanged. |
-| **II. Minimal Assumptions** | PASS | `--ai` flag is required (no silent auto-detection). Users control which AI CLI is installed and authenticated. Prompt falls back to embedded default when `.opencode/agents/gaze-reporter.md` is absent. The command works with any package pattern already supported by gaze. |
-| **III. Actionable Output** | PASS | The formatted report (via AI adapter) produces the same Top 5 Prioritized Recommendations as the `/gaze` agent. `--format=json` provides machine-readable combined payload. Threshold flags + stderr summary make quality regressions immediately actionable in CI. |
-| **IV. Testability** | PASS | `AIAdapter` interface enables `FakeAdapter` test double for all unit tests. Fake AI CLI binaries in `testdata/` enable subprocess integration tests without real AI CLIs. `runReport(reportParams)` follows the existing testable CLI pattern. Coverage strategy defined below. |
+| `internal/aireport` overall | Unit (standard `testing`) | ≥ 80% line |
+| `adapter_claude.go` | Unit + fake subprocess | ≥ 70% line |
+| `adapter_gemini.go` | Unit + fake subprocess | ≥ 70% line |
+| `adapter_ollama.go` | Unit + `httptest.Server` | ≥ 70% line |
+| `cmd/gaze` report command | Unit + `FakeAdapter` | ≥ 75% line |
 
-**Coverage Strategy** (Constitution Principle IV — mandatory):
+Every function in `internal/aireport` is independently testable:
+- `Run()` accepts `AnalyzeFunc` injection to bypass the real pipeline.
+- All three adapters accept injectable transport (`execFunc` or `httpClient`).
+- `WriteStepSummary` uses `t.TempDir()` + `t.Setenv` — no global state.
+- `EvaluateThresholds` is a pure function of `ThresholdConfig` and `ReportPayload`.
+- `LoadPrompt` is testable via temp directories and embedded content.
 
-| Layer | Strategy | Target |
-|---|---|---|
-| `internal/aireport` unit tests | `FakeAdapter`; `t.Setenv` for env vars; `t.TempDir()` for file paths | ≥ 80% line coverage |
-| `internal/aireport` adapter subprocess tests | Fake CLI binaries in `testdata/fake_claude/` and `testdata/fake_gemini/` compiled during tests via `go build`; fake HTTP server for ollama | ≥ 70% line coverage on adapter files |
-| `cmd/gaze` command handler | Existing `main_test.go` pattern; `FakeAdapter` injected via `runnerFunc` override | ≥ 75% line coverage on new `report` command code |
-| e2e / manual | SC-006 (cross-adapter structural equivalence) verified manually per quickstart.md; SC-005 benchmark run on CI | Manual |
-| Coverage ratchet | All new packages added to CI coverage check; regression treated as test failure | Enforced via `go test -coverprofile` |
+Coverage ratchets are enforced via T-036 (post-implementation coverage gate).
+SC-006 (cross-adapter structural equivalence) is designated **manual verification**
+per the checklist — automated CI covers all other success criteria.
 
-**Post-design re-check**: PASS — design decisions in research.md and data-model.md do not introduce violations. The `net/http` call for ollama is wrapped in a function injectable for testing (see `OllamaAdapter.httpClient` field override pattern).
+**Pre-implementation constitution check violations**: None. All four principles
+pass. No complexity violations or waivers required.
+
+**Post-design re-check (after Phase 1)**: No new violations identified. The
+data model (`data-model.md`) confirms all types are independently testable and
+the dependency injection pattern is applied consistently across all new code.
 
 ## Project Structure
 
@@ -47,242 +128,76 @@ Add a `gaze report` subcommand that orchestrates gaze's four analysis operations
 
 ```text
 specs/018-ci-report/
-├── plan.md          # This file
-├── research.md      # Phase 0 output — AI adapter CLI research, design decisions
-├── data-model.md    # Phase 1 output — types, interfaces, JSON schemas, state transitions
-├── quickstart.md    # Phase 1 output — user-facing usage guide + acceptance test map
+├── plan.md              # This file (/speckit.plan command output)
+├── research.md          # Phase 0 output — all NEEDS CLARIFICATION resolved
+├── data-model.md        # Phase 1 output — types, source layout, state transitions
+├── quickstart.md        # Phase 1 output — GitHub Actions examples, flags reference
 ├── checklists/
-│   └── requirements.md
-└── tasks.md         # Phase 2 output (created by /speckit.tasks)
+│   └── requirements.md  # Spec quality checklist (pre-implementation gate)
+└── tasks.md             # Phase 2 output — 39 tasks across 9 phases
 ```
 
 ### Source Code (repository root)
 
 ```text
 internal/
-  aireport/                     # NEW — AI adapter interface + pipeline runner
-    adapter.go                  # AIAdapter interface, NewAdapter factory, FakeAdapter
-    adapter_claude.go           # ClaudeAdapter (exec.Command)
-    adapter_gemini.go           # GeminiAdapter (exec.Command + GEMINI.md temp dir)
-    adapter_ollama.go           # OllamaAdapter (net/http)
-    runner.go                   # Run(RunnerOptions) — orchestrates 4-step pipeline
-    payload.go                  # ReportPayload, PayloadErrors, ThresholdConfig
-    prompt.go                   # LoadPrompt() — local file load + YAML strip
-    output.go                   # WriteStepSummary() — GITHUB_STEP_SUMMARY write
-    threshold.go                # EvaluateThresholds()
-    adapter_test.go             # FakeAdapter contract tests
-    adapter_claude_test.go      # ClaudeAdapter unit + subprocess tests
-    adapter_gemini_test.go      # GeminiAdapter unit + subprocess tests
-    adapter_ollama_test.go      # OllamaAdapter unit + fake HTTP server tests
-    runner_test.go              # Run() integration tests with FakeAdapter
-    payload_test.go             # ReportPayload JSON round-trip + partial failure
-    prompt_test.go              # LoadPrompt frontmatter stripping
-    output_test.go              # WriteStepSummary with t.Setenv/t.TempDir
-    threshold_test.go           # EvaluateThresholds contract tests
-    testdata/
-      fake_claude/
-        main.go                 # Fake claude binary for subprocess tests
-      fake_gemini/
-        main.go                 # Fake gemini binary for subprocess tests
+└── aireport/                         (new package)
+    ├── adapter.go                    # AIAdapter interface, NewAdapter factory, FakeAdapter
+    ├── adapter_claude.go             # ClaudeAdapter — exec.Command + temp file
+    ├── adapter_gemini.go             # GeminiAdapter — exec.Command + GEMINI.md temp dir
+    ├── adapter_ollama.go             # OllamaAdapter — net/http POST /api/generate
+    ├── runner.go                     # Run() — 4-step pipeline + AI formatting
+    ├── runner_steps.go               # runCRAPStep, runQualityStep, runClassifyStep, runDocscanStep
+    ├── payload.go                    # ReportPayload, PayloadErrors, ThresholdConfig, ThresholdResult
+    ├── prompt.go                     # LoadPrompt() — local file load + frontmatter strip
+    ├── output.go                     # WriteStepSummary() — GITHUB_STEP_SUMMARY write
+    ├── threshold.go                  # EvaluateThresholds()
+    ├── adapter_test.go               # FakeAdapter contract tests
+    ├── adapter_claude_test.go        # ClaudeAdapter tests (fake subprocess)
+    ├── adapter_gemini_test.go        # GeminiAdapter tests (fake subprocess)
+    ├── adapter_ollama_test.go        # OllamaAdapter tests (httptest.Server)
+    ├── runner_test.go                # Run() tests (FakeAdapter + AnalyzeFunc injection)
+    ├── payload_test.go               # ReportPayload JSON round-trip tests
+    ├── prompt_test.go                # LoadPrompt() tests
+    ├── output_test.go                # WriteStepSummary() tests
+    ├── threshold_test.go             # EvaluateThresholds() contract tests
+    └── testdata/
+        ├── fake_claude/
+        │   └── main.go               # Fake claude binary for subprocess tests
+        └── fake_gemini/
+            └── main.go               # Fake gemini binary for subprocess tests
 
 cmd/gaze/
-  main.go                       # + reportParams, runReport(), newReportCmd()
-  main_test.go                  # + TestSC001..SC004, BenchmarkReportAnalysis
+├── main.go                           # + root.AddCommand(newReportCmd())
+│                                     # + reportParams, runReport(), newReportCmd()
+└── main_test.go                      # + TestSC001..SC004, T-027..T-035 tests
 ```
 
-**Structure Decision**: New `internal/aireport` package following the project's existing layered architecture. The command handler in `cmd/gaze/main.go` follows the established `XxxParams + runXxx()` pattern. No changes to any existing package except adding `newReportCmd()` to `cmd/gaze/main.go`.
+**Structure Decision**: Single project layout following the existing `cmd/gaze` +
+`internal/` pattern. The new `internal/aireport` package is a peer of the existing
+`internal/crap`, `internal/quality`, `internal/classify`, etc. The `cmd/gaze`
+command layer remains the sole entry point, with all business logic in `internal/`.
 
-## Phased Implementation
-
-### Phase 1: Foundation — Payload Assembly and `--format=json` Mode
-
-**Goal**: Run the 4-step pipeline and produce `ReportPayload` JSON output. No AI adapter yet.
-
-**Files created**:
-- `internal/aireport/payload.go` — `ReportPayload`, `PayloadErrors`, `ThresholdConfig`, `ThresholdResult`
-- `internal/aireport/runner.go` — `Run(RunnerOptions)` calling the 4 pipeline steps; `--format=json` output path
-- `internal/aireport/threshold.go` — `EvaluateThresholds()`
-- `internal/aireport/payload_test.go`
-- `internal/aireport/runner_test.go` (partial — json mode only)
-- `internal/aireport/threshold_test.go`
-- `cmd/gaze/main.go` — `reportParams`, `runReport()`, `newReportCmd()` (format=json only initially)
-- `cmd/gaze/main_test.go` — `TestSC004_PartialFailure`, `TestSC003_ThresholdTiming`
-
-**Acceptance tests passing after Phase 1**:
-- SC-003 (threshold timing — zero overhead)
-- SC-004 (partial failure — continues with warning)
-- US2 scenarios 1–5 (threshold evaluation with FakeAdapter returning known payload)
-
-### Phase 2: Prompt Loading
-
-**Goal**: Load system prompt from local file or embedded default, strip YAML frontmatter.
-
-**Files created**:
-- `internal/aireport/prompt.go` — `LoadPrompt(workdir string) (string, error)`
-- `internal/aireport/prompt_test.go`
-
-**Key behavior**:
-- Reads `<workdir>/.opencode/agents/gaze-reporter.md` if exists
-- Strips YAML frontmatter (content between first `---` and second `---`)
-- Falls back to embedded default from `embed.FS` (the scaffold asset)
-- Returns the raw prompt string
-
-**Embed approach**: `prompt.go` uses `//go:embed` to embed the content of `internal/scaffold/assets/agents/gaze-reporter.md` as the default prompt. This shares the single source of truth with the scaffold package.
-
-### Phase 3: AI Adapter Interface + FakeAdapter
-
-**Goal**: Define the `AIAdapter` interface, implement `FakeAdapter`, implement `NewAdapter` factory.
-
-**Files created**:
-- `internal/aireport/adapter.go` — `AIAdapter` interface, `FakeAdapter`, `AdapterConfig`, `NewAdapter(cfg AdapterConfig) (AIAdapter, error)`
-- `internal/aireport/adapter_test.go` — `FakeAdapter` contract tests
-
-**`NewAdapter` validates**: adapter name is in allowlist `{"claude", "gemini", "ollama"}`. Returns error if name is unknown (satisfies FR-002 early validation).
-
-### Phase 4: Claude Adapter
-
-**Goal**: Implement `ClaudeAdapter` using `exec.Command`.
-
-**Files created**:
-- `internal/aireport/adapter_claude.go` — `ClaudeAdapter`
-- `internal/aireport/testdata/fake_claude/main.go` — fake binary
-- `internal/aireport/adapter_claude_test.go`
-
-**Invocation details**:
-- Check `claude` on PATH via `exec.LookPath` before running analysis (FR-012)
-- Write system prompt to `os.CreateTemp` file; pass path via `--system-prompt-file`
-- Positional prompt for user message: `-p ""` (empty; data is in stdin)
-- Pipe `ReportPayload` JSON bytes to stdin
-- Read stdout as the formatted report
-- Remove temp file in defer
-- Context timeout enforced via `exec.CommandContext`
-
-**Fake claude binary** (in `testdata/`): a small Go program that reads its flags and stdin, then writes a canned markdown response to stdout. Built via `go build` in test setup using `TestMain` or per-test helper.
-
-### Phase 5: Gemini Adapter
-
-**Goal**: Implement `GeminiAdapter` using `exec.Command` + `GEMINI.md` temp directory.
-
-**Files created**:
-- `internal/aireport/adapter_gemini.go` — `GeminiAdapter`
-- `internal/aireport/testdata/fake_gemini/main.go` — fake binary
-- `internal/aireport/adapter_gemini_test.go`
-
-**Invocation details**:
-- Check `gemini` on PATH via `exec.LookPath`
-- Create temp directory via `os.MkdirTemp`
-- Write system prompt content to `<tmpDir>/GEMINI.md`
-- Set `cmd.Dir = tmpDir`
-- Invoke: `gemini -p "" --output-format json [-m <model>]`
-- Pipe JSON payload to stdin
-- Parse `--output-format json` response: extract `response` field string
-- Remove temp directory in defer
-
-### Phase 6: Ollama Adapter
-
-**Goal**: Implement `OllamaAdapter` using `net/http` (not `exec.Command`).
-
-**Files created**:
-- `internal/aireport/adapter_ollama.go` — `OllamaAdapter`
-- `internal/aireport/adapter_ollama_test.go` — uses `httptest.NewServer`
-
-**Invocation details**:
-- Read `OLLAMA_HOST` env var (default: `http://localhost:11434`)
-- `--model` is required for ollama; validate before analysis (FR-003)
-- POST to `{host}/api/generate` with JSON body:
-  ```json
-  {"model": "<model>", "system": "<systemPrompt>", "prompt": "<payloadJSON>", "stream": false}
-  ```
-- Extract `response` field from JSON response
-- Context timeout via `req.WithContext(ctx)`
-- `httpClient` field on `OllamaAdapter` allows injection of `*http.Client` for tests
-
-### Phase 7: Output and Step Summary
-
-**Goal**: Implement `WriteStepSummary` and progress signal emission.
-
-**Files created**:
-- `internal/aireport/output.go` — `WriteStepSummary(path, content string) error`
-- `internal/aireport/output_test.go`
-
-**Step Summary write behavior**:
-- `os.Lstat(path)` — must not fail or return a non-regular-file
-- Validate path is absolute
-- Open with `os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)`
-- Write formatted report content
-- On any validation or write error: emit warning to stderr, return nil (not an error — FR-008)
-
-**Progress signals** (emitted to `stderr` by `runner.go`):
-```
-Analyzing packages... (CRAP)
-Analyzing packages... (Quality)
-Analyzing packages... (Classification)
-Scanning documentation...
-Formatting report...
-Writing Step Summary...
-```
-
-### Phase 8: Integration — Wire `newReportCmd()` and Acceptance Tests
-
-**Goal**: Register command, wire all phases, add SC-001/SC-002 acceptance tests.
-
-**Files modified**:
-- `cmd/gaze/main.go` — add `root.AddCommand(newReportCmd())`
-- `cmd/gaze/main_test.go` — `TestSC001_GithubActionsReport`, `TestSC002_ReportStructure`, `BenchmarkReportAnalysis`
-
-**TestSC001**: sets `t.Setenv("GITHUB_STEP_SUMMARY", tmpFile)`, uses `FakeAdapter` via `runnerFunc` override, verifies step summary file contains required section markers.
-
-**TestSC002**: uses `FakeAdapter` returning a known markdown response, verifies stdout contains `🔍`, `📊`, `🧪`, `🏥` section markers.
-
-**SC-006 verification** (manual, per quickstart.md): run `gaze report ./... --ai=claude`, `--ai=gemini`, `--ai=ollama` on the gaze module itself; verify all four section markers present in each output.
-
-## Requirement-to-Component Mapping
-
-| FR | Component | Phase |
-|---|---|---|
-| FR-001 | `runner.go` — `Run()` orchestrates 4 steps | 1 |
-| FR-002 | `adapter.go` — `NewAdapter` validates allowlist; `newReportCmd` checks `--ai` present | 3 |
-| FR-003 | `adapter_ollama.go` — validates `--model` required; `newReportCmd` for claude/gemini optional | 6 |
-| FR-004 | `adapter_*.go` — `Format()` invokes AI CLI/API | 4–6 |
-| FR-005 | `prompt.go` — `LoadPrompt()` | 2 |
-| FR-006 | `runner.go` — writes to `Stdout` | 1 |
-| FR-007 | `output.go` — `WriteStepSummary()` | 7 |
-| FR-008 | `output.go` — warn on write failure, return nil | 7 |
-| FR-009 | `threshold.go` — `EvaluateThresholds()` | 1 |
-| FR-010 | `reportParams` — `*int` flags + `cmd.Flags().Changed()` | 8 |
-| FR-011 | `runner.go` — per-step error capture into `PayloadErrors` | 1 |
-| FR-012 | `adapter_claude.go`, `adapter_gemini.go` — `exec.LookPath` before analysis | 4–5 |
-| FR-013 | `runner.go` — validate non-empty package list after load | 1 |
-| FR-014 | `newReportCmd` — default pattern `./...` | 8 |
-| FR-015 | `runner.go` — `--format=json` path skips AI | 1 |
-| FR-016 | `runner.go` — empty output check after `Format()` | 1 |
-| FR-017 | `runner.go` — progress signals to `Stderr` | 7 |
-
-## Security Constraints (Council Finding — Required)
-
-All AI CLI subprocess invocations **MUST** satisfy:
-
-1. **No shell interpolation**: all arguments to `exec.Command` are separate Go strings, never concatenated into a shell command string. The `"sh"`, `"-c"` pattern is prohibited.
-2. **Allowlist validation**: `--ai` flag value is validated against the exact set `{"claude", "gemini", "ollama"}` before any subprocess is spawned. Unknown values produce an immediate error.
-3. **System prompt delivery**: system prompt content is never passed as an inline flag value if it may exceed safe argument length. The claude adapter MUST use `--system-prompt-file <tmpfile>`. The gemini adapter MUST use `GEMINI.md` written to a temp directory.
-4. **Path validation**: `GITHUB_STEP_SUMMARY` path MUST be validated via `os.Lstat` before writing. Non-absolute paths or non-regular-file results produce a stderr warning and skip the write.
-5. **Timeout**: every AI adapter invocation (subprocess or HTTP) runs under `context.WithTimeout`. Default: 10 minutes. Configurable via `--ai-timeout`.
-
-## Constitution Check (Post-Design)
-
-| Principle | Status | Evidence |
-|---|---|---|
-| **I. Accuracy** | PASS | No new detection logic. Reuses `crap.Analyze`, `quality.Assess`, `analysis.LoadAndAnalyze`, `docscan.Scan` without modification. |
-| **II. Minimal Assumptions** | PASS | `--ai` required (no silent auto-detection). `--model` required for ollama only. `GITHUB_STEP_SUMMARY` detected from environment, not assumed. |
-| **III. Actionable Output** | PASS | AI-formatted report includes prioritized recommendations per spec 011 voice standard. `--format=json` is machine-readable. Threshold flags + stderr summary are actionable CI signals. |
-| **IV. Testability** | PASS | `AIAdapter` interface + `FakeAdapter` enables unit testing all pipeline logic without real AI CLIs. Fake subprocess binaries enable subprocess contract testing. `runReport(reportParams)` is fully unit-testable. Coverage targets defined per layer. |
+Note: Several files under `internal/aireport/` already exist as scaffolding from
+earlier planning sessions (`adapter.go`, `adapter_claude.go`, `adapter_gemini.go`,
+`adapter_ollama.go`, `runner.go`, `runner_steps.go`, `payload.go`, `output.go`,
+`threshold.go`). The adapter `Format` methods are unimplemented stubs. Implementation
+tasks (T-001 through T-035) will complete and test these files.
 
 ## Complexity Tracking
 
-No constitution violations requiring justification.
+No Constitution Check violations requiring justification. The implementation
+follows existing project patterns throughout:
 
-| Addition | Justification |
-|---|---|
-| New `internal/aireport` package | Required to keep AI adapter logic isolated and testable; cannot be in `cmd/gaze` (violates single-responsibility) |
-| `net/http` in `OllamaAdapter` | Ollama CLI has no system prompt flag; HTTP API is the only clean interface. `http.Client` is injectable for testing. |
-| Temp file / temp dir for claude/gemini | System prompt is > 10 KB; inline CLI arg risks OS arg length limits. Temp file is cleaned up in defer. No persistent state introduced. |
+- `internal/aireport` mirrors the peer package structure (`internal/crap`,
+  `internal/quality`, etc.).
+- `cmd/gaze` command registration follows the existing `newXxxCmd()` + `runXxx()`
+  + `xxxParams` pattern already present for `crap`, `quality`, `analyze`, `docscan`.
+- Dependency injection (via `AnalyzeFunc`, `httpClient`, `execFunc`) follows the
+  existing `analyzeFunc` and `coverageFunc` injection pattern in `crapParams`.
+- The three AI adapters all implement the same `AIAdapter` interface — no
+  conditional dispatch in the runner itself.
+
+The only non-trivial design choice is the gemini `GEMINI.md` temp-directory
+workaround (research.md R-002). This is required by the gemini CLI design and
+is documented, isolated to `GeminiAdapter`, and testable via the fake binary.
