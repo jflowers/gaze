@@ -50,7 +50,8 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 		return "", fmt.Errorf("--model is required when using ollama (FR-003)")
 	}
 
-	payloadBytes, err := io.ReadAll(payload)
+	// Limit payload read to maxAdapterOutputBytes to prevent OOM on oversized JSON.
+	payloadBytes, err := io.ReadAll(io.LimitReader(payload, maxAdapterOutputBytes))
 	if err != nil {
 		return "", fmt.Errorf("reading payload: %w", err)
 	}
@@ -101,8 +102,8 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Limit error body read to avoid OOM on malicious/broken servers.
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAdapterOutputBytes))
+		// Cap error body at maxAdapterStderrBytes — this is an error message, not a report.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAdapterStderrBytes))
 		return "", fmt.Errorf("ollama returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 

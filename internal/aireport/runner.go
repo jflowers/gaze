@@ -75,11 +75,17 @@ func Run(opts RunnerOptions) error {
 		opts.Format = "text"
 	}
 
+	// In text mode, Adapter is required.
+	if opts.Format == "text" && opts.Adapter == nil {
+		return fmt.Errorf("text format requires a non-nil Adapter")
+	}
+
 	// Pre-flight binary check (FR-012): verify the AI CLI is on PATH in text
 	// mode BEFORE running the analysis pipeline (which may take minutes).
-	// AnalyzeFunc tests override the pipeline; ValidateAdapterBinary is still
-	// called because opts.Adapter is a FakeAdapter that always returns nil.
-	if opts.Format == "text" && opts.Adapter != nil {
+	// ValidateAdapterBinary is a no-op for adapters that do not implement
+	// AdapterValidator (e.g. FakeAdapter, OllamaAdapter), so tests using
+	// FakeAdapter are unaffected.
+	if opts.Format == "text" {
 		if err := ValidateAdapterBinary(opts.Adapter); err != nil {
 			return err
 		}
@@ -131,7 +137,7 @@ func Run(opts RunnerOptions) error {
 		return fmt.Errorf("AI formatting failed: %w", err)
 	}
 	if strings.TrimSpace(formatted) == "" {
-		return fmt.Errorf("AI adapter returned empty output (FR-016): ensure the AI CLI is working correctly")
+		return fmt.Errorf("AI adapter returned empty output (FR-016): ensure the adapter is configured and working correctly")
 	}
 
 	// Step 4: Write formatted report to stdout.

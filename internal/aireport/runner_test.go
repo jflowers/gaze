@@ -322,6 +322,25 @@ func TestRun_DefaultFormat_TreatedAsText(t *testing.T) {
 	}
 }
 
+// TestRun_TextFormat_NilAdapter_ReturnsError verifies that a nil Adapter in
+// text mode returns an error rather than panicking.
+func TestRun_TextFormat_NilAdapter_ReturnsError(t *testing.T) {
+	err := Run(RunnerOptions{
+		Patterns:    []string{"./..."},
+		Format:      "text",
+		Stdout:      &bytes.Buffer{},
+		Stderr:      &bytes.Buffer{},
+		Adapter:     nil, // must be rejected before analysis runs
+		AnalyzeFunc: fakeAnalyze(&ReportPayload{}, nil),
+	})
+	if err == nil {
+		t.Fatal("expected error for nil Adapter in text mode")
+	}
+	if !strings.Contains(err.Error(), "non-nil Adapter") {
+		t.Errorf("expected 'non-nil Adapter' in error, got: %v", err)
+	}
+}
+
 // TestRun_ThresholdFailure_ReturnsError verifies that threshold breach returns
 // an error from Run and emits a FAIL line on stderr.
 func TestRun_ThresholdFailure_ReturnsError(t *testing.T) {
