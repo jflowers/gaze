@@ -214,11 +214,13 @@ func runClassifyResults(
 		return nil, fmt.Errorf("loading target package for classification: %w", err)
 	}
 
-	cwd, _ := os.Getwd()
-	modResult, modErr := loader.LoadModule(cwd)
+	cwd, err := os.Getwd()
 	var modPkgs []*packages.Package
-	if modErr == nil {
-		modPkgs = modResult.Packages
+	if err == nil {
+		modResult, modErr := loader.LoadModule(cwd)
+		if modErr == nil {
+			modPkgs = modResult.Packages
+		}
 	}
 
 	clOpts := classify.Options{

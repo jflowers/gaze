@@ -1,6 +1,7 @@
 package aireport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -63,17 +64,35 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 	cmd.Dir = tmpDir
 	cmd.Stdin = payload
 
-	out, err := cmd.Output()
+	// Capture stdout with a bounded pipe to prevent OOM on large outputs.
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		stderr := ""
-		if ee, ok := err.(*exec.ExitError); ok {
-			stderr = string(ee.Stderr)
+		return "", fmt.Errorf("creating stdout pipe for gemini: %w", err)
+	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("starting gemini: %w", err)
+	}
+
+	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
+	waitErr := cmd.Wait()
+
+	if waitErr != nil {
+		// Truncate stderr to avoid leaking secrets.
+		stderrSnippet := stderrBuf.String()
+		if len(stderrSnippet) > maxAdapterStderrBytes {
+			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
 		}
-		return "", fmt.Errorf("gemini exited with error: %w\nstderr: %s", err, stderr)
+		return "", fmt.Errorf("gemini exited with error: %w\nstderr: %s", waitErr, stderrSnippet)
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("reading gemini output: %w", readErr)
 	}
 
 	var resp geminiOutput
-	if err := json.Unmarshal(out, &resp); err != nil {
+	if err := json.Unmarshal(outBytes, &resp); err != nil {
 		return "", fmt.Errorf("parsing gemini JSON response: %w", err)
 	}
 

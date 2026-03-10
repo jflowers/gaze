@@ -1,6 +1,7 @@
 package aireport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,13 @@ import (
 	"os/exec"
 	"strings"
 )
+
+// maxAdapterOutputBytes caps AI subprocess stdout at 64 MiB to prevent OOM.
+const maxAdapterOutputBytes = 64 << 20 // 64 MiB
+
+// maxAdapterStderrBytes caps stderr captured in error messages at 512 bytes
+// to avoid leaking secrets from AI CLI output.
+const maxAdapterStderrBytes = 512
 
 // ClaudeAdapter invokes the claude CLI to format the analysis payload.
 // The system prompt is written to a temporary file and passed via
@@ -56,16 +64,34 @@ func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload
 	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Stdin = payload
 
-	out, err := cmd.Output()
+	// Capture stdout with a bounded pipe to prevent OOM on large outputs.
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		stderr := ""
-		if ee, ok := err.(*exec.ExitError); ok {
-			stderr = string(ee.Stderr)
-		}
-		return "", fmt.Errorf("claude exited with error: %w\nstderr: %s", err, stderr)
+		return "", fmt.Errorf("creating stdout pipe for claude: %w", err)
+	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("starting claude: %w", err)
 	}
 
-	result := string(out)
+	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
+	waitErr := cmd.Wait()
+
+	if waitErr != nil {
+		// Truncate stderr to avoid leaking secrets.
+		stderrSnippet := stderrBuf.String()
+		if len(stderrSnippet) > maxAdapterStderrBytes {
+			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
+		}
+		return "", fmt.Errorf("claude exited with error: %w\nstderr: %s", waitErr, stderrSnippet)
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("reading claude output: %w", readErr)
+	}
+
+	result := string(outBytes)
 	if strings.TrimSpace(result) == "" {
 		return "", fmt.Errorf("claude returned empty output (FR-016): ensure the claude CLI is working correctly")
 	}
