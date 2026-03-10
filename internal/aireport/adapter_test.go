@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -120,5 +121,56 @@ func TestNewAdapter_AcceptsAllValidNames(t *testing.T) {
 			t.Errorf("NewAdapter(%q): expected non-nil adapter", name)
 		}
 		_ = adapter
+	}
+}
+
+// validatorAdapter is a test double that implements both AIAdapter and
+// AdapterValidator to exercise the ValidateAdapterBinary positive path.
+type validatorAdapter struct {
+	validateErr error
+	called      bool
+}
+
+func (v *validatorAdapter) Format(_ context.Context, _ string, _ io.Reader) (string, error) {
+	return "", nil
+}
+
+func (v *validatorAdapter) ValidateBinary() error {
+	v.called = true
+	return v.validateErr
+}
+
+// TestValidateAdapterBinary_CallsValidateBinary verifies the positive path:
+// when the adapter implements AdapterValidator, ValidateBinary is called.
+func TestValidateAdapterBinary_CallsValidateBinary(t *testing.T) {
+	v := &validatorAdapter{validateErr: nil}
+	if err := ValidateAdapterBinary(v); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !v.called {
+		t.Error("expected ValidateBinary to be called")
+	}
+}
+
+// TestValidateAdapterBinary_PropagatesError verifies that an error from
+// ValidateBinary is returned to the caller.
+func TestValidateAdapterBinary_PropagatesError(t *testing.T) {
+	want := errors.New("binary not found")
+	v := &validatorAdapter{validateErr: want}
+	err := ValidateAdapterBinary(v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, want) {
+		t.Errorf("expected %v, got %v", want, err)
+	}
+}
+
+// TestValidateAdapterBinary_NonValidatorReturnsNil verifies the no-op path:
+// adapters that do not implement AdapterValidator (e.g. FakeAdapter) get nil.
+func TestValidateAdapterBinary_NonValidatorReturnsNil(t *testing.T) {
+	fa := &FakeAdapter{Response: "ok"}
+	if err := ValidateAdapterBinary(fa); err != nil {
+		t.Fatalf("expected nil for non-validator adapter, got: %v", err)
 	}
 }

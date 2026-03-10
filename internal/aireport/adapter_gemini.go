@@ -20,6 +20,9 @@ type GeminiAdapter struct {
 	config AdapterConfig
 }
 
+// Compile-time check that GeminiAdapter implements AdapterValidator.
+var _ AdapterValidator = &GeminiAdapter{}
+
 // geminiOutput is the parsed JSON response from gemini --output-format json.
 type geminiOutput struct {
 	Response string `json:"response"`
@@ -60,7 +63,9 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 	defer os.RemoveAll(tmpDir)
 
 	geminiMD := filepath.Join(tmpDir, "GEMINI.md")
-	if err := os.WriteFile(geminiMD, []byte(systemPrompt), 0644); err != nil {
+	// Use 0600 to restrict access to the owner only — the system prompt may
+	// contain proprietary instructions. The temp directory itself is 0700.
+	if err := os.WriteFile(geminiMD, []byte(systemPrompt), 0600); err != nil {
 		return "", fmt.Errorf("writing GEMINI.md: %w", err)
 	}
 

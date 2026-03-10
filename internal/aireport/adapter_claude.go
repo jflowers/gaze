@@ -17,6 +17,9 @@ type ClaudeAdapter struct {
 	config AdapterConfig
 }
 
+// Compile-time check that ClaudeAdapter implements AdapterValidator.
+var _ AdapterValidator = &ClaudeAdapter{}
+
 // ValidateBinary implements AdapterValidator. It checks that the claude binary
 // is available on PATH (FR-012). Call this before running the analysis pipeline
 // to give users an immediate error rather than failing after minutes of work.
