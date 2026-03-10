@@ -4,7 +4,7 @@
 
 ## Summary
 
-39 tasks across 8 implementation phases plus a final documentation/commit phase. Phases 4–6
+40 tasks across 9 phases (Phases 1–8 implementation, Phase 9 documentation and coverage gate). T-005a added for runner_steps.go step functions. Phases 4–6
 (adapter implementations) are sequentially listed but are logically independent; they may be
 worked in any order after Phase 3 completes. Each production-code task has a corresponding or
 combined test task. Coverage targets: `internal/aireport` ≥ 80% line, adapter files ≥ 70%,
@@ -21,12 +21,12 @@ Threshold evaluation and `--format=json` output path are fully operational after
 
 ---
 
-- [ ] T-001: Define `ReportPayload`, `PayloadErrors`, `ThresholdConfig`, and `ThresholdResult` types
+- [ ] T-001: Define `ReportPayload`, `ReportSummary`, `PayloadErrors`, `ThresholdConfig`, and `ThresholdResult` types
   - **Phase**: 1
   - **Files**: `internal/aireport/payload.go` (create)
   - **Depends on**: none
-  - **Acceptance**: `go build ./internal/aireport/...` compiles; exported types visible via `go doc`
-  - **Doc Impact**: GoDoc comments on all exported types
+  - **Acceptance**: `go build ./internal/aireport/...` compiles; exported types visible via `go doc`; `ReportPayload` includes a `Summary ReportSummary` field (populated during pipeline execution) alongside the existing `json.RawMessage` fields; `ReportSummary` holds `CRAPload int`, `GazeCRAPload int`, `AvgContractCoverage int` as typed ints so `EvaluateThresholds` can read threshold-relevant values without unmarshalling raw JSON
+  - **Doc Impact**: GoDoc comments on all exported types including `ReportSummary`
 
 - [ ] T-002: Implement `ReportPayload` JSON round-trip and partial-failure tests
   - **Phase**: 1
@@ -39,14 +39,14 @@ Threshold evaluation and `--format=json` output path are fully operational after
   - **Phase**: 1
   - **Files**: `internal/aireport/threshold.go` (create)
   - **Depends on**: T-001
-  - **Acceptance**: `go build ./internal/aireport/...` compiles; function signature matches data-model.md: `func EvaluateThresholds(cfg ThresholdConfig, payload *ReportPayload) ([]ThresholdResult, bool)`
+  - **Acceptance**: `go build ./internal/aireport/...` compiles; function signature: `func EvaluateThresholds(cfg ThresholdConfig, payload *ReportPayload) ([]ThresholdResult, bool)`; reads `payload.Summary.CRAPload`, `payload.Summary.GazeCRAPload`, and `payload.Summary.AvgContractCoverage` directly (no JSON unmarshal — typed fields from `ReportSummary`); evaluates all three threshold fields independently
   - **Doc Impact**: GoDoc comment on `EvaluateThresholds`
 
 - [ ] T-004: Implement `EvaluateThresholds` contract tests
   - **Phase**: 1
   - **Files**: `internal/aireport/threshold_test.go` (create)
   - **Depends on**: T-003
-  - **Acceptance**: Tests cover: nil threshold (disabled/pass), `*0` live threshold with zero actual (pass), `*0` live threshold with positive actual (fail), `*5` with actual < limit (pass), `*5` with actual > limit (fail), all three threshold fields independently, both thresholds breached simultaneously; `go test -race -count=1 ./internal/aireport/...` passes
+  - **Acceptance**: Tests cover: nil threshold (disabled/pass), `*0` live threshold with zero actual (pass), `*0` live threshold with positive actual (fail), `*5` with actual < limit (pass), `*5` with actual > limit (fail), all three threshold fields independently (`CRAPload`, `GazeCRAPload`, `AvgContractCoverage`), both CRAPload thresholds breached simultaneously; tests construct `ReportPayload` with known `Summary` values; `go test -race -count=1 ./internal/aireport/...` passes
   - **Doc Impact**: none
 
 - [ ] T-005: Implement `Run(RunnerOptions)` in `runner.go` — `--format=json` path only
@@ -55,6 +55,13 @@ Threshold evaluation and `--format=json` output path are fully operational after
   - **Depends on**: T-001, T-003
   - **Acceptance**: `go build ./internal/aireport/...` compiles; `Run` with `Format="json"` assembles `ReportPayload` from all four analysis steps (using `AnalyzeFunc` override when set), writes JSON to `Stdout`, captures per-step errors into `PayloadErrors`, emits progress signals to `Stderr`, validates non-empty package list (FR-013), returns error when zero packages matched; `--format=json` skips AI adapter entirely (FR-015)
   - **Doc Impact**: GoDoc comment on `Run` and `RunnerOptions`
+
+- [ ] T-005a: Implement the four analysis step functions in `runner_steps.go`
+  - **Phase**: 1
+  - **Files**: `internal/aireport/runner_steps.go` (create/complete stub)
+  - **Depends on**: T-001
+  - **Acceptance**: `go build ./internal/aireport/...` compiles; `runCRAPStep`, `runQualityStep`, `runClassifyStep`, `runDocscanStep` are each implemented; each function accepts a context, package pattern, loader, and returns its result plus an error; `Run()` in `runner.go` calls these via the `AnalyzeFunc` hook or directly; all four populate fields on `ReportPayload` and the new `payload.Summary` struct; each step's error is captured in `PayloadErrors` (partial failure per FR-011, not abort); `go test -race -count=1 ./internal/aireport/...` passes
+  - **Doc Impact**: GoDoc comments on all four exported step functions
 
 - [ ] T-006: Implement `runner_test.go` — `--format=json` and partial-failure scenarios
   - **Phase**: 1
@@ -213,14 +220,14 @@ Threshold evaluation and `--format=json` output path are fully operational after
   - **Phase**: 7
   - **Files**: `internal/aireport/output.go` (create)
   - **Depends on**: none (can proceed in parallel with Phases 4–6)
-  - **Acceptance**: `go build ./internal/aireport/...` compiles; `WriteStepSummary(path, content string, stderr io.Writer) error` validates path is absolute; uses `os.Lstat` to check existence (does not follow symlinks); opens file with `os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)`; writes content; on any validation or write failure emits warning to `stderr` and returns `nil` (FR-008 — Step Summary write failure must not abort the command)
+  - **Acceptance**: `go build ./internal/aireport/...` compiles; `WriteStepSummary(path, content string, stderr io.Writer) error` validates path is absolute; opens file with `os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE|syscall.O_NOFOLLOW, 0644)` — `O_NOFOLLOW` atomically refuses to follow symlinks at open time, eliminating the TOCTOU race between any existence check and the open call; if open fails because path is a symlink (`ELOOP` / `syscall.ELOOP`), emits warning to stderr and returns nil; on any other write failure emits warning to `stderr` and returns `nil` (FR-008); the `os.Lstat` pre-check may be retained as an informational step but `O_NOFOLLOW` is the authoritative symlink guard
   - **Doc Impact**: GoDoc comment on `WriteStepSummary`
 
 - [ ] T-022: Implement `WriteStepSummary` tests in `output_test.go`
   - **Phase**: 7
   - **Files**: `internal/aireport/output_test.go` (create)
   - **Depends on**: T-021
-  - **Acceptance**: Tests use `t.TempDir()` and `t.Setenv`; test cases cover: empty path → warning emitted, returns nil; relative path → warning emitted, returns nil; valid absolute path to existing file → content appended; valid absolute path to non-existent file in writable dir → file created with content; unwritable path (e.g., `/dev/full` or chmod 000 parent) → warning emitted, returns nil; symlink to regular file → accepted (Lstat sees symlink as regular on most systems — document actual Lstat behaviour); `go test -race -count=1 ./internal/aireport/...` passes
+  - **Acceptance**: Tests use `t.TempDir()` and `t.Setenv`; test cases cover: empty path → warning emitted, returns nil; relative path → warning emitted, returns nil; valid absolute path to existing file → content appended; valid absolute path to non-existent file in writable dir → file created with content; unwritable path (e.g., `/dev/full` or chmod 000 parent) → warning emitted, returns nil; symlink path → `O_NOFOLLOW` causes open to fail with `ELOOP`; warning emitted, returns nil (symlinks are rejected atomically — no TOCTOU window); `go test -race -count=1 ./internal/aireport/...` passes
   - **Doc Impact**: none
 
 - [ ] T-023: Wire progress signals into `runner.go` (`--format=text` path)
@@ -266,18 +273,18 @@ Threshold evaluation and `--format=json` output path are fully operational after
   - **Acceptance**: Test sets `t.Setenv("GITHUB_STEP_SUMMARY", tmpFile)` and injects `FakeAdapter` via `runnerFunc` override returning a markdown report with `🔍`, `📊`, `🧪`, `🏥` section markers; verifies `tmpFile` is non-empty and contains all four markers after the command runs; verifies command exits 0; `go test -race -count=1 -short ./cmd/gaze/...` passes
   - **Doc Impact**: none
 
-- [ ] T-028: Implement `TestSC002_ReportStructure` in `cmd/gaze/main_test.go`
+- [ ] T-028: Implement `TestSC002_ReportStructure` and `TestSC006_CrossAdapterStructure` in `cmd/gaze/main_test.go`
   - **Phase**: 8
   - **Files**: `cmd/gaze/main_test.go` (modify)
   - **Depends on**: T-026, T-012
-  - **Acceptance**: Test injects `FakeAdapter` returning known markdown with `🔍`, `📊`, `🧪`, `🏥` section markers; verifies all four markers appear in stdout; verifies no extraneous content (threshold failure, error messages) on stderr; `go test -race -count=1 -short ./cmd/gaze/...` passes
+  - **Acceptance**: `TestSC002_ReportStructure` — injects `FakeAdapter` returning known markdown with `🔍`, `📊`, `🧪`, `🏥` section markers; verifies all four markers appear in stdout in order; verifies no extraneous content (threshold failure, error messages) on stderr. `TestSC006_CrossAdapterStructure` — table-driven test with adapter names `{"claude", "gemini", "ollama"}`; for each adapter name, injects `FakeAdapter` with identical payload and canned response; asserts all four emoji markers (`🔍`, `📊`, `🧪`, `🏥`) appear in the same order in stdout for every adapter name; this verifies structural equivalence without requiring real AI CLIs (SC-006 automated regression gate). `go test -race -count=1 -short ./cmd/gaze/...` passes
   - **Doc Impact**: none
 
-- [ ] T-029: Implement `BenchmarkReportAnalysis` in `cmd/gaze/main_test.go` (SC-005)
+- [ ] T-029: Implement `TestSC005_AnalysisPerformance` in `cmd/gaze/main_test.go` (SC-005)
   - **Phase**: 8
   - **Files**: `cmd/gaze/main_test.go` (modify)
   - **Depends on**: T-026
-  - **Acceptance**: `BenchmarkReportAnalysis` runs the analysis pipeline (using `AnalyzeFunc` override or the real pipeline on `./...`) and records ns/op; guarded by `testing.Short()` skip; `go test -race -count=1 -bench=BenchmarkReportAnalysis -benchtime=1x -timeout 30m ./cmd/gaze/...` completes without timeout; `go test -race -count=1 -short ./cmd/gaze/...` skips it
+  - **Acceptance**: `TestSC005_AnalysisPerformance` is guarded by `testing.Short()` (skipped in standard `-short` suite); runs the real analysis pipeline on `./...` (the gaze module itself) with `context.WithTimeout(ctx, 5*time.Minute)`; injects `FakeAdapter` so only the analysis phase (CRAP, quality, classify, docscan) is timed — AI round-trip excluded; asserts the pipeline completes without a timeout error (`ctx.Err() == nil`); if timeout fires, test fails with a clear message: "analysis phase exceeded 5-minute SC-005 limit"; `go test -race -count=1 -run TestSC005_AnalysisPerformance -timeout 30m ./cmd/gaze/...` passes; `go test -race -count=1 -short ./cmd/gaze/...` skips it
   - **Doc Impact**: none
 
 - [ ] T-030: Validate `--format=json` mode end-to-end through `cmd/gaze` command layer
@@ -287,11 +294,11 @@ Threshold evaluation and `--format=json` output path are fully operational after
   - **Acceptance**: Test runs `runReport` with `format="json"` and `AnalyzeFunc` stub returning a known payload; verifies stdout is valid JSON parseable as `ReportPayload`; verifies `--ai` flag is not required in this mode; verifies `errors` field has expected null/non-null structure; `go test -race -count=1 -short ./cmd/gaze/...` passes
   - **Doc Impact**: none
 
-- [ ] T-031: Validate threshold enforcement end-to-end through `cmd/gaze` command layer (US2 scenarios 1–5)
+- [ ] T-031: Validate threshold enforcement end-to-end through `cmd/gaze` command layer (US2 scenarios 1–7)
   - **Phase**: 8
   - **Files**: `cmd/gaze/main_test.go` (modify)
   - **Depends on**: T-026, T-012
-  - **Acceptance**: Five sub-tests (matching US2 scenarios 1–5): (1) CRAPload > max-crapload → exit 1, `(FAIL)` on stderr; (2) CRAPload ≤ max-crapload → exit 0, `(PASS)` on stderr; (3) avg contract coverage < min → exit 1 with FAIL; (4) no threshold flags → exit 0 regardless; (5) `--max-crapload=0` with positive actual → exit 1 (zero is live threshold); all use `FakeAdapter` and `AnalyzeFunc` stub with known payload; `go test -race -count=1 -short ./cmd/gaze/...` passes
+  - **Acceptance**: Seven sub-tests (matching US2 scenarios 1–7): (1) CRAPload > max-crapload → exit 1, `(FAIL)` on stderr; (2) CRAPload ≤ max-crapload → exit 0, `(PASS)` on stderr; (3) avg contract coverage < min → exit 1 with FAIL; (4) no threshold flags → exit 0 regardless; (5) `--max-crapload=0` with positive actual → exit 1 (zero is live threshold); (6) GazeCRAPload > `--max-gaze-crapload` → exit 1, `GazeCRAPload: X/Y (FAIL)` on stderr; (7) `--max-gaze-crapload=0` with positive actual → exit 1 (zero is live threshold for GazeCRAPload); all use `FakeAdapter` and `AnalyzeFunc` stub with known `payload.Summary` values; `go test -race -count=1 -short ./cmd/gaze/...` passes
   - **Doc Impact**: none
 
 - [ ] T-032: Validate error path: missing `--ai` flag returns descriptive error without running analysis
@@ -368,8 +375,9 @@ T-039 (spec commit gate) ──────────────────�
 Phase 1 (foundation):
 T-001 ──► T-002 (payload tests)
 T-001 ──► T-003 ──► T-004 (threshold tests)
+T-001 ──► T-005a (runner_steps.go)
 T-001 + T-003 ──► T-005 ──► T-006 (runner json tests)
-T-005 ──► T-007 ──► T-008
+T-005 + T-005a ──► T-007 ──► T-008
 
 Phase 2 (prompt loading):
 T-009 ──► T-010                               (independent of Phase 1)
@@ -397,7 +405,7 @@ T-024 + T-012 ──► T-025
 Phase 8 (integration):
 T-007 + T-009 + T-011 + T-014 + T-017 + T-019 + T-024 ──► T-026
 T-026 + T-012 ──► T-027, T-028, T-031, T-032, T-033, T-034, T-035
-T-026 ──► T-029, T-030
+T-026 ──► T-029 (TestSC005_AnalysisPerformance), T-030
 
 Phase 9 (docs + coverage gate):
 T-001..T-035 ──► T-036
@@ -409,10 +417,11 @@ T-037 ──► T-038
 
 | Layer | Target | Task(s) |
 |---|---|---|
-| `internal/aireport` unit | ≥ 80% line | T-002, T-004, T-006, T-010, T-012, T-022, T-025 |
+| `internal/aireport` unit | ≥ 80% line | T-002, T-004, T-005a, T-006, T-010, T-012, T-022, T-025 |
 | `adapter_claude.go` | ≥ 70% line | T-015 |
 | `adapter_gemini.go` | ≥ 70% line | T-018 |
 | `adapter_ollama.go` | ≥ 70% line | T-020 |
 | `cmd/gaze` report code | ≥ 75% line | T-008, T-027–T-035 |
 | Coverage gate | enforced | T-036 |
-| e2e / SC-006 | manual | quickstart.md verification |
+| SC-005 performance | automated (timeout) | T-029 (`TestSC005_AnalysisPerformance`) |
+| SC-006 cross-adapter structure | automated (`FakeAdapter`) | T-028 (`TestSC006_CrossAdapterStructure`) |

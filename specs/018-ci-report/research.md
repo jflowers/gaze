@@ -279,12 +279,15 @@ The `cmd.Flags().Changed("flag-name")` API returns true if the flag was explicit
 
 **Decision**: Before writing to `GITHUB_STEP_SUMMARY`, validate that the path:
 1. Is an absolute path (starts with `/`)
-2. Points to a regular file or a path where a regular file can be created (parent dir exists)
-3. Is not a symlink to a path outside a reasonable boundary
+2. Is opened with `syscall.O_NOFOLLOW` to atomically refuse symlink following at the OS level
 
-**Implementation**: Use `os.Lstat` to check if the path exists and is a regular file. If it does not exist, verify the parent directory exists. If either check fails, emit a warning to stderr and skip the Step Summary write. Do not follow symlinks (`Lstat` not `Stat`).
+**Implementation**: Open the file with `os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE|syscall.O_NOFOLLOW, 0644)`. If `O_NOFOLLOW` causes the open to fail because the path is a symlink (`ELOOP`), emit a warning to stderr and return nil. If the open fails for any other reason (unwritable, parent doesn't exist), emit a warning and return nil. Do not abort the command — Step Summary write failure is non-fatal per FR-008.
 
-**Rationale**: Satisfies the council's HIGH finding about path traversal risk. The `GITHUB_STEP_SUMMARY` is set by GitHub Actions and is always an absolute path to a writable file, so in normal use this check passes trivially. It protects against misuse in non-GitHub environments.
+**Why `O_NOFOLLOW` instead of `Lstat`**: A prior design used `os.Lstat` followed by `os.OpenFile`, but this has a TOCTOU race — a symlink created between the check and the open would be followed by `OpenFile`. `O_NOFOLLOW` is an atomic guard at the `open(2)` syscall level: if the path names a symlink at open time, the kernel returns `ELOOP` without following it, eliminating the race window entirely.
+
+**Platform note**: `O_NOFOLLOW` is available on Linux and macOS (Darwin). It is part of POSIX and the gaze release targets both platforms via GoReleaser.
+
+**Rationale**: Satisfies the council's HIGH finding about the TOCTOU symlink write vulnerability. The `GITHUB_STEP_SUMMARY` is set by GitHub Actions and is always a regular file, so in normal use `O_NOFOLLOW` has no observable effect. It protects against misconfigured or adversarial environments.
 
 ---
 

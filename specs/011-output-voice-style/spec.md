@@ -54,7 +54,7 @@ GazeCRAPload: 4 — All 4 Q4 functions (...) have 100% contract coverage — the
 | Ambiguous | 155 | 66.5% |
 | Incidental | 8 | 3.4% |
 
-The 66.5% ambiguous rate is typical for mechanical-only classification. Run /classify-docs to incorporate document signals and reduce ambiguity.
+The 66.5% ambiguous rate is typical for mechanical-only classification. Document-signal scoring (inlined per spec 012) can reduce ambiguity when documentation files are present.
 ---
 🏥 Overall Health Assessment
 Summary Scorecard

@@ -41,6 +41,10 @@ The `/speckit.testreview` command produces a structured report with severity-ran
 
 The review council's 4-reviewer verdict continues to use the same APPROVE/REQUEST CHANGES format with specific findings.
 
+### IV. Testability — PASS
+
+This feature introduces Principle IV itself. All new code is independently testable: scaffold file count and ownership (`isToolOwned`) are verified by existing tests updated to cover the 7-file set. The drift-detection test (`TestScaffoldDrift`) verifies embedded asset byte-for-byte integrity. The constitution amendment is a markdown edit with no executable behavior to test. Coverage strategy: scaffold tests in `internal/scaffold/scaffold_test.go` must pass with `-race -count=1`. No new coverage targets are required beyond the existing passing test suite.
+
 ## Project Structure
 
 ### Documentation (this feature)

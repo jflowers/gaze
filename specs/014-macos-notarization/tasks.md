@@ -1,5 +1,7 @@
 # Tasks: macOS Code Signing and Notarization
 
+> **⚠️ SUPERSEDED — Do not implement.** This spec was replaced by [015-native-macos-signing](../015-native-macos-signing/spec.md). The GoReleaser/quill approach described here had critical bugs. See Spec 015 for the current implementation using native `codesign`/`notarytool`.
+
 **Input**: Design documents from `/specs/014-macos-notarization/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, quickstart.md
 

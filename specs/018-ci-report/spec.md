@@ -2,7 +2,7 @@
 
 **Feature Branch**: `018-ci-report`
 **Created**: 2026-03-10
-**Status**: Draft
+**Status**: Planned
 **Input**: User description: "018-ci-report"
 
 ## Overview
@@ -53,6 +53,8 @@ A developer wants CI to enforce quality standards: if the project's CRAPload or 
 3. **Given** `--min-contract-coverage=70` and a project whose average contract coverage is below 70%, **When** the command runs, **Then** exit code is 1 with an appropriate FAIL summary on stderr.
 4. **Given** no threshold flags are provided, **When** the command runs, **Then** it always exits 0 regardless of metric values (report-only mode).
 5. **Given** `--max-crapload=0` is explicitly provided and the project has at least one function with any positive CRAP score, **When** `gaze report ./... --ai=claude --max-crapload=0` is run, **Then** the command exits with code 1 and a threshold summary appears on stderr, confirming that zero is treated as a live threshold and not as "disabled".
+6. **Given** a project whose GazeCRAPload exceeds `--max-gaze-crapload`, **When** `gaze report ./... --ai=claude --max-gaze-crapload=3` is run, **Then** the command exits with code 1 and a summary line like `GazeCRAPload: 5/3 (FAIL)` is written to stderr.
+7. **Given** `--max-gaze-crapload=0` is explicitly provided and the project has at least one function in Q4 (high-complexity, low-coverage), **When** `gaze report ./... --ai=claude --max-gaze-crapload=0` is run, **Then** the command exits with code 1 and a threshold summary appears on stderr, confirming that zero is treated as a live threshold for GazeCRAPload.
 
 ---
 
@@ -103,7 +105,7 @@ A developer uses ollama for local AI or gemini in their CI environment. They wan
 ### Functional Requirements
 
 - **FR-001**: The tool MUST provide a `report` subcommand that, when invoked, runs all four gaze analysis operations (CRAP scoring, test quality assessment, side effect classification, and documentation scanning) against the specified package pattern and produces a unified formatted report.
-- **FR-002**: The `report` subcommand MUST require an `--ai` flag specifying the AI CLI adapter to use (`claude`, `gemini`, or `ollama`). Omitting `--ai` MUST cause an immediate error with a message listing valid values.
+- **FR-002**: The `report` subcommand MUST require an `--ai` flag when `--format=text` (the default), specifying the AI CLI adapter to use (`claude`, `gemini`, or `ollama`). Omitting `--ai` in text mode MUST cause an immediate error with a message listing valid values. In `--format=json` mode, `--ai` is not required and AI adapter validation is skipped entirely (see FR-015).
 - **FR-003**: The tool MUST support a `--model` flag that passes a model name to the active AI adapter. For ollama, `--model` MUST be required; for claude and gemini, it is optional.
 - **FR-004**: The tool MUST invoke the specified AI CLI with the gaze analysis data and a formatting prompt, and use the AI CLI's response as the formatted report content.
 - **FR-005**: The formatting prompt MUST be loaded from `.opencode/agents/gaze-reporter.md` in the current working directory if that file exists. If it does not exist, the tool MUST fall back to an embedded default prompt.
@@ -141,19 +143,24 @@ A developer uses ollama for local AI or gemini in their CI environment. They wan
 
 ## Clarifications
 
-### Session 2026-03-10
+### Session 2026-03-10 (review-council iteration 2 decisions)
 
 - Q: When the AI CLI exits successfully (exit code 0) but produces empty or clearly unusable output, what should gaze report do? → A: Fatal error, exit non-zero. Exit 1 with a diagnostic message identifying the adapter and describing the empty response.
-- Q: What is the acceptable wall-clock time bound for the gaze analysis portion of `gaze report` (excluding AI CLI round-trip)? → A: 5 minutes for a typical Go project of fewer than 50 packages on a standard CI runner.
+- Q: What is the acceptable wall-clock time bound for the gaze analysis portion of `gaze report` (excluding AI CLI round-trip)? → A: 5 minutes for a typical Go project of fewer than 50 packages on a standard CI runner. Enforced by `TestSC005_AnalysisPerformance` using `context.WithTimeout(5*time.Minute)` on the real pipeline (`./...`), guarded by `testing.Short()`.
 - Q: How does gaze deliver the formatting prompt and analysis data to the AI CLI process? → A: Prompt as a CLI flag specific to the adapter; analysis JSON data written to the process's stdin.
 - Q: Should gaze report emit progress signals to stderr while analysis and AI formatting are running? → A: Yes, lightweight signals at key phase transitions (e.g., "Analyzing packages...", "Formatting report...") on stderr only; stdout reserved for the formatted report.
 - Q: When --format=json is used, should gaze report still require and validate the --ai flag? → A: No. JSON mode bypasses all AI adapter logic; --ai is not required and AI validation is skipped entirely.
+- Q: How should `--max-gaze-crapload` acceptance coverage be provided? → A: Add US2 scenarios 6 (breach → exit 1 + FAIL stderr) and 7 (zero as live threshold → exit 1). Update T-031 to cover both.
+- Q: How should SC-005 (analysis ≤5 min) be enforced? → A: `TestSC005_AnalysisPerformance` runs the real pipeline on `./...` with `context.WithTimeout(5*time.Minute)`; timeout error = test failure. Guards with `testing.Short()`. Replaces `BenchmarkReportAnalysis` as the SC-005 gate.
+- Q: How should SC-006 (cross-adapter structural equivalence) be verified? → A: Add `TestSC006_CrossAdapterStructure`: table-driven test for all three adapter names using `FakeAdapter` with identical payloads; asserts all four emoji markers (`🔍`, `📊`, `🧪`, `🏥`) appear in order. Fully automated, no real AI CLIs required.
+- Q: How should `EvaluateThresholds` access GazeCRAPload for threshold comparison? → A: Add `Summary ReportSummary` field to `ReportPayload`, populated during pipeline execution. `ReportSummary` holds `CRAPload`, `GazeCRAPload`, `AvgContractCoverage` as typed ints. `EvaluateThresholds` reads from `payload.Summary` directly.
+- Q: How should the `GITHUB_STEP_SUMMARY` symlink TOCTOU race be mitigated? → A: Add `syscall.O_NOFOLLOW` to the `OpenFile` call. If path is a symlink, `OpenFile` returns `ELOOP`; catch it, emit warning to stderr, return nil. Update T-021 acceptance criteria accordingly.
 
 ## Assumptions
 
 - Users are responsible for ensuring their chosen AI CLI is installed and authenticated in their CI environment (e.g., API key set, model pulled). The tool does not manage AI CLI installation or authentication.
 - The `gaze` binary is already installed in the CI environment (e.g., via Homebrew, `go install`, or pre-built binary download). This feature does not change how gaze itself is distributed or installed.
-- The formatting prompt embedded in the binary is the same content as `.opencode/agents/gaze-reporter.md` from the scaffold. It produces the same report format as the `/gaze` OpenCode command.
+- The formatting prompt embedded in the binary is derived from `.opencode/agents/gaze-reporter.md` with YAML frontmatter stripped. Read-tool instructions in the prompt body (referencing `.opencode/references/` files) are OpenCode-specific and will be ignored by external AI CLIs; the inline formatting rules are sufficient for correct output (see research.md Decision 2).
 - `--format=json` outputs raw analysis data only (no AI invocation, no `--ai` flag required). This is useful for downstream tooling that wants to consume structured data without any AI CLI installed. AI formatting is only applied in `text` mode (the default).
 - Each AI adapter delivers the formatting prompt as a CLI flag specific to that adapter (e.g., `claude -p "<prompt>"`) and writes the analysis JSON data to the process's stdin. Exact per-adapter flag names are confirmed during planning, but all adapters follow the prompt-as-flag, data-as-stdin contract.
 
