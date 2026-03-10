@@ -3,6 +3,7 @@
 **Feature Branch**: `015-native-macos-signing`  
 **Created**: 2026-03-02  
 **Status**: Complete  
+**Supersedes**: Spec 014 (macos-notarization)  
 **Input**: User description: "Replace quill-based cross-platform signing with native macOS codesign and notarytool in a split-runner CI workflow to fix TeamIdentifier bug and notarization stalling"
 
 ## Context

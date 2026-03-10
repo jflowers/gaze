@@ -1,5 +1,7 @@
 # Feature Specification: macOS Code Signing and Notarization
 
+> **SUPERSEDED — Do not implement.** This spec was replaced by [015-native-macos-signing](../015-native-macos-signing/spec.md). The GoReleaser/quill approach described here had critical bugs (TeamIdentifier injection failure, notarization stalling). See Spec 015 for the current implementation using native `codesign`/`notarytool`.
+
 **Feature Branch**: `014-macos-notarization`  
 **Created**: 2026-03-01  
 **Status**: Superseded (replaced by Spec 015 — native macOS signing)  

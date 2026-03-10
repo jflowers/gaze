@@ -85,16 +85,18 @@ specs/
   003-test-quality-metrics/      # spec.md, plan.md, clarify.md, tasks.md
   004-composite-metrics/         # spec.md, plan.md, tasks.md (retroactive)
   005-gaze-opencode-integration/ # spec.md, plan.md, tasks.md, research.md
-  006-agent-quality-report-enhancements/ # spec.md, plan.md, tasks.md
+  006-agent-quality-report-enhancements/ # spec.md, plan.md, tasks.md, report.md (pre-dates research.md convention; report.md serves as research artifact)
   007-assertion-mapping-depth/   # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
   008-contract-coverage-gaps/    # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
   009-crapload-reduction/        # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
+  # 010-report-voice-refinement: deleted — superseded by 011-output-voice-style before implementation began
   011-output-voice-style/        # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   012-consolidate-classify-docs/ # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
   014-macos-notarization/        # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md
   015-native-macos-signing/      # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   016-agent-context-reduction/   # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   017-testing-persona/           # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
+  018-ci-report/                 # spec.md, checklists/ (plan.md and tasks.md pending)
 ```
 
 Branch names follow the same numbering pattern (e.g., `001-side-effect-detection`).
@@ -246,6 +248,8 @@ Formatters: gofmt, goimports.
 - Go 1.24+ (no Go code changes; YAML/workflow configuration only) + GitHub Actions, `codesign` (macOS native), `xcrun notarytool` (macOS native), `security` (macOS Keychain), `gh` CLI (GitHub) (015-native-macos-signing)
 - Go 1.24+ (scaffold Go code changes); Markdown (agent prompt and reference files) + `embed.FS` (Go standard library), OpenCode agent runtime (016-agent-context-reduction)
 - Go 1.24+ (scaffold Go code changes); Markdown (agent/command prompts) + `embed.FS` (Go standard library), OpenCode agent runtime (017-testing-persona)
+- Go 1.24+ + Cobra (CLI), `exec.Command` (claude/gemini subprocess), `net/http` (ollama HTTP API), `embed.FS` (embedded default prompt), existing internal packages (`crap`, `quality`, `analysis`, `classify`, `docscan`, `loader`, `taxonomy`) (018-ci-report)
+- N/A — ephemeral pipeline only; no persistent state introduced (018-ci-report)
 
 - Go 1.24+ + `golang.org/x/tools` (go/packages, go/ssa), Cobra (CLI), Bubble Tea/Lipgloss (TUI)
 - Filesystem only (embedded assets via `embed.FS`)
@@ -253,6 +257,7 @@ Formatters: gofmt, goimports.
 
 ## Recent Changes
 
+- 018-ci-report: Added AI-powered CI quality report spec (Draft). Introduces `gaze report` subcommand with AI CLI adapter integration (claude, gemini, ollama), GitHub Actions Step Summary output, and optional threshold-based build failure. plan.md and tasks.md pending.
 - 017-testing-persona: Added The Tester (reviewer-testing agent) as 4th review council member for test quality and testability auditing. Added `/speckit.testreview` command for read-only spec testability analysis. Amended constitution with Principle IV: Testability (v1.0.0 → v1.1.0). Scaffold expanded from 4 to 7 files with mixed ownership model — `isToolOwned` now uses explicit file list (prefix for `references/`, exact match for `command/speckit.testreview.md` and `command/review-council.md`). Review council scaffolded as tool-owned for deployment via `gaze init`.
 - 016-agent-context-reduction: Reduced gaze-reporter agent prompt from 17,775 to 13,050 bytes (26.6% reduction) by externalizing canonical example output and document-enhanced classification scoring model into `.opencode/references/` files loaded on demand via Read tool. Added scaffold overwrite-on-diff behavior for tool-owned reference files (`references/` directory) while preserving skip-if-present for user-owned files (`agents/`, `command/`). Scaffold now manages 4 files (up from 2). Added `Updated` field to scaffold `Result` struct and `isToolOwned` helper. Quadrant labels deduplicated to 2 locations (Quick Reference Example + Emoji Vocabulary table).
 - 015-native-macos-signing: Replaced broken quill-based cross-platform signing with native `codesign`/`notarytool` on `macos-latest` runner. Removed `notarize.macos` from `.goreleaser.yaml`. Added `sign-macos` job to release workflow (Keychain import, codesign with hardened runtime, notarytool submit --wait, asset replacement with --clobber, checksum update). Conditional on `MACOS_SIGN_P12` secret via job output gate.
