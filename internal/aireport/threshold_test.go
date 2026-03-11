@@ -192,3 +192,25 @@ func TestEvaluateThresholds_NilPayload(t *testing.T) {
 		t.Errorf("unexpected results: %+v", results)
 	}
 }
+
+// BenchmarkEvaluateThresholds measures the overhead of threshold evaluation.
+// EvaluateThresholds is a pure in-memory function with no I/O; its overhead
+// must be negligible (well under 1 ms per invocation).
+func BenchmarkEvaluateThresholds(b *testing.B) {
+	payload := &ReportPayload{
+		Summary: ReportSummary{
+			CRAPload:            8,
+			GazeCRAPload:        3,
+			AvgContractCoverage: 72,
+		},
+	}
+	cfg := ThresholdConfig{
+		MaxCrapload:         intPtr(10),
+		MaxGazeCrapload:     intPtr(5),
+		MinContractCoverage: intPtr(60),
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		EvaluateThresholds(cfg, payload)
+	}
+}

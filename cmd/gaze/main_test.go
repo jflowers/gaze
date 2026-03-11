@@ -1590,12 +1590,12 @@ func TestSC002_ReportStructure(t *testing.T) {
 	}
 }
 
-// TestSC003_ThresholdTiming verifies that threshold evaluation adds negligible
-// overhead (well under 1 ms) to the total runtime (SC-003).
-func TestSC003_ThresholdTiming(t *testing.T) {
-	// Threshold evaluation is a pure in-memory function; this test verifies
-	// the design goal rather than measuring real wall time.
-	// EvaluateThresholds is called synchronously with no I/O — always < 1 ms.
+// TestSC003_ThresholdEvaluation_Correctness verifies that EvaluateThresholds
+// correctly classifies pass/fail results for a known payload (SC-003).
+// Timing is not measured here; EvaluateThresholds is a pure in-memory function
+// with no I/O — its performance is validated by the BenchmarkEvaluateThresholds
+// benchmark in threshold_test.go.
+func TestSC003_ThresholdEvaluation_Correctness(t *testing.T) {
 	payload := &aireport.ReportPayload{
 		Summary: aireport.ReportSummary{CRAPload: 3},
 	}
@@ -1603,10 +1603,19 @@ func TestSC003_ThresholdTiming(t *testing.T) {
 	cfg := aireport.ThresholdConfig{MaxCrapload: &maxCrapload}
 	results, passed := aireport.EvaluateThresholds(cfg, payload)
 	if !passed {
-		t.Errorf("expected passed=true")
+		t.Errorf("expected passed=true for CRAPload 3 <= max 10")
 	}
 	if len(results) != 1 {
-		t.Errorf("expected 1 result, got %d", len(results))
+		t.Errorf("expected 1 threshold result, got %d", len(results))
+	}
+	if results[0].Name != "CRAPload" {
+		t.Errorf("expected result name 'CRAPload', got %q", results[0].Name)
+	}
+	if results[0].Actual != 3 {
+		t.Errorf("expected Actual=3, got %d", results[0].Actual)
+	}
+	if results[0].Limit != 10 {
+		t.Errorf("expected Limit=10, got %d", results[0].Limit)
 	}
 }
 
@@ -1941,46 +1950,70 @@ func TestRunReport_ThresholdEnforcement(t *testing.T) {
 
 // TestRunReport_GazeCRAPloadThresholds verifies US2 scenarios 6 & 7 for
 // GazeCRAPload threshold (T-031, scenarios 6–7).
+// Drives through runReport → aireport.Run → evaluateAndPrintThresholds to
+// verify the end-to-end format contract: "(FAIL)" must appear on stderr.
 func TestRunReport_GazeCRAPloadThresholds(t *testing.T) {
 	intPtr := func(v int) *int { return &v }
 
 	cases := []struct {
-		name        string
-		payload     *aireport.ReportPayload
-		cfg         aireport.ThresholdConfig
-		expectFail  bool
-		expectLabel string
+		name            string
+		payload         *aireport.ReportPayload
+		maxGazeCrapload *int
+		expectFail      bool
 	}{
 		{
-			name:        "SC6: GazeCRAPload > max → fail",
-			payload:     &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 5}},
-			cfg:         aireport.ThresholdConfig{MaxGazeCrapload: intPtr(3)},
-			expectFail:  true,
-			expectLabel: "GazeCRAPload",
+			name:            "SC6: GazeCRAPload > max → fail",
+			payload:         &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 5}},
+			maxGazeCrapload: intPtr(3),
+			expectFail:      true,
 		},
 		{
-			name:        "SC7: max-gaze-crapload=0 with positive actual → fail",
-			payload:     &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 1}},
-			cfg:         aireport.ThresholdConfig{MaxGazeCrapload: intPtr(0)},
-			expectFail:  true,
-			expectLabel: "GazeCRAPload",
+			name:            "SC7: max-gaze-crapload=0 with positive actual → fail",
+			payload:         &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 1}},
+			maxGazeCrapload: intPtr(0),
+			expectFail:      true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			results, passed := aireport.EvaluateThresholds(tc.cfg, tc.payload)
-			if tc.expectFail && passed {
-				t.Errorf("expected failure, got pass")
+			capturedPayload := tc.payload
+			var stderr bytes.Buffer
+
+			// Drive through runReport → aireport.Run to exercise the real
+			// evaluateAndPrintThresholds format contract ("N/M (FAIL)").
+			err := runReport(reportParams{
+				patterns:        []string{"./..."},
+				format:          "json",
+				stdout:          io.Discard,
+				stderr:          &stderr,
+				maxGazeCrapload: tc.maxGazeCrapload,
+				runnerFunc: func(opts aireport.RunnerOptions) error {
+					return aireport.Run(aireport.RunnerOptions{
+						Patterns:   opts.Patterns,
+						Format:     opts.Format,
+						Stdout:     opts.Stdout,
+						Stderr:     opts.Stderr,
+						Thresholds: opts.Thresholds,
+						AnalyzeFunc: func([]string, string) (*aireport.ReportPayload, error) {
+							return capturedPayload, nil
+						},
+					})
+				},
+			})
+
+			gotFail := err != nil
+			if tc.expectFail && !gotFail {
+				t.Errorf("expected threshold failure, but runReport returned nil")
 			}
-			found := false
-			for _, r := range results {
-				if r.Name == tc.expectLabel && !r.Passed {
-					found = true
-				}
+			if !tc.expectFail && gotFail {
+				t.Errorf("expected threshold pass, but runReport returned error: %v\nstderr: %s", err, stderr.String())
 			}
-			if tc.expectFail && !found {
-				t.Errorf("expected %s FAIL result, got: %+v", tc.expectLabel, results)
+			if tc.expectFail && !strings.Contains(stderr.String(), "(FAIL)") {
+				t.Errorf("expected '(FAIL)' in stderr output, got: %q", stderr.String())
+			}
+			if tc.expectFail && !strings.Contains(stderr.String(), "GazeCRAPload") {
+				t.Errorf("expected 'GazeCRAPload' label in stderr output, got: %q", stderr.String())
 			}
 		})
 	}

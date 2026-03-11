@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -46,23 +47,21 @@ func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload
 		return "", fmt.Errorf("claude not found on PATH (FR-012): %w", err)
 	}
 
-	// Write system prompt to a temporary file.
-	tmpFile, err := os.CreateTemp("", "gaze-claude-prompt-*.md")
+	// Write system prompt to a temporary directory with explicit 0600 permissions.
+	// os.MkdirTemp + os.WriteFile guarantees 0600 mode independent of umask.
+	tmpDir, err := os.MkdirTemp("", "gaze-claude-prompt-*")
 	if err != nil {
-		return "", fmt.Errorf("creating temp file for system prompt: %w", err)
+		return "", fmt.Errorf("creating temp dir for system prompt: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer os.RemoveAll(tmpDir)
 
-	if _, err := tmpFile.WriteString(systemPrompt); err != nil {
-		_ = tmpFile.Close()
+	tmpPath := filepath.Join(tmpDir, "prompt.md")
+	if err := os.WriteFile(tmpPath, []byte(systemPrompt), 0600); err != nil {
 		return "", fmt.Errorf("writing system prompt to temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return "", fmt.Errorf("closing system prompt temp file: %w", err)
 	}
 
 	// Build args: -p "" (headless), --system-prompt-file <path>, [--model <name>]
-	args := []string{"-p", "", "--system-prompt-file", tmpFile.Name()}
+	args := []string{"-p", "", "--system-prompt-file", tmpPath}
 	if a.config.Model != "" {
 		args = append(args, "--model", a.config.Model)
 	}
