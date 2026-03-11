@@ -76,9 +76,12 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qua
 
 	gazeConfig := loadGazeConfigBestEffort()
 
+	// Hoist LoadModule out of the per-package loop — O(1) instead of O(n).
+	modPkgs := resolveModulePackages(moduleDir)
+
 	var allReports []taxonomy.QualityReport
 	for _, pkgPath := range pkgPaths {
-		reports := runQualityForPackage(pkgPath, gazeConfig, stderr)
+		reports := runQualityForPackage(pkgPath, gazeConfig, modPkgs, stderr)
 		allReports = append(allReports, reports...)
 	}
 
@@ -101,10 +104,12 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qua
 }
 
 // runQualityForPackage runs the quality pipeline on a single package.
+// modPkgs should be pre-resolved by the caller (hoist LoadModule out of loops).
 // Returns nil (not an error) if the package has no tests or analysis fails.
 func runQualityForPackage(
 	pkgPath string,
 	gazeConfig *config.GazeConfig,
+	modPkgs []*packages.Package,
 	stderr io.Writer,
 ) []taxonomy.QualityReport {
 	analysisOpts := analysis.Options{IncludeUnexported: false}
@@ -114,7 +119,7 @@ func runQualityForPackage(
 	}
 
 	cfg := gazeConfig
-	classified, err := runClassifyResults(results, pkgPath, cfg)
+	classified, err := runClassifyResults(results, pkgPath, cfg, modPkgs)
 	if err != nil || len(classified) == 0 {
 		return nil
 	}
@@ -143,6 +148,9 @@ func runClassifyStep(patterns []string, moduleDir string) (json.RawMessage, erro
 		return nil, fmt.Errorf("no packages matched patterns %v", patterns)
 	}
 
+	// Hoist LoadModule out of the per-package loop — O(1) instead of O(n).
+	modPkgs := resolveModulePackages(moduleDir)
+
 	gazeConfig := loadGazeConfigBestEffort()
 	var allResults []taxonomy.AnalysisResult
 
@@ -152,7 +160,7 @@ func runClassifyStep(patterns []string, moduleDir string) (json.RawMessage, erro
 		if err != nil || len(results) == 0 {
 			continue
 		}
-		classified, err := runClassifyResults(results, pkgPath, gazeConfig)
+		classified, err := runClassifyResults(results, pkgPath, gazeConfig, modPkgs)
 		if err != nil {
 			continue
 		}
@@ -204,23 +212,17 @@ func resolvePackagePaths(patterns []string, moduleDir string) ([]string, error) 
 }
 
 // runClassifyResults runs the mechanical classification pipeline.
+// modPkgs must be pre-resolved by the caller via resolveModulePackages to
+// avoid calling loader.LoadModule inside a per-package loop (O(n) → O(1)).
 func runClassifyResults(
 	results []taxonomy.AnalysisResult,
 	pkgPath string,
 	cfg *config.GazeConfig,
+	modPkgs []*packages.Package,
 ) ([]taxonomy.AnalysisResult, error) {
 	targetResult, err := loader.Load(pkgPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading target package for classification: %w", err)
-	}
-
-	cwd, err := os.Getwd()
-	var modPkgs []*packages.Package
-	if err == nil {
-		modResult, modErr := loader.LoadModule(cwd)
-		if modErr == nil {
-			modPkgs = modResult.Packages
-		}
 	}
 
 	clOpts := classify.Options{
@@ -229,6 +231,24 @@ func runClassifyResults(
 		TargetPkg:      targetResult.Pkg,
 	}
 	return classify.Classify(results, clOpts), nil
+}
+
+// resolveModulePackages loads all module packages from moduleDir for use in
+// classification. Returns nil (not an error) if loading fails, so callers can
+// degrade gracefully.
+func resolveModulePackages(moduleDir string) []*packages.Package {
+	if moduleDir == "" {
+		var err error
+		moduleDir, err = os.Getwd()
+		if err != nil {
+			return nil
+		}
+	}
+	modResult, err := loader.LoadModule(moduleDir)
+	if err != nil {
+		return nil
+	}
+	return modResult.Packages
 }
 
 // loadGazeConfigBestEffort loads the GazeConfig from cwd, falling back to

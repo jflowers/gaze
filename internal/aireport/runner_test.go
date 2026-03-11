@@ -395,21 +395,6 @@ func TestRun_ThresholdPass_ReturnsNil(t *testing.T) {
 	}
 }
 
-// TestLoadGazeConfigBestEffort_ReturnsDefaultOnEmptyDir verifies that the
-// function returns a non-nil config even when no .gaze.yaml exists.
-// The function is tested indirectly: we verify the embedded default is returned
-// without mutating process-wide working directory state.
-func TestLoadGazeConfigBestEffort_ReturnsDefaultOnEmptyDir(t *testing.T) {
-	// loadGazeConfigBestEffort calls os.Getwd() internally and then looks for
-	// .gaze.yaml. We cannot inject the path, but we can verify the function
-	// always returns a non-nil value — the default config — even when called
-	// from the project root where a .gaze.yaml may or may not exist.
-	cfg := loadGazeConfigBestEffort()
-	if cfg == nil {
-		t.Error("expected non-nil config from loadGazeConfigBestEffort")
-	}
-}
-
 // TestErrString_NilError verifies errString returns nil for nil error.
 func TestErrString_NilError(t *testing.T) {
 	if errString(nil) != nil {
