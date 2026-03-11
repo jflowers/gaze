@@ -46,7 +46,7 @@ func WriteStepSummary(path, content string, stderr io.Writer) {
 			path, err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := fmt.Fprint(f, content); err != nil {
 		_, _ = fmt.Fprintf(stderr,

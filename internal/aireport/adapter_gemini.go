@@ -60,7 +60,7 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 	if err != nil {
 		return "", fmt.Errorf("creating temp directory for GEMINI.md: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	geminiMD := filepath.Join(tmpDir, "GEMINI.md")
 	// Use 0600 to restrict access to the owner only — the system prompt may

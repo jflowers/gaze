@@ -99,7 +99,7 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 	if err != nil {
 		return "", fmt.Errorf("ollama HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Cap error body at maxAdapterStderrBytes — this is an error message, not a report.
