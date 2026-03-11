@@ -53,7 +53,7 @@ func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir for system prompt: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tmpPath := filepath.Join(tmpDir, "prompt.md")
 	if err := os.WriteFile(tmpPath, []byte(systemPrompt), 0600); err != nil {
