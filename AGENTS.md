@@ -24,6 +24,7 @@ Gaze is a static analysis tool for Go that detects observable side effects in fu
 ## Technical Guardrails
 
 - **WORM Persistence**: Use Write-Once-Read-Many patterns where data integrity is paramount.
+- **CI Parity Gate**: Before marking any implementation task complete or declaring a PR ready, agents MUST run `golangci-lint run` locally and treat any output as a blocking error. The same linters that run in CI (errcheck, govet, staticcheck, ineffassign, unused, misspell) run locally via `.golangci.yml`. A task is not complete until `golangci-lint run` exits with zero issues.
 
 ## Council Governance Protocol
 

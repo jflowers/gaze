@@ -29,7 +29,12 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
 ### Instructions
 
-1. Delegate the review to all four council agents in parallel using the Task tool:
+1. **Run `golangci-lint run` before delegating to council agents.** This is a mandatory CI parity gate. Execute the command and inspect its output:
+   - If `golangci-lint run` produces **any output**, report every issue as a CRITICAL finding, fix them, and re-run until it exits cleanly before proceeding.
+   - Only proceed to step 2 once `golangci-lint run` exits with zero issues.
+   - This step enforces the CI Parity Gate from `AGENTS.md` and catches linter failures before the council agents review code by reading it (which is insufficient for catching all linter violations).
+
+2. Delegate the review to all four council agents in parallel using the Task tool:
    - `reviewer-adversary` — audits for security, resilience, efficiency, and constraint violations
    - `reviewer-architect` — audits for architectural alignment, coding conventions, and plan adherence
    - `reviewer-guard` — audits for intent drift, neighborhood impact, and zero-waste compliance
@@ -37,13 +42,13 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
    For each agent, instruct it to review the current changes and return its verdict (**APPROVE** or **REQUEST CHANGES**) along with all findings.
 
-2. Collect all **REQUEST CHANGES** findings from the four reviewers. If all four return **APPROVE**, report the result and stop.
+3. Collect all **REQUEST CHANGES** findings from the four reviewers. If all four return **APPROVE**, report the result and stop.
 
-3. If there are **REQUEST CHANGES**, address the findings by making the necessary code fixes. Then re-run all four reviewers to verify the fixes. Repeat this loop until all four return **APPROVE** or the process has exceeded 3 iterations.
+4. If there are **REQUEST CHANGES**, address the findings by making the necessary code fixes. Then re-run all four reviewers to verify the fixes. Repeat this loop until all four return **APPROVE** or the process has exceeded 3 iterations.
 
-4. If 3 iterations are exceeded, ask the user whether to continue or stop.
+5. If 3 iterations are exceeded, ask the user whether to continue or stop.
 
-5. Provide a final report to the user:
+6. Provide a final report to the user:
    - What was found in each iteration
    - What was fixed
    - If stopped early, the current set of outstanding **REQUEST CHANGES**
