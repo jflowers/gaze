@@ -29,10 +29,7 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
 ### Instructions
 
-1. **Run `golangci-lint run` before delegating to council agents.** This is a mandatory CI parity gate. Execute the command and inspect its output:
-   - If `golangci-lint run` produces **any output**, report every issue as a CRITICAL finding, fix them, and re-run until it exits cleanly before proceeding.
-   - Only proceed to step 2 once `golangci-lint run` exits with zero issues.
-   - This step enforces the CI Parity Gate from `AGENTS.md` and catches linter failures before the council agents review code by reading it (which is insufficient for catching all linter violations).
+1. **Replicate CI checks locally before delegating to council agents.** Read `.github/workflows/` to identify the exact commands CI runs, then execute those same commands. Any failure is a CRITICAL finding that must be fixed before the council review begins. Do not rely on a memorized list of commands — always derive them from the workflow files, which are the source of truth. This catches failures (e.g. linter violations) that code reading alone cannot reliably detect.
 
 2. Delegate the review to all four council agents in parallel using the Task tool:
    - `reviewer-adversary` — audits for security, resilience, efficiency, and constraint violations
