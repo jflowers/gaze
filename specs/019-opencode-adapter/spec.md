@@ -114,7 +114,6 @@ A developer switching from `--ai=claude` to `--ai=opencode` expects the same beh
 - Q: How should the analysis payload be delivered? → A: Via stdin, same as all other adapters.
 - Q: Should `--model` be required for `opencode`? → A: No. Optional, same as `claude` and `gemini`. When absent, opencode uses its own configured default.
 - Q: What output format should be requested from `opencode run`? → A: Plain-text (the default output format). This avoids NDJSON event-stream parsing complexity and mirrors the Claude adapter's behavior.
-- Q: Should `--model` be required for `opencode`? → A: No. Optional, same as `claude` and `gemini`.
 - Q: What positional message argument should be passed to `opencode run`? → A: An empty string `""`, mirroring the `-p ""` pattern used by `claude` and `gemini` to signal non-interactive/headless operation while payload is read from stdin.
 
 ## Assumptions

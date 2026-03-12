@@ -99,6 +99,8 @@ specs/
   016-agent-context-reduction/   # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   017-testing-persona/           # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
   018-ci-report/                 # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
+  019-opencode-adapter/          # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
+  020-report-coverprofile/       # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
 ```
 
 Branch names follow the same numbering pattern (e.g., `001-side-effect-detection`).

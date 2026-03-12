@@ -105,7 +105,7 @@ A developer uses ollama for local AI or gemini in their CI environment. They wan
 ### Functional Requirements
 
 - **FR-001**: The tool MUST provide a `report` subcommand that, when invoked, runs all four gaze analysis operations (CRAP scoring, test quality assessment, side effect classification, and documentation scanning) against the specified package pattern and produces a unified formatted report.
-- **FR-002**: The `report` subcommand MUST require an `--ai` flag when `--format=text` (the default), specifying the AI CLI adapter to use (`claude`, `gemini`, or `ollama`). Omitting `--ai` in text mode MUST cause an immediate error with a message listing valid values. In `--format=json` mode, `--ai` is not required and AI adapter validation is skipped entirely (see FR-015).
+- **FR-002**: The `report` subcommand MUST require an `--ai` flag when `--format=text` (the default), specifying the AI CLI adapter to use (`claude`, `gemini`, `ollama`, or `opencode`). Omitting `--ai` in text mode MUST cause an immediate error with a message listing valid values. In `--format=json` mode, `--ai` is not required and AI adapter validation is skipped entirely (see FR-015).
 - **FR-003**: The tool MUST support a `--model` flag that passes a model name to the active AI adapter. For ollama, `--model` MUST be required; for claude and gemini, it is optional.
 - **FR-004**: The tool MUST invoke the specified AI CLI with the gaze analysis data and a formatting prompt, and use the AI CLI's response as the formatted report content.
 - **FR-005**: The formatting prompt MUST be loaded from `.opencode/agents/gaze-reporter.md` in the current working directory if that file exists. If it does not exist, the tool MUST fall back to an embedded default prompt.
@@ -125,7 +125,7 @@ A developer uses ollama for local AI or gemini in their CI environment. They wan
 ### Key Entities
 
 - **Report Command**: The `gaze report` subcommand that orchestrates the full pipeline. Attributes: package pattern, AI adapter selection, model name, threshold configuration, output targets.
-- **AI Adapter**: A named integration that knows how to invoke a specific external AI CLI with a system prompt and data payload. Supported adapters: `claude`, `gemini`, `ollama`.
+- **AI Adapter**: A named integration that knows how to invoke a specific external AI CLI with a system prompt and data payload. Supported adapters: `claude`, `gemini`, `ollama`, `opencode`.
 - **Formatting Prompt**: The instruction set passed to the AI CLI that tells it how to structure and present the analysis data. Loaded from the local agent file or the embedded default.
 - **Analysis Payload**: The structured data bundle containing results from all four analysis operations (CRAP, quality, classification, docscan), passed to the AI adapter for formatting.
 - **Step Summary**: The GitHub Actions file (identified by `GITHUB_STEP_SUMMARY`) to which the formatted report is appended for display in the Actions UI.
@@ -139,7 +139,7 @@ A developer uses ollama for local AI or gemini in their CI environment. They wan
 - **SC-003**: When a threshold flag is provided and the measured metric exceeds (or falls below) the threshold, the command exits non-zero within the same wall-clock time as the analysis itself (no additional delay for threshold evaluation).
 - **SC-004**: When one of the four analysis operations fails, the command still produces a report for the remaining operations within the same total runtime, rather than aborting entirely.
 - **SC-005**: The gaze-owned analysis portion of `gaze report` (excluding the external AI CLI round-trip) completes within 5 minutes for a typical Go project of fewer than 50 packages on a standard CI runner.
-- **SC-006**: All three AI adapters (claude, gemini, ollama) produce a report with identical structure, differing only in the AI-generated prose, given the same analysis data and formatting prompt.
+- **SC-006**: All four AI adapters (claude, gemini, ollama, opencode) produce a report with identical structure, differing only in the AI-generated prose, given the same analysis data and formatting prompt.
 
 ## Clarifications
 
@@ -152,7 +152,7 @@ A developer uses ollama for local AI or gemini in their CI environment. They wan
 - Q: When --format=json is used, should gaze report still require and validate the --ai flag? → A: No. JSON mode bypasses all AI adapter logic; --ai is not required and AI validation is skipped entirely.
 - Q: How should `--max-gaze-crapload` acceptance coverage be provided? → A: Add US2 scenarios 6 (breach → exit 1 + FAIL stderr) and 7 (zero as live threshold → exit 1). Update T-031 to cover both.
 - Q: How should SC-005 (analysis ≤5 min) be enforced? → A: `TestSC005_AnalysisPerformance` runs the real pipeline on `./...` with `context.WithTimeout(5*time.Minute)`; timeout error = test failure. Guards with `testing.Short()`. Replaces `BenchmarkReportAnalysis` as the SC-005 gate.
-- Q: How should SC-006 (cross-adapter structural equivalence) be verified? → A: Add `TestSC006_CrossAdapterStructure`: table-driven test for all three adapter names using `FakeAdapter` with identical payloads; asserts all four emoji markers (`🔍`, `📊`, `🧪`, `🏥`) appear in order. Fully automated, no real AI CLIs required.
+- Q: How should SC-006 (cross-adapter structural equivalence) be verified? → A: Add `TestSC006_CrossAdapterStructure`: table-driven test for all four adapter names using `FakeAdapter` with identical payloads; asserts all four emoji markers (`🔍`, `📊`, `🧪`, `🏥`) appear in order. Fully automated, no real AI CLIs required.
 - Q: How should `EvaluateThresholds` access GazeCRAPload for threshold comparison? → A: Add `Summary ReportSummary` field to `ReportPayload`, populated during pipeline execution. `ReportSummary` holds `CRAPload`, `GazeCRAPload`, `AvgContractCoverage` as typed ints. `EvaluateThresholds` reads from `payload.Summary` directly.
 - Q: How should the `GITHUB_STEP_SUMMARY` symlink TOCTOU race be mitigated? → A: Add `syscall.O_NOFOLLOW` to the `OpenFile` call. If path is a symlink, `OpenFile` returns `ELOOP`; catch it, emit warning to stderr, return nil. Update T-021 acceptance criteria accordingly.
 
