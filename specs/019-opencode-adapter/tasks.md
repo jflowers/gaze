@@ -10,7 +10,7 @@
 
 - **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
 - **[Story]**: Which user story this task belongs to (US1, US2)
-- Paths are relative to repo root: `/Users/jflowers/Projects/github/unbound-force/gaze/`
+- All paths are relative to the repository root
 
 ---
 

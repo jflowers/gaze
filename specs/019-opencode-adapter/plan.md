@@ -61,7 +61,7 @@ specs/019-opencode-adapter/
 ├── research.md      ← Phase 0 output (11 decisions documented)
 ├── data-model.md    ← Phase 1 output (entity model + process flow)
 ├── quickstart.md    ← Phase 1 output (implementation guide)
-└── tasks.md         ← Phase 2 output (/speckit.tasks — not yet created)
+└── tasks.md         ← Phase 2 output (/speckit.tasks)
 ```
 
 ### Source Code Changes
