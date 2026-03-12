@@ -18,7 +18,7 @@
 
 **Purpose**: No new infrastructure is needed. This feature adds fields and a flag to existing code. Phase 1 is a single verification step to confirm the baseline builds and tests pass before any changes.
 
-- [ ] T001 Verify baseline: run `go build ./...` and `go test -race -count=1 -short ./...` — confirm all pass before any changes
+- [x] T001 Verify baseline: run `go build ./...` and `go test -race -count=1 -short ./...` — confirm all pass before any changes
 
 ---
 
@@ -28,10 +28,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Add `CoverProfile string` field to `aireport.RunnerOptions` in `internal/aireport/runner.go` with GoDoc comment: "CoverProfile is the path to a pre-generated Go coverage profile. When non-empty, the CRAP analysis step uses this file directly instead of spawning go test internally (FR-001, FR-002). Empty string means generate internally (FR-003)."
-- [ ] T003 Add `coverProfile string` as third parameter to `runCRAPStep` in `internal/aireport/runner_steps.go` (before `stderr io.Writer`); set `opts.CoverProfile = coverProfile` inside the function body
-- [ ] T004 Update the `runCRAPStep` call site in `runProductionPipeline` in `internal/aireport/runner.go` to pass `opts.CoverProfile` as the new third argument
-- [ ] T005 Verify: `go build ./...` passes after foundational changes — confirms all call sites compile
+- [x] T002 Add `CoverProfile string` field to `aireport.RunnerOptions` in `internal/aireport/runner.go` with GoDoc comment: "CoverProfile is the path to a pre-generated Go coverage profile. When non-empty, the CRAP analysis step uses this file directly instead of spawning go test internally (FR-001, FR-002). Empty string means generate internally (FR-003)."
+- [x] T003 Add `coverProfile string` as third parameter to `runCRAPStep` in `internal/aireport/runner_steps.go` (before `stderr io.Writer`); set `opts.CoverProfile = coverProfile` inside the function body
+- [x] T004 Update the `runCRAPStep` call site in `runProductionPipeline` in `internal/aireport/runner.go` to pass `opts.CoverProfile` as the new third argument
+- [x] T005 Verify: `go build ./...` passes after foundational changes — confirms all call sites compile
 
 **Checkpoint**: Foundational plumbing complete — `CoverProfile` flows from `RunnerOptions` through to `crap.Analyze`. User story implementation can now begin.
 
@@ -45,21 +45,21 @@
 
 ### Implementation for User Story 1
 
-- [ ] T005b [US1] Add pre-flight `--coverprofile` path validation to `runReport` in `cmd/gaze/main.go`: if `p.coverProfile != ""`, call `os.Stat(p.coverProfile)`; if stat fails (not found), return `fmt.Errorf("--coverprofile %q: %w", p.coverProfile, err)`; if `info.IsDir()`, return `fmt.Errorf("--coverprofile %q is a directory, not a file", p.coverProfile)`. This validation runs before `aireport.Run` is called, satisfying FR-006 (hard exit, non-zero) without conflicting with `runProductionPipeline`'s partial-failure architecture. (Decision 3, Option A, 2026-03-12.)
+- [x] T005b [US1] Add pre-flight `--coverprofile` path validation to `runReport` in `cmd/gaze/main.go`: if `p.coverProfile != ""`, call `os.Stat(p.coverProfile)`; if stat fails (not found), return `fmt.Errorf("--coverprofile %q: %w", p.coverProfile, err)`; if `info.IsDir()`, return `fmt.Errorf("--coverprofile %q is a directory, not a file", p.coverProfile)`. This validation runs before `aireport.Run` is called, satisfying FR-006 (hard exit, non-zero) without conflicting with `runProductionPipeline`'s partial-failure architecture. (Decision 3, Option A, 2026-03-12.)
 
-- [ ] T006 [US1] Add `coverProfile string` field to `reportParams` struct in `cmd/gaze/main.go` (after the `minContractCoverage *int` field)
-- [ ] T007 [US1] Add `var coverProfile string` local variable to `newReportCmd` in `cmd/gaze/main.go` alongside the other flag variables
-- [ ] T008 [US1] Register the flag in `newReportCmd` in `cmd/gaze/main.go`: `cmd.Flags().StringVar(&coverProfile, "coverprofile", "", "path to a pre-generated coverage profile (skips internal go test run)")`
-- [ ] T009 [US1] Add `coverProfile: coverProfile` to the `reportParams{}` literal in the `RunE` closure of `newReportCmd` in `cmd/gaze/main.go`
-- [ ] T010 [US1] Add `CoverProfile: p.coverProfile` to the `aireport.RunnerOptions{}` literal in `runReport` in `cmd/gaze/main.go`
-- [ ] T011 [US1] Add a `--coverprofile` usage example to the `Long` field of `newReportCmd` in `cmd/gaze/main.go`: `gaze report ./... --ai=claude --coverprofile=coverage.out`
+- [x] T006 [US1] Add `coverProfile string` field to `reportParams` struct in `cmd/gaze/main.go` (after the `minContractCoverage *int` field)
+- [x] T007 [US1] Add `var coverProfile string` local variable to `newReportCmd` in `cmd/gaze/main.go` alongside the other flag variables
+- [x] T008 [US1] Register the flag in `newReportCmd` in `cmd/gaze/main.go`: `cmd.Flags().StringVar(&coverProfile, "coverprofile", "", "path to a pre-generated coverage profile (skips internal go test run)")`
+- [x] T009 [US1] Add `coverProfile: coverProfile` to the `reportParams{}` literal in the `RunE` closure of `newReportCmd` in `cmd/gaze/main.go`
+- [x] T010 [US1] Add `CoverProfile: p.coverProfile` to the `aireport.RunnerOptions{}` literal in `runReport` in `cmd/gaze/main.go`
+- [x] T011 [US1] Add a `--coverprofile` usage example to the `Long` field of `newReportCmd` in `cmd/gaze/main.go`: `gaze report ./... --ai=claude --coverprofile=coverage.out`
 
 ### Tests for User Story 1
 
-- [ ] T012 [US1] Add `TestRunReport_CoverProfile_ValidPath` in `cmd/gaze/main_test.go`: write a minimal valid Go coverage profile to `t.TempDir()`; use a spy `runnerFunc` (the `reportParams.runnerFunc` override) that captures the `RunnerOptions` passed to it and returns nil; call `runReport` with `format:"json"`, `coverProfile` set to that path, and the spy wired into `reportParams`; assert no error and `spy.capturedOpts.CoverProfile == profilePath`. Note: the spy intercepts at the `reportParams.runnerFunc` boundary (before `aireport.Run`), so it proves the `reportParams.coverProfile → RunnerOptions.CoverProfile` wiring — not the downstream `runCRAPStep` wiring (which is covered by T013). No `testing.Short()` guard — spy bypasses all subprocess execution.
-- [ ] T013 [US1] Add `TestRunCRAPStep_WithCoverProfile` in `internal/aireport/runner_steps_test.go`: call `runCRAPStep` with a minimal valid coverage profile from `internal/aireport/testdata/` (create a static fixture `testdata/sample.coverprofile` containing `mode: set\n` followed by one coverage record for a real source file in the module, e.g. `github.com/unbound-force/gaze/internal/crap/crap.go:90.57,93.2 1 1`); assert `result != nil`, no error, and `result.JSON != nil` (proves the profile was accepted and CRAP analysis produced output — `crapStepResult` has no `Functions` field; the fields are `JSON json.RawMessage`, `CRAPload int`, `GazeCRAPload int`). Guard with `testing.Short()` since it loads real Go packages via `crap.Analyze`.
+- [x] T012 [US1] Add `TestRunReport_CoverProfile_ValidPath` in `cmd/gaze/main_test.go`: write a minimal valid Go coverage profile to `t.TempDir()`; use a spy `runnerFunc` (the `reportParams.runnerFunc` override) that captures the `RunnerOptions` passed to it and returns nil; call `runReport` with `format:"json"`, `coverProfile` set to that path, and the spy wired into `reportParams`; assert no error and `spy.capturedOpts.CoverProfile == profilePath`. Note: the spy intercepts at the `reportParams.runnerFunc` boundary (before `aireport.Run`), so it proves the `reportParams.coverProfile → RunnerOptions.CoverProfile` wiring — not the downstream `runCRAPStep` wiring (which is covered by T013). No `testing.Short()` guard — spy bypasses all subprocess execution.
+- [x] T013 [US1] Add `TestRunCRAPStep_WithCoverProfile` in `internal/aireport/runner_steps_test.go`: call `runCRAPStep` with a minimal valid coverage profile from `internal/aireport/testdata/` (create a static fixture `testdata/sample.coverprofile` containing `mode: set\n` followed by one coverage record for a real source file in the module, e.g. `github.com/unbound-force/gaze/internal/crap/crap.go:90.57,93.2 1 1`); assert `result != nil`, no error, and `result.JSON != nil` (proves the profile was accepted and CRAP analysis produced output — `crapStepResult` has no `Functions` field; the fields are `JSON json.RawMessage`, `CRAPload int`, `GazeCRAPload int`). Guard with `testing.Short()` since it loads real Go packages via `crap.Analyze`.
 
-- [ ] T013b [US1] Merge SC-001 regression assertion into T012 — add a second assertion to T012: `spy.callCount == 1` (verifying `runnerFunc` was called exactly once). This ensures the SC-001 regression guard is co-located with the wiring assertion and adds no additional test overhead. T013b as a separate task is superseded by this merge; remove T013b from the task list.
+- [x] T013b [US1] Merge SC-001 regression assertion into T012 — add a second assertion to T012: `spy.callCount == 1` (verifying `runnerFunc` was called exactly once). This ensures the SC-001 regression guard is co-located with the wiring assertion and adds no additional test overhead. T013b as a separate task is superseded by this merge; remove T013b from the task list.
 
 **Checkpoint**: `gaze report --coverprofile` works end-to-end for the happy path. US1 is independently testable.
 
@@ -73,9 +73,9 @@
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Add `TestRunReport_CoverProfile_NonexistentPath` in `cmd/gaze/main_test.go`: set `coverProfile` to `filepath.Join(t.TempDir(), "nonexistent.out")`, call `runReport` with `format:"json"`, assert `err != nil` (error comes from the pre-flight `os.Stat` check in T005b, not from the pipeline), assert `err.Error()` contains the path string and `"no such file"` (or `"not exist"`). No `testing.Short()` guard needed — no subprocess.
-- [ ] T015 [P] [US2] Add `TestRunReport_CoverProfile_DirectoryPath` in `cmd/gaze/main_test.go`: set `coverProfile` to `t.TempDir()` (a directory), call `runReport` with `format:"json"`, assert `err != nil` (error comes from the pre-flight `info.IsDir()` check in T005b, not from the pipeline), assert `err.Error()` contains `"directory"`. No `testing.Short()` guard needed — no subprocess.
-- [ ] T016 [P] [US2] Add `TestRunReport_CoverProfile_UnparseableContent` in `cmd/gaze/main_test.go`: write a file with content `"not a coverage profile\n"` to `t.TempDir()`, call `runReport` with `format:"json"` and **no** `runnerFunc` override (let the real pipeline run), capture stdout into a buffer, assert `err == nil` (the partial-failure architecture stores CRAP errors in the JSON payload, not as a Go error), unmarshal the JSON output into `aireport.ReportPayload`, and assert `payload.Errors.CRAP != nil && strings.Contains(*payload.Errors.CRAP, "parsing coverage profile")`. This exercises the real parse-failure path end-to-end. Guard with `testing.Short()` — the real pipeline runs quality, classify, and docscan steps which load Go packages. Note: this test calls `runReport` with a real AI adapter override (`FakeAdapter`) to avoid requiring a real AI CLI in the test environment. The `FakeAdapter` is already available in the test suite.
+- [x] T014 [P] [US2] Add `TestRunReport_CoverProfile_NonexistentPath` in `cmd/gaze/main_test.go`: set `coverProfile` to `filepath.Join(t.TempDir(), "nonexistent.out")`, call `runReport` with `format:"json"`, assert `err != nil` (error comes from the pre-flight `os.Stat` check in T005b, not from the pipeline), assert `err.Error()` contains the path string and `"no such file"` (or `"not exist"`). No `testing.Short()` guard needed — no subprocess.
+- [x] T015 [P] [US2] Add `TestRunReport_CoverProfile_DirectoryPath` in `cmd/gaze/main_test.go`: set `coverProfile` to `t.TempDir()` (a directory), call `runReport` with `format:"json"`, assert `err != nil` (error comes from the pre-flight `info.IsDir()` check in T005b, not from the pipeline), assert `err.Error()` contains `"directory"`. No `testing.Short()` guard needed — no subprocess.
+- [x] T016 [P] [US2] Add `TestRunReport_CoverProfile_UnparseableContent` in `cmd/gaze/main_test.go`: write a file with content `"not a coverage profile\n"` to `t.TempDir()`, call `runReport` with `format:"json"` and **no** `runnerFunc` override (let the real pipeline run), capture stdout into a buffer, assert `err == nil` (the partial-failure architecture stores CRAP errors in the JSON payload, not as a Go error), unmarshal the JSON output into `aireport.ReportPayload`, and assert `payload.Errors.CRAP != nil && strings.Contains(*payload.Errors.CRAP, "parsing coverage profile")`. This exercises the real parse-failure path end-to-end. Guard with `testing.Short()` — the real pipeline runs quality, classify, and docscan steps which load Go packages. Note: this test calls `runReport` with a real AI adapter override (`FakeAdapter`) to avoid requiring a real AI CLI in the test environment. The `FakeAdapter` is already available in the test suite.
 
 **Checkpoint**: All three invalid-path error scenarios are covered by automated regression tests. US2 is independently testable alongside US1.
 
@@ -89,8 +89,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Update the README `gaze report` section in `README.md`: add a `#### Using a pre-generated coverage profile` subsection with the two-step CI example (`go test -race -count=1 -coverprofile=coverage.out ./...` then `gaze report ./... --ai=claude --coverprofile=coverage.out`) and a GitHub Actions YAML snippet
-- [ ] T018 [P] [US3] Add `TestReportCmd_CoverprofileInHelp` in `cmd/gaze/main_test.go`: create the `report` cobra command via `newReportCmd()`, set `cmd.SetArgs([]string{"--help"})` and capture output via `cmd.SetOut(&buf)`, call `cmd.Execute()`, assert `buf.String()` contains `"--coverprofile"` and `"pre-generated"`. Use `cmd.SetArgs`+`Execute` (not `UsageString`) to guarantee the full flag description is rendered.
+- [x] T017 [US3] Update the README `gaze report` section in `README.md`: add a `#### Using a pre-generated coverage profile` subsection with the two-step CI example (`go test -race -count=1 -coverprofile=coverage.out ./...` then `gaze report ./... --ai=claude --coverprofile=coverage.out`) and a GitHub Actions YAML snippet
+- [x] T018 [P] [US3] Add `TestReportCmd_CoverprofileInHelp` in `cmd/gaze/main_test.go`: create the `report` cobra command via `newReportCmd()`, set `cmd.SetArgs([]string{"--help"})` and capture output via `cmd.SetOut(&buf)`, call `cmd.Execute()`, assert `buf.String()` contains `"--coverprofile"` and `"pre-generated"`. Use `cmd.SetArgs`+`Execute` (not `UsageString`) to guarantee the full flag description is rendered.
 
 **Checkpoint**: Flag is discoverable from `--help` and documented in README. US3 is independently testable.
 
@@ -100,10 +100,10 @@
 
 **Purpose**: CI parity validation, GoDoc accuracy, and AGENTS.md bookkeeping.
 
-- [ ] T019 [P] Update `AGENTS.md` Recent Changes section: add a bullet for `020-report-coverprofile` describing the new `--coverprofile` flag, its effect on CI double-run elimination, and the modified files (`cmd/gaze/main.go`, `internal/aireport/runner.go`, `internal/aireport/runner_steps.go`)
-- [ ] T020 [P] Verify GoDoc on `RunnerOptions.CoverProfile` field is accurate and matches the implemented behavior (check `internal/aireport/runner.go`)
-- [ ] T021 Run CI parity gate: `go build ./...` and `go test -race -count=1 -short ./...` — all must pass
-- [ ] T022 Mark all tasks complete in this `tasks.md` as implemented (update checkboxes to `[x]`)
+- [x] T019 [P] Update `AGENTS.md` Recent Changes section: add a bullet for `020-report-coverprofile` describing the new `--coverprofile` flag, its effect on CI double-run elimination, and the modified files (`cmd/gaze/main.go`, `internal/aireport/runner.go`, `internal/aireport/runner_steps.go`)
+- [x] T020 [P] Verify GoDoc on `RunnerOptions.CoverProfile` field is accurate and matches the implemented behavior (check `internal/aireport/runner.go`)
+- [x] T021 Run CI parity gate: `go build ./...` and `go test -race -count=1 -short ./...` — all must pass
+- [x] T022 Mark all tasks complete in this `tasks.md` as implemented (update checkboxes to `[x]`)
 
 ---
 

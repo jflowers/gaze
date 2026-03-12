@@ -353,6 +353,7 @@ gaze report ./... --ai=claude --max-crapload=10 --max-gaze-crapload=5 --min-cont
 | `--model` | Model name (required for ollama; optional for claude/gemini/opencode) |
 | `--ai-timeout` | AI adapter timeout (default: `10m`) |
 | `--format` | Output format: `text` or `json` (default: `text`) |
+| `--coverprofile` | Path to a pre-generated coverage profile (skips internal go test run) |
 | `--max-crapload` | Fail if project CRAPload exceeds N (zero is a live threshold) |
 | `--max-gaze-crapload` | Fail if GazeCRAPload exceeds N (zero is a live threshold) |
 | `--min-contract-coverage` | Fail if average contract coverage is below N% |
@@ -368,6 +369,30 @@ gaze report ./... --ai=claude --max-crapload=10 --max-gaze-crapload=5 --min-cont
 ```
 
 When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), the formatted report is appended to the workflow step summary. Write failures are non-fatal — the command exits 0 with a warning on stderr.
+
+#### Using a pre-generated coverage profile
+
+If your CI workflow already runs `go test -coverprofile`, pass that profile to `gaze report` to avoid running tests twice:
+
+```bash
+go test -race -count=1 -coverprofile=coverage.out ./...
+gaze report ./... --ai=claude --coverprofile=coverage.out
+```
+
+With this setup, tests run **once** per CI job. The coverage data used for CRAP scores is the same high-quality profile produced by the race-detecting test run.
+
+**GitHub Actions example with pre-generated profile:**
+
+```yaml
+- name: Test
+  run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+- name: Gaze Report
+  run: gaze report ./... --ai=claude --coverprofile=coverage.out
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+```
 
 ### `gaze self-check` -- Self-Analysis
 

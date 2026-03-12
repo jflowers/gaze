@@ -2,6 +2,8 @@ package aireport
 
 import (
 	"io"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -64,6 +66,7 @@ func TestRunCRAPStep_RealPackage(t *testing.T) {
 	res, err := runCRAPStep(
 		[]string{"github.com/unbound-force/gaze/internal/config"},
 		modRoot,
+		"", // no pre-generated profile — use internal generation
 		io.Discard,
 	)
 	if err != nil {
@@ -94,6 +97,37 @@ func TestRunDocscanStep_RealModuleDir(t *testing.T) {
 	}
 }
 
+// TestRunCRAPStep_WithCoverProfile verifies that runCRAPStep accepts a
+// pre-generated coverage profile and produces a non-nil JSON result (FR-001,
+// FR-002). Uses the static fixture at testdata/sample.coverprofile, which
+// records one covered statement in internal/crap/crap.go.
+// Guarded by testing.Short() — calls crap.Analyze which loads Go packages.
+func TestRunCRAPStep_WithCoverProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: calls crap.Analyze which loads Go packages")
+	}
+	// Locate the testdata fixture relative to this file's directory.
+	_, thisFile, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(thisFile), "testdata", "sample.coverprofile")
+
+	modRoot := findModuleRoot(t)
+	res, err := runCRAPStep(
+		[]string{"github.com/unbound-force/gaze/internal/crap"},
+		modRoot,
+		fixture,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("runCRAPStep with coverprofile: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil crapStepResult")
+	}
+	if res.JSON == nil {
+		t.Error("expected non-nil JSON from runCRAPStep with pre-generated profile")
+	}
+}
+
 // TestRunProductionPipeline_RealPackage verifies that runProductionPipeline
 // returns a non-nil payload and exercises all four steps without panicking.
 // Guarded by testing.Short() — runs the full four-step pipeline.
@@ -105,6 +139,7 @@ func TestRunProductionPipeline_RealPackage(t *testing.T) {
 	payload, err := runProductionPipeline(
 		[]string{"github.com/unbound-force/gaze/internal/config"},
 		modRoot,
+		"", // no pre-generated profile — use internal generation
 		io.Discard,
 	)
 	if err != nil {

@@ -1206,6 +1206,7 @@ type reportParams struct {
 	maxCrapload         *int
 	maxGazeCrapload     *int
 	minContractCoverage *int
+	coverProfile        string
 	stdout              io.Writer
 	stderr              io.Writer
 
@@ -1230,6 +1231,19 @@ func runReport(p reportParams) error {
 	// In text mode, validate ollama requires --model (FR-003).
 	if p.format != "json" && p.adapterName == "ollama" && p.modelName == "" {
 		return fmt.Errorf("--model is required when using ollama (FR-003)")
+	}
+
+	// Pre-flight validation for --coverprofile (FR-004, FR-005): check
+	// existence and is-regular-file before the analysis pipeline starts so
+	// that an invalid path produces a hard exit, not a silent partial failure.
+	if p.coverProfile != "" {
+		info, statErr := os.Stat(p.coverProfile)
+		if statErr != nil {
+			return fmt.Errorf("--coverprofile %q: %w", p.coverProfile, statErr)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("--coverprofile %q is a directory, not a file", p.coverProfile)
+		}
 	}
 
 	cwd, err := os.Getwd()
@@ -1283,6 +1297,7 @@ func runReport(p reportParams) error {
 		Stdout:          p.stdout,
 		Stderr:          p.stderr,
 		StepSummaryPath: stepSummaryPath,
+		CoverProfile:    p.coverProfile,
 		Thresholds: aireport.ThresholdConfig{
 			MaxCrapload:         p.maxCrapload,
 			MaxGazeCrapload:     p.maxGazeCrapload,
@@ -1302,10 +1317,11 @@ func runReport(p reportParams) error {
 // analysis operations and formats the result using an external AI CLI.
 func newReportCmd() *cobra.Command {
 	var (
-		format      string
-		adapterName string
-		modelName   string
-		aiTimeout   time.Duration
+		format       string
+		adapterName  string
+		modelName    string
+		aiTimeout    time.Duration
+		coverProfile string
 
 		// Threshold raw values and "was set" flags for *int semantics.
 		maxCraploadVal     int
@@ -1329,7 +1345,8 @@ Examples:
   gaze report ./... --ai=ollama --model=llama3.2
   gaze report ./... --ai=opencode
   gaze report ./... --ai=opencode --model=claude-3-5-sonnet
-  gaze report ./... --format=json`,
+  gaze report ./... --format=json
+  gaze report ./... --ai=claude --coverprofile=coverage.out`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Default package pattern is ./... when none specified (FR-014).
@@ -1359,6 +1376,7 @@ Examples:
 				maxCrapload:         maxCrapload,
 				maxGazeCrapload:     maxGazeCrapload,
 				minContractCoverage: minContractCoverage,
+				coverProfile:        coverProfile,
 				stdout:              cmd.OutOrStdout(),
 				stderr:              cmd.ErrOrStderr(),
 			}
@@ -1376,6 +1394,7 @@ Examples:
 	cmd.Flags().IntVar(&maxCraploadVal, "max-crapload", 0, "fail if CRAPload exceeds N")
 	cmd.Flags().IntVar(&maxGazeCraploadVal, "max-gaze-crapload", 0, "fail if GazeCRAPload exceeds N")
 	cmd.Flags().IntVar(&minContractCovVal, "min-contract-coverage", 0, "fail if avg contract coverage is below N%")
+	cmd.Flags().StringVar(&coverProfile, "coverprofile", "", "path to a pre-generated coverage profile (skips internal go test run)")
 
 	return cmd
 }
