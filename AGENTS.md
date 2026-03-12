@@ -254,6 +254,8 @@ Formatters: gofmt, goimports.
 - Go 1.24+ + Cobra (CLI), `exec.Command` (claude/gemini subprocess), `net/http` (ollama HTTP API), `embed.FS` (embedded default prompt), existing internal packages (`crap`, `quality`, `analysis`, `classify`, `docscan`, `loader`, `taxonomy`) (018-ci-report)
 - N/A — ephemeral pipeline only; no persistent state introduced (018-ci-report)
 - Filesystem only — temp files for system prompt delivery (removed after subprocess exits) (018-ci-report)
+- Go 1.24+ + `os/exec` (subprocess), `os` (temp dir), `path/filepath` (agent file path), `strings` (output trimming), `bytes` (stderr buffer) — all standard library; no new external dependencies (019-opencode-adapter)
+- N/A — ephemeral temp dir only; cleaned up via `defer os.RemoveAll` (019-opencode-adapter)
 
 - Go 1.24+ + `golang.org/x/tools` (go/packages, go/ssa), Cobra (CLI), Bubble Tea/Lipgloss (TUI)
 - Filesystem only (embedded assets via `embed.FS`)
