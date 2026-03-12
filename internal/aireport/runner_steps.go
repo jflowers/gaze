@@ -30,8 +30,14 @@ type crapStepResult struct {
 // runCRAPStep runs the CRAP analysis pipeline and returns the JSON output
 // alongside the typed CRAPload and GazeCRAPload values for threshold
 // evaluation (avoiding a second JSON unmarshal in EvaluateThresholds).
-func runCRAPStep(patterns []string, moduleDir string, stderr io.Writer) (*crapStepResult, error) {
+//
+// coverProfile is the path to a pre-generated Go coverage profile. When
+// non-empty, it is forwarded to crap.Options.CoverProfile so that crap.Analyze
+// reads the supplied file directly instead of spawning go test internally
+// (FR-001, FR-002). An empty string uses the default internal generation path.
+func runCRAPStep(patterns []string, moduleDir string, coverProfile string, stderr io.Writer) (*crapStepResult, error) {
 	opts := crap.DefaultOptions()
+	opts.CoverProfile = coverProfile
 	opts.Stderr = stderr
 
 	rpt, err := crap.Analyze(patterns, moduleDir, opts)

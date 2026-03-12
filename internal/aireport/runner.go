@@ -49,6 +49,12 @@ type RunnerOptions struct {
 	// Empty means Step Summary output is disabled.
 	StepSummaryPath string
 
+	// CoverProfile is the path to a pre-generated Go coverage profile.
+	// When non-empty, the CRAP analysis step uses this file directly
+	// instead of spawning go test internally (FR-001, FR-002).
+	// Empty string means "generate internally" (default behavior, FR-003).
+	CoverProfile string
+
 	// AnalyzeFunc overrides the analysis pipeline for testing.
 	// When nil, the production pipeline is called.
 	AnalyzeFunc func(patterns []string, moduleDir string) (*ReportPayload, error)
@@ -98,7 +104,7 @@ func Run(opts RunnerOptions) error {
 	analyzeFunc := opts.AnalyzeFunc
 	if analyzeFunc == nil {
 		analyzeFunc = func(patterns []string, moduleDir string) (*ReportPayload, error) {
-			return runProductionPipeline(patterns, moduleDir, opts.Stderr)
+			return runProductionPipeline(patterns, moduleDir, opts.CoverProfile, opts.Stderr)
 		}
 	}
 
@@ -184,7 +190,10 @@ func errString(err error) *string {
 // runProductionPipeline runs the four-step analysis pipeline and returns
 // a ReportPayload. Each step failure is recorded as a non-nil PayloadErrors
 // field; remaining steps still run.
-func runProductionPipeline(patterns []string, moduleDir string, stderr io.Writer) (*ReportPayload, error) {
+//
+// coverProfile is forwarded to runCRAPStep (FR-001, FR-002). Empty string
+// means generate coverage internally (FR-003).
+func runProductionPipeline(patterns []string, moduleDir string, coverProfile string, stderr io.Writer) (*ReportPayload, error) {
 	payload := &ReportPayload{}
 
 	// Validate patterns are non-empty.
@@ -194,7 +203,7 @@ func runProductionPipeline(patterns []string, moduleDir string, stderr io.Writer
 
 	// Step 1: CRAP analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (CRAP)")
-	if crapRes, err := runCRAPStep(patterns, moduleDir, stderr); err != nil {
+	if crapRes, err := runCRAPStep(patterns, moduleDir, coverProfile, stderr); err != nil {
 		payload.Errors.CRAP = errString(err)
 	} else {
 		payload.CRAP = crapRes.JSON

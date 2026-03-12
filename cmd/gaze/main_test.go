@@ -2075,3 +2075,159 @@ func findModuleRootForReport(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// ---------------------------------------------------------------------------
+// --coverprofile flag tests (spec 020)
+
+// TestRunReport_CoverProfile_ValidPath verifies that a valid --coverprofile
+// path is threaded from reportParams through to RunnerOptions.CoverProfile
+// (FR-001, FR-002). Uses a runnerFunc spy — no subprocess is spawned.
+// SC-001 regression: spy.callCount == 1 confirms no double invocation.
+func TestRunReport_CoverProfile_ValidPath(t *testing.T) {
+	// Write a minimal valid coverage profile so the pre-flight os.Stat passes.
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	if err := os.WriteFile(profilePath, []byte("mode: set\n"), 0600); err != nil {
+		t.Fatalf("writing fixture profile: %v", err)
+	}
+
+	var (
+		capturedProfile string
+		callCount       int
+	)
+	spy := func(opts aireport.RunnerOptions) error {
+		callCount++
+		capturedProfile = opts.CoverProfile
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:     []string{"./..."},
+		format:       "json",
+		coverProfile: profilePath,
+		stdout:       &stdout,
+		stderr:       &stderr,
+		runnerFunc:   spy,
+	})
+	if err != nil {
+		t.Fatalf("runReport: %v", err)
+	}
+	if capturedProfile != profilePath {
+		t.Errorf("opts.CoverProfile = %q, want %q", capturedProfile, profilePath)
+	}
+	if callCount != 1 {
+		t.Errorf("spy called %d times, want 1 (SC-001: no double invocation)", callCount)
+	}
+}
+
+// TestRunReport_CoverProfile_NonexistentPath verifies that a nonexistent
+// --coverprofile path causes runReport to exit non-zero with an error
+// that identifies the path (FR-004, SC-003).
+func TestRunReport_CoverProfile_NonexistentPath(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "nonexistent.out")
+
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:     []string{"./..."},
+		format:       "json",
+		coverProfile: profilePath,
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent --coverprofile, got nil")
+	}
+	if !strings.Contains(err.Error(), profilePath) {
+		t.Errorf("error %q does not contain path %q", err.Error(), profilePath)
+	}
+	if !strings.Contains(err.Error(), "no such file") && !strings.Contains(err.Error(), "not exist") {
+		t.Errorf("error %q does not indicate file not found", err.Error())
+	}
+}
+
+// TestRunReport_CoverProfile_DirectoryPath verifies that a directory path
+// supplied as --coverprofile causes runReport to exit non-zero with an error
+// that identifies the problem (FR-005, SC-003).
+func TestRunReport_CoverProfile_DirectoryPath(t *testing.T) {
+	dirPath := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:     []string{"./..."},
+		format:       "json",
+		coverProfile: dirPath,
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error for directory --coverprofile, got nil")
+	}
+	if !strings.Contains(err.Error(), "directory") {
+		t.Errorf("error %q does not contain \"directory\"", err.Error())
+	}
+}
+
+// TestRunReport_CoverProfile_UnparseableContent verifies that a file with
+// invalid coverage profile content results in a CRAP error recorded in the
+// JSON payload (FR-006, SC-003). The partial-failure architecture stores CRAP
+// errors in payload.Errors.CRAP rather than returning a Go error from runReport.
+// Guarded by testing.Short() — runs the real pipeline (quality/classify/docscan steps).
+func TestRunReport_CoverProfile_UnparseableContent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: runs real analysis pipeline")
+	}
+
+	// Write a file that passes pre-flight (exists, is a file) but fails parsing.
+	profilePath := filepath.Join(t.TempDir(), "bad.out")
+	if err := os.WriteFile(profilePath, []byte("not a coverage profile\n"), 0600); err != nil {
+		t.Fatalf("writing bad profile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	// Use --format=json so no AI adapter is required.
+	// The real production pipeline runs; CRAP step fails with parse error,
+	// which is stored in payload.Errors.CRAP (partial-failure mode).
+	err := runReport(reportParams{
+		patterns:     []string{"github.com/unbound-force/gaze/internal/config"},
+		format:       "json",
+		coverProfile: profilePath,
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	// Under partial-failure mode, runReport returns nil even when CRAP fails.
+	if err != nil {
+		t.Logf("runReport returned error (unexpected under partial-failure): %v", err)
+	}
+
+	// Unmarshal JSON output and assert the CRAP error references the parse failure.
+	var payload aireport.ReportPayload
+	if decErr := json.NewDecoder(&stdout).Decode(&payload); decErr != nil {
+		t.Fatalf("decoding JSON output: %v", decErr)
+	}
+	if payload.Errors.CRAP == nil {
+		t.Fatal("expected payload.Errors.CRAP to be non-nil for unparseable profile")
+	}
+	if !strings.Contains(*payload.Errors.CRAP, "parsing coverage profile") {
+		t.Errorf("payload.Errors.CRAP = %q, want to contain \"parsing coverage profile\"", *payload.Errors.CRAP)
+	}
+}
+
+// TestReportCmd_CoverprofileInHelp verifies that --coverprofile appears in
+// gaze report --help output with a description mentioning "pre-generated"
+// (FR-007, US3 acceptance scenario 1).
+func TestReportCmd_CoverprofileInHelp(t *testing.T) {
+	cmd := newReportCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--help"})
+	// Execute returns an error for --help but the output is already written.
+	_ = cmd.Execute()
+	output := buf.String()
+	if !strings.Contains(output, "--coverprofile") {
+		t.Errorf("help output does not contain \"--coverprofile\":\n%s", output)
+	}
+	if !strings.Contains(output, "pre-generated") {
+		t.Errorf("help output does not contain \"pre-generated\":\n%s", output)
+	}
+}
