@@ -25,4 +25,7 @@ Thumbs.db
 .vscode/
 *.swp
 *~
-fake_claude\nfake_gemini\ngaze
+fake_claude
+fake_gemini
+internal/aireport/testdata/fake_opencode/fake_opencode
+gaze

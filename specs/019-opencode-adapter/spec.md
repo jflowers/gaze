@@ -2,7 +2,7 @@
 
 **Feature Branch**: `019-opencode-adapter`
 **Created**: 2026-03-12
-**Status**: Draft
+**Status**: Implemented
 **Input**: User description: "Support opencode as a gaze report --ai provider"
 
 ## Overview
