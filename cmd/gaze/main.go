@@ -1223,7 +1223,7 @@ func runReport(p reportParams) error {
 	// In text mode, --ai is required (FR-002).
 	if p.format != "json" && p.adapterName == "" {
 		return fmt.Errorf(
-			"--ai is required in text mode: must be one of \"claude\", \"gemini\", or \"ollama\"",
+			"--ai is required in text mode: must be one of \"claude\", \"gemini\", \"ollama\", or \"opencode\"",
 		)
 	}
 
@@ -1327,6 +1327,8 @@ Examples:
   gaze report ./... --ai=claude
   gaze report ./... --ai=gemini --model=gemini-2.5-pro
   gaze report ./... --ai=ollama --model=llama3.2
+  gaze report ./... --ai=opencode
+  gaze report ./... --ai=opencode --model=claude-3-5-sonnet
   gaze report ./... --format=json`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1368,7 +1370,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text or json")
-	cmd.Flags().StringVar(&adapterName, "ai", "", "AI adapter: claude, gemini, or ollama")
+	cmd.Flags().StringVar(&adapterName, "ai", "", "AI adapter: claude, gemini, ollama, or opencode")
 	cmd.Flags().StringVar(&modelName, "model", "", "model name (required for ollama)")
 	cmd.Flags().DurationVar(&aiTimeout, "ai-timeout", 10*time.Minute, "AI adapter timeout")
 	cmd.Flags().IntVar(&maxCraploadVal, "max-crapload", 0, "fail if CRAPload exceeds N")

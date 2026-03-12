@@ -102,7 +102,7 @@ func TestNewAdapter_RejectsUnknownName(t *testing.T) {
 	if !strings.Contains(err.Error(), "badai") {
 		t.Errorf("expected error to mention adapter name, got: %v", err)
 	}
-	for _, valid := range []string{"claude", "gemini", "ollama"} {
+	for _, valid := range []string{"claude", "gemini", "ollama", "opencode"} {
 		if !strings.Contains(err.Error(), valid) {
 			t.Errorf("expected error to list valid adapter %q, got: %v", valid, err)
 		}
@@ -112,7 +112,7 @@ func TestNewAdapter_RejectsUnknownName(t *testing.T) {
 // TestNewAdapter_AcceptsAllValidNames verifies that NewAdapter returns a
 // non-nil adapter for each valid name without error.
 func TestNewAdapter_AcceptsAllValidNames(t *testing.T) {
-	for _, name := range []string{"claude", "gemini", "ollama"} {
+	for _, name := range []string{"claude", "gemini", "ollama", "opencode"} {
 		adapter, err := NewAdapter(AdapterConfig{Name: name, Model: "m"})
 		if err != nil {
 			t.Errorf("NewAdapter(%q): unexpected error: %v", name, err)

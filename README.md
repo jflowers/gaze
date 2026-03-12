@@ -332,6 +332,12 @@ gaze report ./... --ai=gemini --model=gemini-2.5-pro
 # Use local ollama (model required)
 gaze report ./... --ai=ollama --model=llama3.2
 
+# Use opencode (uses your configured default model)
+gaze report ./... --ai=opencode
+
+# Use opencode with a specific model
+gaze report ./... --ai=opencode --model=claude-3-5-sonnet
+
 # JSON output (no AI required)
 gaze report ./... --format=json
 
@@ -343,8 +349,8 @@ gaze report ./... --ai=claude --max-crapload=10 --max-gaze-crapload=5 --min-cont
 
 | Flag | Description |
 |------|-------------|
-| `--ai` | AI adapter: `claude`, `gemini`, or `ollama` (required in text mode) |
-| `--model` | Model name (required for ollama; optional for claude/gemini) |
+| `--ai` | AI adapter: `claude`, `gemini`, `ollama`, or `opencode` (required in text mode) |
+| `--model` | Model name (required for ollama; optional for claude/gemini/opencode) |
 | `--ai-timeout` | AI adapter timeout (default: `10m`) |
 | `--format` | Output format: `text` or `json` (default: `text`) |
 | `--max-crapload` | Fail if project CRAPload exceeds N (zero is a live threshold) |

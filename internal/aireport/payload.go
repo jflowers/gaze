@@ -1,7 +1,7 @@
 // Package aireport implements the AI-powered CI quality report pipeline
 // for the gaze report subcommand. It orchestrates gaze's four analysis
 // operations, assembles a combined JSON payload, and delegates formatting
-// to an external AI adapter (claude, gemini, or ollama).
+// to an external AI adapter (claude, gemini, ollama, or opencode).
 package aireport
 
 import "encoding/json"

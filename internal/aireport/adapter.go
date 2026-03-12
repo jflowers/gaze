@@ -27,11 +27,11 @@ type AIAdapter interface {
 
 // AdapterConfig holds the user-specified AI adapter configuration.
 type AdapterConfig struct {
-	// Name is the adapter identifier: "claude", "gemini", or "ollama".
+	// Name is the adapter identifier: "claude", "gemini", "ollama", or "opencode".
 	Name string
 
 	// Model is the model name to use. Required for ollama; optional for
-	// claude and gemini (uses each CLI's default when empty).
+	// claude, gemini, and opencode (uses each CLI's default when empty).
 	Model string
 
 	// Timeout is the maximum duration to wait for the AI adapter to respond.
@@ -46,17 +46,18 @@ type AdapterConfig struct {
 
 // validAdapters is the exact allowlist of supported AI adapter names.
 var validAdapters = map[string]bool{
-	"claude": true,
-	"gemini": true,
-	"ollama": true,
+	"claude":   true,
+	"gemini":   true,
+	"ollama":   true,
+	"opencode": true,
 }
 
 // NewAdapter creates an AIAdapter for the given config. It returns an error
-// if cfg.Name is not in the allowlist {"claude", "gemini", "ollama"}.
+// if cfg.Name is not in the allowlist {"claude", "gemini", "ollama", "opencode"}.
 func NewAdapter(cfg AdapterConfig) (AIAdapter, error) {
 	if !validAdapters[cfg.Name] {
 		return nil, fmt.Errorf(
-			"unknown AI adapter %q: must be one of \"claude\", \"gemini\", or \"ollama\"",
+			"unknown AI adapter %q: must be one of \"claude\", \"gemini\", \"ollama\", or \"opencode\"",
 			cfg.Name,
 		)
 	}
@@ -67,6 +68,8 @@ func NewAdapter(cfg AdapterConfig) (AIAdapter, error) {
 		return &GeminiAdapter{config: cfg}, nil
 	case "ollama":
 		return &OllamaAdapter{config: cfg}, nil
+	case "opencode":
+		return &OpenCodeAdapter{config: cfg}, nil
 	}
 	// Unreachable — validAdapters check above covers all cases.
 	panic("aireport: unreachable adapter case")
@@ -120,7 +123,8 @@ func (f *FakeAdapter) Format(_ context.Context, systemPrompt string, payload io.
 
 // AdapterValidator is an optional interface that adapters may implement to
 // perform pre-flight validation before the analysis pipeline runs. CLI-based
-// adapters use it to verify the binary is on PATH (FR-012).
+// adapters use it to verify the binary is on PATH before the analysis pipeline
+// runs (e.g. FR-012 for claude/gemini, FR-007 for opencode).
 type AdapterValidator interface {
 	ValidateBinary() error
 }

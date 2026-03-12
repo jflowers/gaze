@@ -18,7 +18,7 @@
 
 **Purpose**: Create the one new directory needed before any source files can be written.
 
-- [ ] T001 Create directory `internal/aireport/testdata/fake_opencode/` (required before T002)
+- [x] T001 Create directory `internal/aireport/testdata/fake_opencode/` (required before T002)
 
 ---
 
@@ -28,7 +28,7 @@
 
 **⚠️ CRITICAL**: T002 must be complete before any test file in Phase 3 or Phase 4 can pass.
 
-- [ ] T002 Create fake opencode test binary at `internal/aireport/testdata/fake_opencode/main.go` — accepts `run` subcommand, `--dir` (verifies `.opencode/agents/gaze-reporter.md` exists there and starts with `---`), `--agent`, `--format`, `-m` (echoed in output), `--exit-error` (exits 1), `--empty-output` (writes nothing); reads stdin; writes `"# Fake OpenCode Report\n\n🔍 CRAP Analysis\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"` to stdout on success
+- [x] T002 Create fake opencode test binary at `internal/aireport/testdata/fake_opencode/main.go` — accepts `run` subcommand, `--dir` (verifies `.opencode/agents/gaze-reporter.md` exists there and starts with `---`), `--agent`, `--format`, `-m` (echoed in output), `--exit-error` (exits 1), `--empty-output` (writes nothing); reads stdin; writes `"# Fake OpenCode Report\n\n🔍 CRAP Analysis\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"` to stdout on success
 
 **Checkpoint**: Fake binary written — test compilation can proceed.
 
@@ -42,11 +42,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T003 [US1] Create `internal/aireport/adapter_opencode.go` — define `OpenCodeAdapter` struct with `config AdapterConfig` field; add compile-time interface check `var _ AdapterValidator = &OpenCodeAdapter{}`; implement `ValidateBinary()` calling `exec.LookPath("opencode")` with error `"opencode not found on PATH (FR-007): %w"`; implement `Format(ctx, systemPrompt, payload)` per plan.md Implementation Design: LookPath defense, `os.MkdirTemp("", "gaze-opencode-*")`, `os.MkdirAll(.opencode/agents, 0700)`, write `"---\n---\n"+systemPrompt` to `gaze-reporter.md` at `0600`, build args `["run", "--dir", tmpDir, "--agent", "gaze-reporter", "--format", "default", ""]` with optional `-m model`, `exec.CommandContext(ctx, ...)`, stdin=payload, bounded stdout pipe (`maxAdapterOutputBytes`), stderr buffer, `cmd.Start()`, `io.ReadAll(LimitReader)`, `cmd.Wait()`, stderr truncation at `maxAdapterStderrBytes`, `strings.TrimSpace` empty-output check with `"opencode returned empty output (FR-009): ..."`, `defer os.RemoveAll(tmpDir)`
+- [x] T003 [US1] Create `internal/aireport/adapter_opencode.go` — define `OpenCodeAdapter` struct with `config AdapterConfig` field; add compile-time interface check `var _ AdapterValidator = &OpenCodeAdapter{}`; implement `ValidateBinary()` calling `exec.LookPath("opencode")` with error `"opencode not found on PATH (FR-007): %w"`; implement `Format(ctx, systemPrompt, payload)` per plan.md Implementation Design: LookPath defense, `os.MkdirTemp("", "gaze-opencode-*")`, `os.MkdirAll(.opencode/agents, 0700)`, write `"---\n---\n"+systemPrompt` to `gaze-reporter.md` at `0600`, build args `["run", "--dir", tmpDir, "--agent", "gaze-reporter", "--format", "default", ""]` with optional `-m model`, `exec.CommandContext(ctx, ...)`, stdin=payload, bounded stdout pipe (`maxAdapterOutputBytes`), stderr buffer, `cmd.Start()`, `io.ReadAll(LimitReader)`, `cmd.Wait()`, stderr truncation at `maxAdapterStderrBytes`, `strings.TrimSpace` empty-output check with `"opencode returned empty output (FR-009): ..."`, `defer os.RemoveAll(tmpDir)`
 
-- [ ] T004 [US1] Update `internal/aireport/adapter.go` — add `"opencode": true` to `validAdapters` map; add `case "opencode": return &OpenCodeAdapter{config: cfg}, nil` to `NewAdapter()` switch; update error string to `"must be one of \"claude\", \"gemini\", \"ollama\", or \"opencode\""`
+- [x] T004 [US1] Update `internal/aireport/adapter.go` — add `"opencode": true` to `validAdapters` map; add `case "opencode": return &OpenCodeAdapter{config: cfg}, nil` to `NewAdapter()` switch; update error string to `"must be one of \"claude\", \"gemini\", \"ollama\", or \"opencode\""`
 
-- [ ] T005 [P] [US1] Create `internal/aireport/adapter_opencode_test.go` — implement all 10 tests using `buildFakeOpenCode(t)` / `withOpenCodeOnPath(t, bin)` helpers (same pattern as `adapter_claude_test.go`): `TestOpenCodeAdapter_SuccessfulInvocation`, `TestOpenCodeAdapter_AgentFileWrittenToTempDir` (fake binary verifies agent file exists — a passing call proves delivery), `TestOpenCodeAdapter_FrontmatterWritten` (fake binary reads agent file, asserts `---` prefix), `TestOpenCodeAdapter_ModelFlagPassed` (cfg.Model="test-model"; assert output contains "test-model"), `TestOpenCodeAdapter_NoModelFlag_Succeeds` (cfg.Model=""; assert success and no `-m` in args), `TestOpenCodeAdapter_NotOnPath_ReturnsError` (no Short guard; assert "FR-007" in error), `TestOpenCodeAdapter_NonZeroExit_ReturnsError` (shell wrapper injects `--exit-error`), `TestOpenCodeAdapter_EmptyOutput_ReturnsError` (shell wrapper injects `--empty-output`; assert "FR-009" in error), `TestOpenCodeAdapter_TempDirCleanedUp` (count `gaze-opencode-*` entries before/after; assert no leak), `TestOpenCodeAdapter_ContextCancellation` (pre-cancelled ctx; assert error); all subprocess tests guarded with `if testing.Short() { t.Skip(...) }`
+- [x] T005 [P] [US1] Create `internal/aireport/adapter_opencode_test.go` — implement all 10 tests using `buildFakeOpenCode(t)` / `withOpenCodeOnPath(t, bin)` helpers (same pattern as `adapter_claude_test.go`): `TestOpenCodeAdapter_SuccessfulInvocation`, `TestOpenCodeAdapter_AgentFileWrittenToTempDir` (fake binary verifies agent file exists — a passing call proves delivery), `TestOpenCodeAdapter_FrontmatterWritten` (fake binary reads agent file, asserts `---` prefix), `TestOpenCodeAdapter_ModelFlagPassed` (cfg.Model="test-model"; assert output contains "test-model"), `TestOpenCodeAdapter_NoModelFlag_Succeeds` (cfg.Model=""; assert success and no `-m` in args), `TestOpenCodeAdapter_NotOnPath_ReturnsError` (no Short guard; assert "FR-007" in error), `TestOpenCodeAdapter_NonZeroExit_ReturnsError` (shell wrapper injects `--exit-error`), `TestOpenCodeAdapter_EmptyOutput_ReturnsError` (shell wrapper injects `--empty-output`; assert "FR-009" in error), `TestOpenCodeAdapter_TempDirCleanedUp` (count `gaze-opencode-*` entries before/after; assert no leak), `TestOpenCodeAdapter_ContextCancellation` (pre-cancelled ctx; assert error); all subprocess tests guarded with `if testing.Short() { t.Skip(...) }`
 
 **Checkpoint**: Run `go test -race -count=1 -run TestOpenCodeAdapter ./internal/aireport/...` — all 10 tests pass. Run `go build ./...` — compiles cleanly.
 
@@ -60,9 +60,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Update `cmd/gaze/main.go` — make three targeted string changes: (1) `--ai` flag description from `"AI adapter: claude, gemini, or ollama"` to `"AI adapter: claude, gemini, ollama, or opencode"`; (2) required-flag error string from `"must be one of \"claude\", \"gemini\", or \"ollama\""` to `"must be one of \"claude\", \"gemini\", \"ollama\", or \"opencode\""`; (3) add `gaze report ./... --ai=opencode` and `gaze report ./... --ai=opencode --model=claude-3-5-sonnet` to the command usage examples block (locate the existing examples block near `newReportCmd` at line ~1327)
+- [x] T006 [US2] Update `cmd/gaze/main.go` — make three targeted string changes: (1) `--ai` flag description from `"AI adapter: claude, gemini, or ollama"` to `"AI adapter: claude, gemini, ollama, or opencode"`; (2) required-flag error string from `"must be one of \"claude\", \"gemini\", or \"ollama\""` to `"must be one of \"claude\", \"gemini\", \"ollama\", or \"opencode\""`; (3) add `gaze report ./... --ai=opencode` and `gaze report ./... --ai=opencode --model=claude-3-5-sonnet` to the command usage examples block (locate the existing examples block near `newReportCmd` at line ~1327)
 
-- [ ] T007 [US2] Update `cmd/gaze/main_test.go` — extend `TestSC006_CrossAdapterStructure` adapter loop: change `[]string{"claude", "gemini", "ollama"}` to `[]string{"claude", "gemini", "ollama", "opencode"}` (located at line ~1661)
+- [x] T007 [US2] Update `cmd/gaze/main_test.go` — extend `TestSC006_CrossAdapterStructure` adapter loop: change `[]string{"claude", "gemini", "ollama"}` to `[]string{"claude", "gemini", "ollama", "opencode"}` (located at line ~1661)
 
 **Checkpoint**: Run `go test -race -count=1 -run TestSC006_CrossAdapterStructure ./cmd/gaze/...` — passes for all four adapters. Run `go test -race -count=1 -short ./...` — no regressions.
 
@@ -72,15 +72,15 @@
 
 **Purpose**: Documentation, CI parity validation, and spec bookkeeping.
 
-- [ ] T008 [P] Update `README.md` if it contains a list of supported `--ai` providers — add `opencode` alongside `claude`, `gemini`, `ollama`; if no such list exists, skip this task
+- [x] T008 [P] Update `README.md` if it contains a list of supported `--ai` providers — add `opencode` alongside `claude`, `gemini`, `ollama`; if no such list exists, skip this task
 
-- [ ] T009 [P] Update `AGENTS.md` Recent Changes section — add a bullet for `019-opencode-adapter` describing the new `opencode` adapter (mirrors the existing bullet pattern for spec 018)
+- [x] T009 [P] Update `AGENTS.md` Recent Changes section — add a bullet for `019-opencode-adapter` describing the new `opencode` adapter (mirrors the existing bullet pattern for spec 018)
 
-- [ ] T010 Add GoDoc comment to `OpenCodeAdapter` type in `internal/aireport/adapter_opencode.go` — ensure it explains the temp dir structure, the `--dir` / `--agent` delivery mechanism, and references `FR-007` and `FR-009`; also ensure `Format()` and `ValidateBinary()` have complete GoDoc comments matching the style of `ClaudeAdapter` and `GeminiAdapter`
+- [x] T010 Add GoDoc comment to `OpenCodeAdapter` type in `internal/aireport/adapter_opencode.go` — ensure it explains the temp dir structure, the `--dir` / `--agent` delivery mechanism, and references `FR-007` and `FR-009`; also ensure `Format()` and `ValidateBinary()` have complete GoDoc comments matching the style of `ClaudeAdapter` and `GeminiAdapter`
 
-- [ ] T011 CI parity gate — run `go build ./...` and `go test -race -count=1 -short ./...` locally; confirm both pass with zero failures; this replicates the exact commands from `.github/workflows/test.yml`
+- [x] T011 CI parity gate — run `go build ./...` and `go test -race -count=1 -short ./...` locally; confirm both pass with zero failures; this replicates the exact commands from `.github/workflows/test.yml`
 
-- [ ] T012 Mark all completed tasks in this file with `[x]` and update `specs/019-opencode-adapter/tasks.md` to reflect final state
+- [x] T012 Mark all completed tasks in this file with `[x]` and update `specs/019-opencode-adapter/tasks.md` to reflect final state
 
 ---
 

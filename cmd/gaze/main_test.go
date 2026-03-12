@@ -1650,7 +1650,7 @@ func TestSC004_PartialFailure(t *testing.T) {
 	}
 }
 
-// TestSC006_CrossAdapterStructure verifies that all three adapter names are
+// TestSC006_CrossAdapterStructure verifies that all four adapter names are
 // correctly wired through the pipeline: runReport → aireport.Run → adapter.Format
 // is called exactly once per invocation, and produces structurally equivalent
 // output (same four emoji markers in order) regardless of adapter name (SC-006).
@@ -1658,7 +1658,7 @@ func TestSC006_CrossAdapterStructure(t *testing.T) {
 	reportBody := "🔍 CRAP\n\n📊 Quality\n\n🧪 Classification\n\n🏥 Health\n"
 	payload := &aireport.ReportPayload{}
 
-	for _, adapterName := range []string{"claude", "gemini", "ollama"} {
+	for _, adapterName := range []string{"claude", "gemini", "ollama", "opencode"} {
 		t.Run(adapterName, func(t *testing.T) {
 			fa := &aireport.FakeAdapter{Response: reportBody}
 
@@ -1778,8 +1778,10 @@ func TestRunReport_MissingAI_TextMode_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing --ai in text mode")
 	}
-	if !strings.Contains(err.Error(), "claude") || !strings.Contains(err.Error(), "ollama") {
-		t.Errorf("expected error to list valid adapters, got: %v", err)
+	for _, valid := range []string{"claude", "gemini", "ollama", "opencode"} {
+		if !strings.Contains(err.Error(), valid) {
+			t.Errorf("expected error to list valid adapter %q, got: %v", valid, err)
+		}
 	}
 	if analyzeCallCount > 0 {
 		t.Error("expected no analysis to run before --ai validation")
