@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"log"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -11,6 +13,23 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
+
+// safeSSABuild calls buildFn and recovers from any panic it produces.
+// Returns the recovered panic value, or nil if buildFn completed
+// without panicking. This isolates the recover() pattern so it can
+// be tested independently of the SSA builder.
+//
+// Duplicated from internal/analysis/mutation.go because Go's package
+// system does not allow sharing unexported symbols across internal
+// packages. A shared package was rejected to keep both packages
+// dependency-light — see specs/021-ssa-panic-recovery/research.md R3.
+func safeSSABuild(buildFn func()) (panicVal any) {
+	defer func() {
+		panicVal = recover()
+	}()
+	buildFn()
+	return nil
+}
 
 // TestFunc represents a test function found in a test package.
 type TestFunc struct {
@@ -98,12 +117,22 @@ func isTestingTParam(field *ast.Field) bool {
 // BuildTestSSA builds the SSA representation for a test package.
 // It returns both the SSA program (needed for cross-package call
 // graph analysis) and the SSA package for the test code.
-func BuildTestSSA(pkg *packages.Package) (*ssa.Program, *ssa.Package, error) {
+// If prog.Build() panics (e.g., due to upstream x/tools bugs with
+// certain generic types under Go 1.25), the panic is recovered and
+// an error is returned. Callers already handle errors by skipping
+// quality analysis for the affected package.
+func BuildTestSSA(pkg *packages.Package) (program *ssa.Program, ssaPkg *ssa.Package, err error) {
 	prog, ssaPkgs := ssautil.AllPackages(
 		[]*packages.Package{pkg},
 		ssa.InstantiateGenerics,
 	)
-	prog.Build()
+
+	if r := safeSSABuild(prog.Build); r != nil {
+		log.Printf("warning: SSA build skipped for %s: internal panic recovered", pkg.PkgPath)
+		slog.Debug("SSA panic value", "pkg", pkg.PkgPath, "panic", r)
+		return nil, nil, fmt.Errorf("SSA build panicked for package %s: internal panic recovered", pkg.PkgPath)
+	}
+
 	if len(ssaPkgs) == 0 || ssaPkgs[0] == nil {
 		return nil, nil, fmt.Errorf("failed to build SSA for package %s", pkg.PkgPath)
 	}

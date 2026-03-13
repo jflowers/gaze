@@ -27,3 +27,8 @@ func FindSSAFunction(ssaPkg *ssa.Package, fnObj *types.Func, fd *ast.FuncDecl) *
 func BaseTypeName(expr ast.Expr) string {
 	return baseTypeName(expr)
 }
+
+// SafeSSABuild is exported for testing. See safeSSABuild.
+func SafeSSABuild(buildFn func()) any {
+	return safeSSABuild(buildFn)
+}
