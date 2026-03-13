@@ -35,10 +35,16 @@ func safeSSABuild(buildFn func()) (panicVal any) {
 // (e.g., due to upstream x/tools bugs with certain generic types
 // under Go 1.25). Panics are recovered and logged; callers already
 // handle nil returns by skipping mutation analysis.
+//
+// BuildSerially is included in the builder mode to force prog.Build()
+// to run all SSA construction on the calling goroutine. Without it,
+// prog.Build() spawns child goroutines per package, and Go's
+// goroutine-scoped recover() cannot catch panics across goroutine
+// boundaries.
 func BuildSSA(pkg *packages.Package) (ssaPkg *ssa.Package) {
 	prog, ssaPkgs := ssautil.AllPackages(
 		[]*packages.Package{pkg},
-		ssa.InstantiateGenerics,
+		ssa.InstantiateGenerics|ssa.BuildSerially,
 	)
 
 	if r := safeSSABuild(prog.Build); r != nil {

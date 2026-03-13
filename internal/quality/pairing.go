@@ -121,10 +121,16 @@ func isTestingTParam(field *ast.Field) bool {
 // certain generic types under Go 1.25), the panic is recovered and
 // an error is returned. Callers already handle errors by skipping
 // quality analysis for the affected package.
+//
+// BuildSerially is included in the builder mode to force prog.Build()
+// to run all SSA construction on the calling goroutine. Without it,
+// prog.Build() spawns child goroutines per package, and Go's
+// goroutine-scoped recover() cannot catch panics across goroutine
+// boundaries.
 func BuildTestSSA(pkg *packages.Package) (program *ssa.Program, ssaPkg *ssa.Package, err error) {
 	prog, ssaPkgs := ssautil.AllPackages(
 		[]*packages.Package{pkg},
-		ssa.InstantiateGenerics,
+		ssa.InstantiateGenerics|ssa.BuildSerially,
 	)
 
 	if r := safeSSABuild(prog.Build); r != nil {
