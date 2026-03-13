@@ -90,7 +90,7 @@ cd gaze
 go build -o gaze ./cmd/gaze
 ```
 
-Requires Go 1.24.2 or later.
+Requires Go 1.25.0 or later.
 
 ### macOS Code Signing
 

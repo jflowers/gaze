@@ -6,6 +6,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"log"
+	"log/slog"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -14,16 +16,36 @@ import (
 	"github.com/unbound-force/gaze/internal/taxonomy"
 )
 
+// safeSSABuild calls buildFn and recovers from any panic it produces.
+// Returns the recovered panic value, or nil if buildFn completed
+// without panicking. This isolates the recover() pattern so it can
+// be tested independently of the SSA builder.
+func safeSSABuild(buildFn func()) (panicVal any) {
+	defer func() {
+		panicVal = recover()
+	}()
+	buildFn()
+	return nil
+}
+
 // BuildSSA constructs the SSA representation for a loaded package.
 // The result is reusable across multiple function analyses within
 // the same package, avoiding the cost of rebuilding SSA per function.
-// Returns nil if SSA construction fails.
-func BuildSSA(pkg *packages.Package) *ssa.Package {
+// Returns nil if SSA construction fails or if prog.Build() panics
+// (e.g., due to upstream x/tools bugs with certain generic types
+// under Go 1.25). Panics are recovered and logged; callers already
+// handle nil returns by skipping mutation analysis.
+func BuildSSA(pkg *packages.Package) (ssaPkg *ssa.Package) {
 	prog, ssaPkgs := ssautil.AllPackages(
 		[]*packages.Package{pkg},
 		ssa.InstantiateGenerics,
 	)
-	prog.Build()
+
+	if r := safeSSABuild(prog.Build); r != nil {
+		log.Printf("warning: SSA build skipped for %s: internal panic recovered", pkg.PkgPath)
+		slog.Debug("SSA panic value", "pkg", pkg.PkgPath, "panic", r)
+		return nil
+	}
 
 	if len(ssaPkgs) == 0 || ssaPkgs[0] == nil {
 		return nil
