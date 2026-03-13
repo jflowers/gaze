@@ -508,6 +508,7 @@ func TestQualitySchema_ValidatesSampleOutput(t *testing.T) {
 			"average_contract_coverage":      80.0,
 			"total_over_specifications":      1,
 			"assertion_detection_confidence": 95,
+			"ssa_degraded":                   false,
 		},
 	}
 
@@ -522,5 +523,144 @@ func TestQualitySchema_ValidatesSampleOutput(t *testing.T) {
 	}
 	if err := compiled.Validate(inst); err != nil {
 		t.Errorf("sample quality JSON does not conform to QualitySchema:\n%v", err)
+	}
+}
+
+// TestQualitySchema_ValidatesDegradedOutput validates that quality
+// JSON output with ssa_degraded: true conforms to the QualitySchema.
+func TestQualitySchema_ValidatesDegradedOutput(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(QualitySchema))
+	if err != nil {
+		t.Fatalf("failed to parse QualitySchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("quality-schema.json", sch); err != nil {
+		t.Fatalf("failed to add quality schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("quality-schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile QualitySchema: %v", err)
+	}
+
+	// Construct a degraded quality report JSON — SSA failed, so
+	// target, coverage, and mapping are zero-valued.
+	sample := map[string]interface{}{
+		"quality_reports": []map[string]interface{}{
+			{
+				"test_function": "TestFoo",
+				"test_location": "foo_test.go:10",
+				"target_function": map[string]interface{}{
+					"package":   "",
+					"function":  "",
+					"signature": "",
+					"location":  "",
+				},
+				"contract_coverage": map[string]interface{}{
+					"percentage":        0.0,
+					"covered_count":     0,
+					"total_contractual": 0,
+				},
+				"over_specification": map[string]interface{}{
+					"count": 0,
+					"ratio": 0.0,
+				},
+				"assertion_detection_confidence": 80,
+				"metadata": map[string]interface{}{
+					"gaze_version": "0.1.0",
+					"go_version":   "go1.25",
+					"duration_ms":  5,
+				},
+			},
+		},
+		"quality_summary": map[string]interface{}{
+			"total_tests":                    1,
+			"average_contract_coverage":      0.0,
+			"total_over_specifications":      0,
+			"assertion_detection_confidence": 80,
+			"ssa_degraded":                   true,
+		},
+	}
+
+	sampleJSON, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatalf("failed to marshal sample: %v", err)
+	}
+
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+	if err != nil {
+		t.Fatalf("failed to parse sample JSON: %v", err)
+	}
+	if err := compiled.Validate(inst); err != nil {
+		t.Errorf("degraded quality JSON does not conform to QualitySchema:\n%v", err)
+	}
+}
+
+// TestQualitySchema_ValidatesWithoutSSADegradedField verifies that
+// JSON output that omits ssa_degraded entirely still validates
+// against the schema (backward compatibility).
+func TestQualitySchema_ValidatesWithoutSSADegradedField(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(QualitySchema))
+	if err != nil {
+		t.Fatalf("failed to parse QualitySchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("quality-schema.json", sch); err != nil {
+		t.Fatalf("failed to add quality schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("quality-schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile QualitySchema: %v", err)
+	}
+
+	// Construct a sample without ssa_degraded — must still validate
+	// since the field is not in the required array.
+	sample := map[string]interface{}{
+		"quality_reports": []map[string]interface{}{
+			{
+				"test_function": "TestBar",
+				"test_location": "bar_test.go:5",
+				"target_function": map[string]interface{}{
+					"package":   "pkg",
+					"function":  "Bar",
+					"signature": "func Bar() int",
+					"location":  "bar.go:10",
+				},
+				"contract_coverage": map[string]interface{}{
+					"percentage":        100.0,
+					"covered_count":     2,
+					"total_contractual": 2,
+				},
+				"over_specification": map[string]interface{}{
+					"count": 0,
+					"ratio": 0.0,
+				},
+				"assertion_detection_confidence": 100,
+				"metadata": map[string]interface{}{
+					"gaze_version": "0.1.0",
+					"go_version":   "go1.24",
+					"duration_ms":  50,
+				},
+			},
+		},
+		"quality_summary": map[string]interface{}{
+			"total_tests":                    1,
+			"average_contract_coverage":      100.0,
+			"total_over_specifications":      0,
+			"assertion_detection_confidence": 100,
+			// ssa_degraded intentionally omitted — backward compat
+		},
+	}
+
+	sampleJSON, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatalf("failed to marshal sample: %v", err)
+	}
+
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+	if err != nil {
+		t.Fatalf("failed to parse sample JSON: %v", err)
+	}
+	if err := compiled.Validate(inst); err != nil {
+		t.Errorf("legacy quality JSON (without ssa_degraded) does not conform to QualitySchema:\n%v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/ssa"
 
 	"github.com/unbound-force/gaze/internal/taxonomy"
 )
@@ -36,6 +37,12 @@ type Options struct {
 	// ambiguity, and other non-fatal issues. If nil, warnings are
 	// suppressed.
 	Stderr io.Writer
+
+	// BuildSSAFunc overrides the SSA builder used by Assess. When
+	// nil, BuildTestSSA is used. This is intended for testing the
+	// SSA degradation path — inject a function that returns an
+	// error to simulate SSA build failure.
+	BuildSSAFunc func(*packages.Package) (*ssa.Program, *ssa.Package, error)
 }
 
 // DefaultOptions returns options with sensible defaults.
@@ -51,6 +58,15 @@ func DefaultOptions() Options {
 // loaded test package, and options. It returns a QualityReport for
 // each test-target pair found, plus a PackageSummary with aggregate
 // metrics.
+//
+// If SSA construction fails (e.g., due to upstream x/tools bugs
+// with certain generic types), Assess degrades gracefully instead
+// of returning an error. Degraded reports contain test function
+// enumeration and assertion detection confidence (AST-only), but
+// contract coverage, over-specification, and assertion mapping are
+// zero-valued because target inference requires SSA. The returned
+// PackageSummary.SSADegraded is set to true so callers and
+// consumers can distinguish partial results from full-fidelity ones.
 func Assess(
 	results []taxonomy.AnalysisResult,
 	testPkg *packages.Package,
@@ -89,88 +105,40 @@ func Assess(
 	}
 
 	// Step 2: Build SSA for the test package.
-	_, ssaPkg, err := BuildTestSSA(testPkg)
+	buildSSA := BuildTestSSA
+	if opts.BuildSSAFunc != nil {
+		buildSSA = opts.BuildSSAFunc
+	}
+	var ssaDegraded bool
+	_, ssaPkg, err := buildSSA(testPkg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building test SSA: %w", err)
+		// SSA construction failed — degrade gracefully instead of
+		// returning an error. Target inference and assertion mapping
+		// require SSA, so degraded reports will have zero-valued
+		// coverage and over-specification metrics.
+		ssaDegraded = true
+		if opts.Stderr != nil {
+			_, _ = fmt.Fprintf(opts.Stderr,
+				"warning: SSA construction failed for %s, quality results are partial: %v\n",
+				testPkg.PkgPath, err)
+		}
 	}
 
-	// Step 3: For each test function, infer the target, detect
-	// assertions, map them, and compute metrics.
+	// Step 3: Build reports.
 	var reports []taxonomy.QualityReport
 
-	for _, tf := range testFuncs {
-		ssaFunc := ssaPkg.Func(tf.Name)
-		if ssaFunc == nil {
-			continue
-		}
-
-		// Infer the target function.
-		targets, warnings := InferTargets(ssaFunc, testPkg, opts)
-		for _, w := range warnings {
-			if opts.Stderr != nil {
-				_, _ = fmt.Fprintf(opts.Stderr, "warning: %s: %s\n", tf.Name, w)
-			}
-		}
-
-		// If --target flag is set, filter to matching targets.
-		if opts.TargetFunc != "" {
-			filtered := make([]InferredTarget, 0)
-			for _, t := range targets {
-				if t.FuncName == opts.TargetFunc {
-					filtered = append(filtered, t)
-				}
-			}
-			targets = filtered
-		}
-
-		if len(targets) == 0 {
-			if opts.Stderr != nil {
-				_, _ = fmt.Fprintf(opts.Stderr,
-					"warning: %s: no target function identified, skipping\n", tf.Name)
-			}
-			continue
-		}
-
-		// Compute quality report for each target.
-		for _, target := range targets {
+	if ssaDegraded {
+		// Degraded path: SSA unavailable. Produce one report per
+		// test function with AST-only data (assertion detection
+		// confidence). Target, coverage, and mapping are zero-valued.
+		for _, tf := range testFuncs {
 			pairStart := time.Now()
-			result, ok := resultMap[target.FuncName]
-			if !ok {
-				// Target function was not in the analysis results.
-				if opts.Stderr != nil {
-					_, _ = fmt.Fprintf(opts.Stderr,
-						"warning: %s: target %s not in analysis results, skipping\n",
-						tf.Name, target.FuncName)
-				}
-				continue
-			}
-
-			// Detect assertions in the test function.
 			sites := DetectAssertions(tf.Decl, testPkg, opts.MaxHelperDepth)
-
-			// Map assertions to side effects via SSA data flow.
-			mappings, unmapped, discardedIDs := MapAssertionsToEffects(
-				ssaFunc, target.SSAFunc, sites, result.SideEffects, testPkg,
-			)
-
-			// Compute metrics, including discarded return detection.
-			coverage := ComputeContractCoverage(result.SideEffects, mappings)
-			coverage.DiscardedReturns = collectDiscardedReturns(result.SideEffects, discardedIDs)
-			for _, dr := range coverage.DiscardedReturns {
-				coverage.DiscardedReturnHints = append(coverage.DiscardedReturnHints, hintForEffect(dr))
-			}
-			overSpec := ComputeOverSpecification(result.SideEffects, mappings)
-			ambiguous := collectAmbiguous(result.SideEffects)
 			detectionConf := computeDetectionConfidence(sites)
 
 			report := taxonomy.QualityReport{
 				TestFunction:                 tf.Name,
 				TestLocation:                 tf.Location,
-				TargetFunction:               result.Target,
-				ContractCoverage:             coverage,
-				OverSpecification:            overSpec,
-				AmbiguousEffects:             ambiguous,
-				UnmappedAssertions:           unmapped,
 				AssertionDetectionConfidence: detectionConf,
 				Metadata: taxonomy.Metadata{
 					GazeVersion: meta.GazeVersion,
@@ -181,9 +149,97 @@ func Assess(
 			}
 			reports = append(reports, report)
 		}
+	} else {
+		// Normal path: SSA available. Infer targets, map assertions,
+		// and compute full-fidelity metrics.
+		for _, tf := range testFuncs {
+			ssaFunc := ssaPkg.Func(tf.Name)
+			if ssaFunc == nil {
+				continue
+			}
+
+			// Infer the target function.
+			targets, warnings := InferTargets(ssaFunc, testPkg, opts)
+			for _, w := range warnings {
+				if opts.Stderr != nil {
+					_, _ = fmt.Fprintf(opts.Stderr, "warning: %s: %s\n", tf.Name, w)
+				}
+			}
+
+			// If --target flag is set, filter to matching targets.
+			if opts.TargetFunc != "" {
+				filtered := make([]InferredTarget, 0)
+				for _, t := range targets {
+					if t.FuncName == opts.TargetFunc {
+						filtered = append(filtered, t)
+					}
+				}
+				targets = filtered
+			}
+
+			if len(targets) == 0 {
+				if opts.Stderr != nil {
+					_, _ = fmt.Fprintf(opts.Stderr,
+						"warning: %s: no target function identified, skipping\n", tf.Name)
+				}
+				continue
+			}
+
+			// Compute quality report for each target.
+			for _, target := range targets {
+				pairStart := time.Now()
+				result, ok := resultMap[target.FuncName]
+				if !ok {
+					// Target function was not in the analysis results.
+					if opts.Stderr != nil {
+						_, _ = fmt.Fprintf(opts.Stderr,
+							"warning: %s: target %s not in analysis results, skipping\n",
+							tf.Name, target.FuncName)
+					}
+					continue
+				}
+
+				// Detect assertions in the test function.
+				sites := DetectAssertions(tf.Decl, testPkg, opts.MaxHelperDepth)
+
+				// Map assertions to side effects via SSA data flow.
+				mappings, unmapped, discardedIDs := MapAssertionsToEffects(
+					ssaFunc, target.SSAFunc, sites, result.SideEffects, testPkg,
+				)
+
+				// Compute metrics, including discarded return detection.
+				coverage := ComputeContractCoverage(result.SideEffects, mappings)
+				coverage.DiscardedReturns = collectDiscardedReturns(result.SideEffects, discardedIDs)
+				for _, dr := range coverage.DiscardedReturns {
+					coverage.DiscardedReturnHints = append(coverage.DiscardedReturnHints, hintForEffect(dr))
+				}
+				overSpec := ComputeOverSpecification(result.SideEffects, mappings)
+				ambiguous := collectAmbiguous(result.SideEffects)
+				detectionConf := computeDetectionConfidence(sites)
+
+				report := taxonomy.QualityReport{
+					TestFunction:                 tf.Name,
+					TestLocation:                 tf.Location,
+					TargetFunction:               result.Target,
+					ContractCoverage:             coverage,
+					OverSpecification:            overSpec,
+					AmbiguousEffects:             ambiguous,
+					UnmappedAssertions:           unmapped,
+					AssertionDetectionConfidence: detectionConf,
+					Metadata: taxonomy.Metadata{
+						GazeVersion: meta.GazeVersion,
+						GoVersion:   meta.GoVersion,
+						Timestamp:   meta.Timestamp,
+						Duration:    time.Since(pairStart),
+					},
+				}
+				reports = append(reports, report)
+			}
+		}
 	}
 
 	summary := BuildPackageSummary(reports)
+	summary.SSADegraded = ssaDegraded
 	return reports, summary, nil
 }
 

@@ -388,6 +388,14 @@ type PackageSummary struct {
 	// AssertionDetectionConfidence is the aggregate detection
 	// confidence across all tests.
 	AssertionDetectionConfidence int `json:"assertion_detection_confidence"`
+
+	// SSADegraded is true when SSA construction failed for the
+	// package and quality results are partial. When degraded,
+	// contract coverage and over-specification metrics are
+	// zero-valued because target inference and assertion mapping
+	// require SSA. Test function enumeration and assertion
+	// detection confidence are still populated.
+	SSADegraded bool `json:"ssa_degraded"`
 }
 
 // GenerateID produces a stable, deterministic ID for a side effect
