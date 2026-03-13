@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/ssa"
 
 	"github.com/unbound-force/gaze/internal/analysis"
 	"github.com/unbound-force/gaze/internal/quality"
@@ -2603,5 +2604,192 @@ func TestHelperFallbackOnly_US5(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// --- SSA Degradation Tests ---
+
+// TestAssess_SSADegraded verifies that Assess returns partial
+// (degraded) results when SSA construction fails, instead of
+// returning an error.
+func TestAssess_SSADegraded(t *testing.T) {
+	// Load a real test package so FindTestFunctions returns results.
+	pkg := loadPkg(t, "welltested")
+
+	// Get analysis results for the non-test package.
+	nonTestPkg, err := loadNonTestPackage("welltested")
+	if err != nil {
+		t.Fatalf("loading non-test package: %v", err)
+	}
+	opts := analysis.Options{Version: "test"}
+	results, err := analysis.Analyze(nonTestPkg, opts)
+	if err != nil {
+		t.Fatalf("analysis failed: %v", err)
+	}
+
+	// Inject an SSA builder that always fails.
+	var stderr bytes.Buffer
+	qualOpts := quality.Options{
+		Stderr: &stderr,
+		BuildSSAFunc: func(_ *packages.Package) (*ssa.Program, *ssa.Package, error) {
+			return nil, nil, fmt.Errorf("simulated SSA build failure")
+		},
+	}
+
+	reports, summary, err := quality.Assess(results, pkg, qualOpts)
+
+	// Error must be nil — degradation is not an error.
+	if err != nil {
+		t.Fatalf("Assess returned error on SSA failure: %v", err)
+	}
+
+	// Reports must be non-nil and non-empty (one per test function).
+	if len(reports) == 0 {
+		t.Fatal("expected non-empty reports in degraded mode")
+	}
+
+	// Summary must be non-nil with SSADegraded = true.
+	if summary == nil {
+		t.Fatal("expected non-nil summary in degraded mode")
+	}
+	if !summary.SSADegraded {
+		t.Error("expected summary.SSADegraded to be true")
+	}
+
+	// TotalTests should match the number of reports.
+	if summary.TotalTests != len(reports) {
+		t.Errorf("expected TotalTests=%d, got %d", len(reports), summary.TotalTests)
+	}
+
+	// Each degraded report should have TestFunction populated and
+	// SSA-dependent fields zero-valued.
+	anyConfidence := false
+	for i, r := range reports {
+		if r.TestFunction == "" {
+			t.Errorf("report[%d]: TestFunction should be populated", i)
+		}
+		if r.TestLocation == "" {
+			t.Errorf("report[%d]: TestLocation should be populated", i)
+		}
+		// TargetFunction should be zero-valued (no inference possible).
+		if r.TargetFunction.Function != "" {
+			t.Errorf("report[%d]: TargetFunction.Function should be empty in degraded mode, got %q",
+				i, r.TargetFunction.Function)
+		}
+		// ContractCoverage should be fully zero-valued.
+		if r.ContractCoverage.Percentage != 0 {
+			t.Errorf("report[%d]: ContractCoverage.Percentage should be 0 in degraded mode, got %f",
+				i, r.ContractCoverage.Percentage)
+		}
+		if r.ContractCoverage.CoveredCount != 0 {
+			t.Errorf("report[%d]: ContractCoverage.CoveredCount should be 0 in degraded mode, got %d",
+				i, r.ContractCoverage.CoveredCount)
+		}
+		if r.ContractCoverage.TotalContractual != 0 {
+			t.Errorf("report[%d]: ContractCoverage.TotalContractual should be 0 in degraded mode, got %d",
+				i, r.ContractCoverage.TotalContractual)
+		}
+		if r.ContractCoverage.Gaps != nil {
+			t.Errorf("report[%d]: ContractCoverage.Gaps should be nil in degraded mode", i)
+		}
+		if r.ContractCoverage.DiscardedReturns != nil {
+			t.Errorf("report[%d]: ContractCoverage.DiscardedReturns should be nil in degraded mode", i)
+		}
+		// OverSpecification should be zero-valued.
+		if r.OverSpecification.Count != 0 {
+			t.Errorf("report[%d]: OverSpecification.Count should be 0 in degraded mode, got %d",
+				i, r.OverSpecification.Count)
+		}
+		if r.OverSpecification.Ratio != 0 {
+			t.Errorf("report[%d]: OverSpecification.Ratio should be 0 in degraded mode, got %f",
+				i, r.OverSpecification.Ratio)
+		}
+		// UnmappedAssertions and AmbiguousEffects should be nil.
+		if r.UnmappedAssertions != nil {
+			t.Errorf("report[%d]: UnmappedAssertions should be nil in degraded mode", i)
+		}
+		if r.AmbiguousEffects != nil {
+			t.Errorf("report[%d]: AmbiguousEffects should be nil in degraded mode", i)
+		}
+		// Track assertion detection confidence.
+		if r.AssertionDetectionConfidence > 0 {
+			anyConfidence = true
+		}
+	}
+
+	// At least one degraded report should have non-zero detection
+	// confidence — the welltested fixture has test functions with
+	// assertions that DetectAssertions can find via AST.
+	if !anyConfidence {
+		t.Error("expected at least one degraded report with non-zero AssertionDetectionConfidence")
+	}
+
+	// Warning should have been written to stderr.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "SSA construction failed") {
+		t.Errorf("expected SSA warning on stderr, got: %q", stderrStr)
+	}
+	// Spec requires the warning identifies the package.
+	if !strings.Contains(stderrStr, pkg.PkgPath) {
+		t.Errorf("expected warning to contain package path %q, got: %q", pkg.PkgPath, stderrStr)
+	}
+}
+
+// TestAssess_SSADegraded_NilStderr verifies that Assess does not
+// panic when SSA fails and opts.Stderr is nil.
+func TestAssess_SSADegraded_NilStderr(t *testing.T) {
+	pkg := loadPkg(t, "welltested")
+
+	nonTestPkg, err := loadNonTestPackage("welltested")
+	if err != nil {
+		t.Fatalf("loading non-test package: %v", err)
+	}
+	opts := analysis.Options{Version: "test"}
+	results, err := analysis.Analyze(nonTestPkg, opts)
+	if err != nil {
+		t.Fatalf("analysis failed: %v", err)
+	}
+
+	qualOpts := quality.Options{
+		Stderr: nil, // explicitly nil — must not panic
+		BuildSSAFunc: func(_ *packages.Package) (*ssa.Program, *ssa.Package, error) {
+			return nil, nil, fmt.Errorf("simulated SSA build failure")
+		},
+	}
+
+	reports, summary, err := quality.Assess(results, pkg, qualOpts)
+	if err != nil {
+		t.Fatalf("Assess returned error: %v", err)
+	}
+	if summary == nil || !summary.SSADegraded {
+		t.Error("expected non-nil summary with SSADegraded=true")
+	}
+	if len(reports) == 0 {
+		t.Error("expected non-empty reports")
+	}
+}
+
+// TestAssess_SSASuccess_NotDegraded verifies that SSADegraded is
+// false when SSA construction succeeds normally.
+func TestAssess_SSASuccess_NotDegraded(t *testing.T) {
+	reports, summary := assessFixture(t, "welltested")
+
+	if summary.SSADegraded {
+		t.Error("expected summary.SSADegraded to be false on successful SSA build")
+	}
+	if len(reports) == 0 {
+		t.Fatal("expected non-empty reports with successful SSA")
+	}
+
+	// At least one report should have a non-empty target (SSA inference ran).
+	hasTarget := false
+	for _, r := range reports {
+		if r.TargetFunction.Function != "" {
+			hasTarget = true
+			break
+		}
+	}
+	if !hasTarget {
+		t.Error("expected at least one report with non-empty TargetFunction in non-degraded mode")
 	}
 }

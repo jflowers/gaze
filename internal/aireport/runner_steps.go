@@ -86,12 +86,17 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qua
 	modPkgs := resolveModulePackages(moduleDir)
 
 	var allReports []taxonomy.QualityReport
+	var anyDegraded bool
 	for _, pkgPath := range pkgPaths {
-		reports := runQualityForPackage(pkgPath, gazeConfig, modPkgs, stderr)
+		reports, degraded := runQualityForPackage(pkgPath, gazeConfig, modPkgs, stderr)
+		if degraded {
+			anyDegraded = true
+		}
 		allReports = append(allReports, reports...)
 	}
 
 	summary := quality.BuildPackageSummary(allReports)
+	summary.SSADegraded = anyDegraded
 	raw, err := captureJSON(func(w io.Writer) error {
 		return quality.WriteJSON(w, allReports, summary)
 	})
@@ -111,36 +116,39 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qua
 
 // runQualityForPackage runs the quality pipeline on a single package.
 // modPkgs should be pre-resolved by the caller (hoist LoadModule out of loops).
-// Returns nil (not an error) if the package has no tests or analysis fails.
+// Returns (nil, false) if the package has no tests or analysis fails.
+// The second return value indicates whether SSA construction failed
+// and results are degraded (partial).
 func runQualityForPackage(
 	pkgPath string,
 	gazeConfig *config.GazeConfig,
 	modPkgs []*packages.Package,
 	stderr io.Writer,
-) []taxonomy.QualityReport {
+) ([]taxonomy.QualityReport, bool) {
 	analysisOpts := analysis.Options{IncludeUnexported: false}
 	results, err := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
 	if err != nil || len(results) == 0 {
-		return nil
+		return nil, false
 	}
 
 	cfg := gazeConfig
 	classified, err := runClassifyResults(results, pkgPath, cfg, modPkgs)
 	if err != nil || len(classified) == 0 {
-		return nil
+		return nil, false
 	}
 
 	testPkg, err := loadTestPackageForQuality(pkgPath)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 
 	qualOpts := quality.Options{Stderr: stderr}
-	reports, _, err := quality.Assess(classified, testPkg, qualOpts)
+	reports, summary, err := quality.Assess(classified, testPkg, qualOpts)
 	if err != nil {
-		return nil
+		return nil, false
 	}
-	return reports
+	degraded := summary != nil && summary.SSADegraded
+	return reports, degraded
 }
 
 // runClassifyStep runs classification on all matched packages and returns the JSON output.

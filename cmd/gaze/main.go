@@ -590,10 +590,13 @@ func analyzePackageCoverage(
 		Version: version,
 		Stderr:  stderr,
 	}
-	reports, _, err := quality.Assess(classified, testPkg, qualOpts)
+	reports, summary, err := quality.Assess(classified, testPkg, qualOpts)
 	if err != nil {
 		logger.Debug("quality pipeline: quality assessment failed", "pkg", pkgPath, "err", err)
 		return nil
+	}
+	if summary != nil && summary.SSADegraded {
+		logger.Warn("quality pipeline: SSA degraded, contract coverage unavailable", "pkg", pkgPath)
 	}
 	return reports
 }
@@ -632,6 +635,12 @@ func buildContractCoverageFunc(
 	for _, pkgPath := range pkgPaths {
 		reports := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
 		for _, report := range reports {
+			// Skip degraded reports — they have zero-valued
+			// TargetFunction and would create phantom entries
+			// with empty-string keys in the coverage map.
+			if report.TargetFunction.Function == "" {
+				continue
+			}
 			shortPkg := extractShortPkgName(report.TargetFunction.Package)
 			key := shortPkg + ":" + report.TargetFunction.QualifiedName()
 			if existing, ok := coverageMap[key]; !ok || report.ContractCoverage.Percentage > existing {
@@ -955,6 +964,17 @@ func checkQualityThresholds(
 	summary *taxonomy.PackageSummary,
 ) error {
 	if p.minContractCoverage <= 0 && p.maxOverSpecification <= 0 {
+		return nil
+	}
+
+	// Skip threshold enforcement on degraded results — SSA failure
+	// produces zero-valued coverage and over-specification metrics
+	// that would trigger false-positive CI failures.
+	if summary != nil && summary.SSADegraded {
+		if p.stderr != nil {
+			_, _ = fmt.Fprintln(p.stderr,
+				"warning: CI thresholds skipped — SSA construction failed, quality metrics are partial")
+		}
 		return nil
 	}
 

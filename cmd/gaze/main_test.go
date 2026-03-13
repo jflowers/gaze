@@ -1134,6 +1134,39 @@ func TestSC005_CIThresholds(t *testing.T) {
 	}
 }
 
+// TestCheckQualityThresholds_SSADegraded verifies that threshold
+// enforcement is skipped when SSA degradation is detected, preventing
+// false-positive CI failures from zero-valued coverage metrics.
+func TestCheckQualityThresholds_SSADegraded(t *testing.T) {
+	// Degraded reports have zero coverage — thresholds would fail
+	// without the SSADegraded guard.
+	reports := []taxonomy.QualityReport{
+		{
+			TestFunction:     "TestFoo",
+			ContractCoverage: taxonomy.ContractCoverage{Percentage: 0},
+		},
+	}
+	summary := &taxonomy.PackageSummary{
+		TotalTests:  1,
+		SSADegraded: true,
+	}
+
+	var stderr bytes.Buffer
+	p := qualityParams{
+		minContractCoverage:  100, // would fail without guard
+		maxOverSpecification: 0,
+		stderr:               &stderr,
+	}
+	err := checkQualityThresholds(p, reports, summary)
+
+	if err != nil {
+		t.Fatalf("expected nil error when SSADegraded, got: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "CI thresholds skipped") {
+		t.Errorf("expected skip warning on stderr, got: %q", stderr.String())
+	}
+}
+
 // ---------------------------------------------------------------------------
 // runSelfCheck tests (T055)
 // ---------------------------------------------------------------------------

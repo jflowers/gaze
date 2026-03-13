@@ -400,7 +400,11 @@ const QualitySchema = `{
           ],
           "description": "Bottom 5 tests by coverage"
         },
-        "assertion_detection_confidence": { "type": "integer" }
+        "assertion_detection_confidence": { "type": "integer" },
+        "ssa_degraded": {
+          "type": "boolean",
+          "description": "True when SSA construction failed and quality results are partial"
+        }
       }
     },
     "Metadata": {
