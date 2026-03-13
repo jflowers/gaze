@@ -5,6 +5,8 @@ handoffs:
     agent: speckit.specify
     prompt: Implement the feature specification based on the updated constitution. I want to build...
 ---
+<!-- scaffolded by unbound vdev -->
+<!-- scaffolded by unbound vdev -->
 
 ## User Input
 
