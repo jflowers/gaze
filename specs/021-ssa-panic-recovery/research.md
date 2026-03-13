@@ -65,7 +65,16 @@ recovery converts the panic into a nil/error return.
 
 ### Rationale
 Go's `recover()` only works inside a deferred function in the same goroutine.
-`prog.Build()` is synchronous and runs in the calling goroutine, so a simple
+
+> **Correction (issue #33):** The original assumption that `prog.Build()` is
+> synchronous was incorrect. `ssa.Program.Build()` spawns one goroutine per
+> package by default (`builder.go:3152`), and panics in child goroutines
+> bypass `recover()` in the calling goroutine. The fix is to add
+> `ssa.BuildSerially` to the builder mode flags, which forces `Build()` to
+> run all SSA construction on the calling goroutine. With `BuildSerially`,
+> the `recover()` strategy described here works correctly.
+
+With `ssa.BuildSerially` set, `prog.Build()` runs in the calling goroutine, so a simple
 `defer func() { if r := recover(); r != nil { ... } }()` at the top of the
 function body works correctly.
 
@@ -81,8 +90,9 @@ set in the recovery path:
 
 ### Alternatives Considered
 1. **Separate goroutine with channel**: Run `prog.Build()` in a goroutine and
-   catch panics via `recover()` in that goroutine. Rejected — adds unnecessary
-   complexity and goroutine overhead for a synchronous operation.
+   catch panics via `recover()` in that goroutine. Originally rejected as
+   unnecessary complexity. In retrospect this would have worked, but
+   `ssa.BuildSerially` is a simpler fix (issue #33).
 2. **Wrapping `ssautil.AllPackages` too**: The panic is in `prog.Build()`, not
    in `ssautil.AllPackages`. Wrapping both would be defensive but unnecessary
    based on the current stack trace. Can be extended later if needed.
