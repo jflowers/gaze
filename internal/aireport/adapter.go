@@ -1,9 +1,11 @@
 package aireport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"sync"
 	"time"
 )
@@ -23,6 +25,65 @@ type AIAdapter interface {
 	// JSON payload (from payload io.Reader), returning the formatted
 	// markdown report or an error.
 	Format(ctx context.Context, systemPrompt string, payload io.Reader) (string, error)
+}
+
+// runSubprocess executes an external CLI binary as a subprocess with
+// the given arguments and payload on stdin. It handles binary
+// resolution (exec.LookPath), stdout capture with size limiting
+// (maxAdapterOutputBytes), stderr capture with truncation
+// (maxAdapterStderrBytes), and error formatting.
+//
+// If cmdDir is non-empty, cmd.Dir is set to that directory. This is
+// used by the Gemini adapter which places GEMINI.md in a temp
+// directory and sets the subprocess working directory there.
+//
+// This function is shared by the three subprocess-based AI adapters
+// (Claude, Gemini, OpenCode) to eliminate duplicated pipe setup,
+// output limiting, and error handling code.
+func runSubprocess(
+	ctx context.Context,
+	binaryName string,
+	args []string,
+	cmdDir string,
+	payload io.Reader,
+) ([]byte, error) {
+	binPath, err := exec.LookPath(binaryName)
+	if err != nil {
+		return nil, fmt.Errorf("%s not found on PATH: %w", binaryName, err)
+	}
+
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	cmd.Stdin = payload
+	if cmdDir != "" {
+		cmd.Dir = cmdDir
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("creating stdout pipe for %s: %w", binaryName, err)
+	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting %s: %w", binaryName, err)
+	}
+
+	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
+	waitErr := cmd.Wait()
+
+	if waitErr != nil {
+		stderrSnippet := stderrBuf.String()
+		if len(stderrSnippet) > maxAdapterStderrBytes {
+			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
+		}
+		return nil, fmt.Errorf("%s exited with error: %w\nstderr: %s", binaryName, waitErr, stderrSnippet)
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("reading %s output: %w", binaryName, readErr)
+	}
+
+	return outBytes, nil
 }
 
 // AdapterConfig holds the user-specified AI adapter configuration.
