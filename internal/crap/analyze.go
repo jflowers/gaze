@@ -102,59 +102,7 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 	coverMap := buildCoverMap(funcCoverages)
 
 	// Step 5: Join complexity with coverage and compute CRAP.
-	// Cache generated-file checks to avoid re-reading files.
-	generatedCache := make(map[string]bool)
-
-	var scores []Score
-	for _, stat := range complexityStats {
-		// Skip test files (already excluded by ignore pattern but
-		// belt-and-suspenders).
-		if strings.HasSuffix(stat.Pos.Filename, "_test.go") {
-			continue
-		}
-
-		// Skip generated files when configured.
-		if opts.IgnoreGenerated {
-			gen, ok := generatedCache[stat.Pos.Filename]
-			if !ok {
-				gen = isGeneratedFile(stat.Pos.Filename)
-				generatedCache[stat.Pos.Filename] = gen
-			}
-			if gen {
-				continue
-			}
-		}
-
-		covPct := lookupCoverage(stat, coverMap)
-		crapScore := Formula(stat.Complexity, covPct)
-
-		score := Score{
-			Package:      stat.PkgName,
-			Function:     stat.FuncName,
-			File:         stat.Pos.Filename,
-			Line:         stat.Pos.Line,
-			Complexity:   stat.Complexity,
-			LineCoverage: covPct,
-			CRAP:         crapScore,
-		}
-
-		// Compute GazeCRAP if contract coverage is available.
-		if opts.ContractCoverageFunc != nil {
-			ccPct, ok := opts.ContractCoverageFunc(stat.PkgName, stat.FuncName)
-			if ok {
-				gazeCRAP := Formula(stat.Complexity, ccPct)
-				quadrant := ClassifyQuadrant(
-					crapScore, gazeCRAP,
-					opts.CRAPThreshold, opts.GazeCRAPThreshold,
-				)
-				score.ContractCoverage = &ccPct
-				score.GazeCRAP = &gazeCRAP
-				score.Quadrant = &quadrant
-			}
-		}
-
-		scores = append(scores, score)
-	}
+	scores := computeScores(complexityStats, coverMap, opts)
 
 	// Step 6: Build summary.
 	summary := buildSummary(scores, opts)
@@ -262,6 +210,69 @@ func lookupCoverage(stat gocyclo.Stat, maps coverMaps) float64 {
 
 	// No coverage data — function was never executed.
 	return 0
+}
+
+// computeScores joins cyclomatic complexity stats with coverage data
+// and computes CRAP scores for each non-skipped function. Test files
+// and generated files (when opts.IgnoreGenerated is true) are
+// excluded. If opts.ContractCoverageFunc is set, GazeCRAP scores,
+// contract coverage percentages, and quadrant classifications are
+// computed for each function where the callback returns data.
+func computeScores(stats []gocyclo.Stat, coverMap coverMaps, opts Options) []Score {
+	generatedCache := make(map[string]bool)
+	var scores []Score
+
+	for _, stat := range stats {
+		// Skip test files (already excluded by ignore pattern but
+		// belt-and-suspenders).
+		if strings.HasSuffix(stat.Pos.Filename, "_test.go") {
+			continue
+		}
+
+		// Skip generated files when configured.
+		if opts.IgnoreGenerated {
+			gen, ok := generatedCache[stat.Pos.Filename]
+			if !ok {
+				gen = isGeneratedFile(stat.Pos.Filename)
+				generatedCache[stat.Pos.Filename] = gen
+			}
+			if gen {
+				continue
+			}
+		}
+
+		covPct := lookupCoverage(stat, coverMap)
+		crapScore := Formula(stat.Complexity, covPct)
+
+		score := Score{
+			Package:      stat.PkgName,
+			Function:     stat.FuncName,
+			File:         stat.Pos.Filename,
+			Line:         stat.Pos.Line,
+			Complexity:   stat.Complexity,
+			LineCoverage: covPct,
+			CRAP:         crapScore,
+		}
+
+		// Compute GazeCRAP if contract coverage is available.
+		if opts.ContractCoverageFunc != nil {
+			ccPct, ok := opts.ContractCoverageFunc(stat.PkgName, stat.FuncName)
+			if ok {
+				gazeCRAP := Formula(stat.Complexity, ccPct)
+				quadrant := ClassifyQuadrant(
+					crapScore, gazeCRAP,
+					opts.CRAPThreshold, opts.GazeCRAPThreshold,
+				)
+				score.ContractCoverage = &ccPct
+				score.GazeCRAP = &gazeCRAP
+				score.Quadrant = &quadrant
+			}
+		}
+
+		scores = append(scores, score)
+	}
+
+	return scores
 }
 
 // testFileRegexp matches Go test files by suffix.
