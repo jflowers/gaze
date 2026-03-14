@@ -141,6 +141,7 @@ func TestRunProductionPipeline_RealPackage(t *testing.T) {
 		modRoot,
 		"", // no pre-generated profile — use internal generation
 		io.Discard,
+		pipelineStepFuncs{}, // zero value = real step functions
 	)
 	if err != nil {
 		t.Fatalf("runProductionPipeline: %v", err)

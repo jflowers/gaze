@@ -104,7 +104,7 @@ func Run(opts RunnerOptions) error {
 	analyzeFunc := opts.AnalyzeFunc
 	if analyzeFunc == nil {
 		analyzeFunc = func(patterns []string, moduleDir string) (*ReportPayload, error) {
-			return runProductionPipeline(patterns, moduleDir, opts.CoverProfile, opts.Stderr)
+			return runProductionPipeline(patterns, moduleDir, opts.CoverProfile, opts.Stderr, pipelineStepFuncs{})
 		}
 	}
 
@@ -187,13 +187,42 @@ func errString(err error) *string {
 	return &s
 }
 
+// pipelineStepFuncs holds injectable step function references for
+// runProductionPipeline. When a field is nil, the real step function
+// is used. This enables unit testing of the orchestration logic
+// (partial failures, error capture, payload assembly) without running
+// real analysis.
+type pipelineStepFuncs struct {
+	crapStep     func([]string, string, string, io.Writer) (*crapStepResult, error)
+	qualityStep  func([]string, string, io.Writer) (*qualityStepResult, error)
+	classifyStep func([]string, string) (json.RawMessage, error)
+	docscanStep  func(string) (json.RawMessage, error)
+}
+
 // runProductionPipeline runs the four-step analysis pipeline and returns
 // a ReportPayload. Each step failure is recorded as a non-nil PayloadErrors
 // field; remaining steps still run.
 //
 // coverProfile is forwarded to runCRAPStep (FR-001, FR-002). Empty string
 // means generate coverage internally (FR-003).
-func runProductionPipeline(patterns []string, moduleDir string, coverProfile string, stderr io.Writer) (*ReportPayload, error) {
+//
+// The steps parameter allows injection of fake step functions for testing.
+// Pass pipelineStepFuncs{} (zero value) for production behavior.
+func runProductionPipeline(patterns []string, moduleDir string, coverProfile string, stderr io.Writer, steps pipelineStepFuncs) (*ReportPayload, error) {
+	// Default nil step functions to real implementations.
+	if steps.crapStep == nil {
+		steps.crapStep = runCRAPStep
+	}
+	if steps.qualityStep == nil {
+		steps.qualityStep = runQualityStep
+	}
+	if steps.classifyStep == nil {
+		steps.classifyStep = runClassifyStep
+	}
+	if steps.docscanStep == nil {
+		steps.docscanStep = runDocscanStep
+	}
+
 	payload := &ReportPayload{}
 
 	// Validate patterns are non-empty.
@@ -203,7 +232,7 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 
 	// Step 1: CRAP analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (CRAP)")
-	if crapRes, err := runCRAPStep(patterns, moduleDir, coverProfile, stderr); err != nil {
+	if crapRes, err := steps.crapStep(patterns, moduleDir, coverProfile, stderr); err != nil {
 		payload.Errors.CRAP = errString(err)
 	} else {
 		payload.CRAP = crapRes.JSON
@@ -213,7 +242,7 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 
 	// Step 2: Quality analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (Quality)")
-	if qualRes, err := runQualityStep(patterns, moduleDir, stderr); err != nil {
+	if qualRes, err := steps.qualityStep(patterns, moduleDir, stderr); err != nil {
 		payload.Errors.Quality = errString(err)
 	} else {
 		payload.Quality = qualRes.JSON
@@ -222,7 +251,7 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 
 	// Step 3: Classification analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (Classification)")
-	if classifyJSON, err := runClassifyStep(patterns, moduleDir); err != nil {
+	if classifyJSON, err := steps.classifyStep(patterns, moduleDir); err != nil {
 		payload.Errors.Classify = errString(err)
 	} else {
 		payload.Classify = classifyJSON
@@ -230,7 +259,7 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 
 	// Step 4: Documentation scan.
 	_, _ = fmt.Fprintln(stderr, "Scanning documentation...")
-	if docscanJSON, err := runDocscanStep(moduleDir); err != nil {
+	if docscanJSON, err := steps.docscanStep(moduleDir); err != nil {
 		payload.Errors.Docscan = errString(err)
 	} else {
 		payload.Docscan = docscanJSON
