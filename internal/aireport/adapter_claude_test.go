@@ -102,8 +102,8 @@ func TestClaudeAdapter_NotOnPath_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when claude not on PATH")
 	}
-	if !strings.Contains(err.Error(), "FR-012") {
-		t.Errorf("expected FR-012 in error, got: %v", err)
+	if !strings.Contains(err.Error(), "not found on PATH") {
+		t.Errorf("expected 'not found on PATH' in error, got: %v", err)
 	}
 }
 

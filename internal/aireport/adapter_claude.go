@@ -1,7 +1,6 @@
 package aireport
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -41,14 +40,7 @@ func (a *ClaudeAdapter) ValidateBinary() error {
 //   - The subprocess exits non-zero.
 //   - The output is empty or whitespace (FR-016).
 func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload io.Reader) (string, error) {
-	// Resolve claude path (defense-in-depth: ValidateBinary should have run first).
-	claudePath, err := exec.LookPath("claude")
-	if err != nil {
-		return "", fmt.Errorf("claude not found on PATH (FR-012): %w", err)
-	}
-
 	// Write system prompt to a temporary directory with explicit 0600 permissions.
-	// os.MkdirTemp + os.WriteFile guarantees 0600 mode independent of umask.
 	tmpDir, err := os.MkdirTemp("", "gaze-claude-prompt-*")
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir for system prompt: %w", err)
@@ -66,34 +58,9 @@ func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload
 		args = append(args, "--model", a.config.Model)
 	}
 
-	cmd := exec.CommandContext(ctx, claudePath, args...)
-	cmd.Stdin = payload
-
-	// Capture stdout with a bounded pipe to prevent OOM on large outputs.
-	stdoutPipe, err := cmd.StdoutPipe()
+	outBytes, err := runSubprocess(ctx, "claude", args, "", payload)
 	if err != nil {
-		return "", fmt.Errorf("creating stdout pipe for claude: %w", err)
-	}
-	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
-
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("starting claude: %w", err)
-	}
-
-	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
-	waitErr := cmd.Wait()
-
-	if waitErr != nil {
-		// Truncate stderr to avoid leaking secrets.
-		stderrSnippet := stderrBuf.String()
-		if len(stderrSnippet) > maxAdapterStderrBytes {
-			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
-		}
-		return "", fmt.Errorf("claude exited with error: %w\nstderr: %s", waitErr, stderrSnippet)
-	}
-	if readErr != nil {
-		return "", fmt.Errorf("reading claude output: %w", readErr)
+		return "", err
 	}
 
 	result := string(outBytes)

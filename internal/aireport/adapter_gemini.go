@@ -1,7 +1,6 @@
 package aireport
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,12 +48,6 @@ func (a *GeminiAdapter) ValidateBinary() error {
 //   - The subprocess exits non-zero.
 //   - The response field is empty or whitespace (FR-016).
 func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload io.Reader) (string, error) {
-	// Resolve gemini path (defense-in-depth: ValidateBinary should have run first).
-	geminiPath, err := exec.LookPath("gemini")
-	if err != nil {
-		return "", fmt.Errorf("gemini not found on PATH (FR-012): %w", err)
-	}
-
 	// Create temp directory and write system prompt as GEMINI.md.
 	tmpDir, err := os.MkdirTemp("", "gaze-gemini-*")
 	if err != nil {
@@ -63,8 +56,6 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	geminiMD := filepath.Join(tmpDir, "GEMINI.md")
-	// Use 0600 to restrict access to the owner only — the system prompt may
-	// contain proprietary instructions. The temp directory itself is 0700.
 	if err := os.WriteFile(geminiMD, []byte(systemPrompt), 0600); err != nil {
 		return "", fmt.Errorf("writing GEMINI.md: %w", err)
 	}
@@ -75,35 +66,10 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 		args = append(args, "-m", a.config.Model)
 	}
 
-	cmd := exec.CommandContext(ctx, geminiPath, args...)
-	cmd.Dir = tmpDir
-	cmd.Stdin = payload
-
-	// Capture stdout with a bounded pipe to prevent OOM on large outputs.
-	stdoutPipe, err := cmd.StdoutPipe()
+	// Gemini reads GEMINI.md from the working directory, so cmdDir = tmpDir.
+	outBytes, err := runSubprocess(ctx, "gemini", args, tmpDir, payload)
 	if err != nil {
-		return "", fmt.Errorf("creating stdout pipe for gemini: %w", err)
-	}
-	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
-
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("starting gemini: %w", err)
-	}
-
-	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
-	waitErr := cmd.Wait()
-
-	if waitErr != nil {
-		// Truncate stderr to avoid leaking secrets.
-		stderrSnippet := stderrBuf.String()
-		if len(stderrSnippet) > maxAdapterStderrBytes {
-			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
-		}
-		return "", fmt.Errorf("gemini exited with error: %w\nstderr: %s", waitErr, stderrSnippet)
-	}
-	if readErr != nil {
-		return "", fmt.Errorf("reading gemini output: %w", readErr)
+		return "", err
 	}
 
 	var resp geminiOutput

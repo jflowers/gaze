@@ -1,7 +1,6 @@
 package aireport
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -51,13 +50,7 @@ func (a *OpenCodeAdapter) ValidateBinary() error {
 //   - The subprocess exits non-zero.
 //   - The output is empty or whitespace (FR-009).
 func (a *OpenCodeAdapter) Format(ctx context.Context, systemPrompt string, payload io.Reader) (string, error) {
-	// Resolve opencode path (defense-in-depth: ValidateBinary should have run first).
-	opencodePath, err := exec.LookPath("opencode")
-	if err != nil {
-		return "", fmt.Errorf("opencode not found on PATH (FR-007): %w", err)
-	}
-
-	// Create temp directory. os.MkdirTemp sets mode 0700 on the directory.
+	// Create temp directory.
 	tmpDir, err := os.MkdirTemp("", "gaze-opencode-*")
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir for opencode agent: %w", err)
@@ -71,9 +64,6 @@ func (a *OpenCodeAdapter) Format(ctx context.Context, systemPrompt string, paylo
 	}
 
 	// Write the agent definition file with empty YAML frontmatter prepended.
-	// The frontmatter ensures opencode recognizes the file as a valid agent
-	// definition regardless of parser version. Use 0600 to restrict access
-	// to the owner only — the system prompt may contain proprietary instructions.
 	agentFile := filepath.Join(agentsDir, "gaze-reporter.md")
 	content := "---\n---\n" + systemPrompt
 	if err := os.WriteFile(agentFile, []byte(content), 0600); err != nil {
@@ -81,44 +71,16 @@ func (a *OpenCodeAdapter) Format(ctx context.Context, systemPrompt string, paylo
 	}
 
 	// Build args: run (subcommand), --dir <tmpDir>, --agent gaze-reporter,
-	// --format default (plain-text stdout, not NDJSON event stream),
-	// [-m <model>] (before the positional arg to ensure flag parsing works),
-	// "" (empty positional message arg — headless trigger, mirrors -p "" for
-	// claude/gemini).
+	// --format default (plain-text stdout), [-m <model>], "" (headless trigger).
 	args := []string{"run", "--dir", tmpDir, "--agent", "gaze-reporter", "--format", "default"}
 	if a.config.Model != "" {
 		args = append(args, "-m", a.config.Model)
 	}
 	args = append(args, "")
 
-	cmd := exec.CommandContext(ctx, opencodePath, args...)
-	cmd.Stdin = payload
-
-	// Capture stdout with a bounded pipe to prevent OOM on large outputs.
-	stdoutPipe, err := cmd.StdoutPipe()
+	outBytes, err := runSubprocess(ctx, "opencode", args, "", payload)
 	if err != nil {
-		return "", fmt.Errorf("creating stdout pipe for opencode: %w", err)
-	}
-	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
-
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("starting opencode: %w", err)
-	}
-
-	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
-	waitErr := cmd.Wait()
-
-	if waitErr != nil {
-		// Truncate stderr to avoid leaking secrets.
-		stderrSnippet := stderrBuf.String()
-		if len(stderrSnippet) > maxAdapterStderrBytes {
-			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
-		}
-		return "", fmt.Errorf("opencode exited with error: %w\nstderr: %s", waitErr, stderrSnippet)
-	}
-	if readErr != nil {
-		return "", fmt.Errorf("reading opencode output: %w", readErr)
+		return "", err
 	}
 
 	result := string(outBytes)
