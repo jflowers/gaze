@@ -35,6 +35,22 @@ Gaze is a static analysis tool for Go that detects observable side effects in fu
 
 **Rule**: A Pull Request is only "Ready for Human" once the `/review-council` command returns an **APPROVE** status from all four reviewers.
 
+### Review Council as PR Prerequisite
+
+Before submitting a pull request, agents **must** run `/review-council` and resolve all REQUEST CHANGES findings until all four reviewers return APPROVE. There must be **minimal to no code changes** between the council's APPROVE verdict and the PR submission — the council reviews the final code, not a draft that changes afterward.
+
+Workflow:
+1. Complete all implementation tasks
+2. Run CI checks locally (build, test, vet)
+3. Run `/review-council` — fix any findings, re-run until APPROVE
+4. Commit, push, and submit PR immediately after council APPROVE
+5. Do NOT make further code changes between APPROVE and PR submission
+
+Exempt from council review:
+- Constitution amendments (governance documents, not code)
+- Documentation-only changes (README, AGENTS.md, spec artifacts)
+- Emergency hotfixes (must be retroactively reviewed)
+
 ## Spec-First Development (Mandatory)
 
 All changes that modify production code, test code, agent prompts, embedded assets, or CI configuration **must** be preceded by a spec workflow. The constitution (`.specify/memory/constitution.md`) is the highest-authority document in this project — all work must align with it.
@@ -307,6 +323,7 @@ Formatters: gofmt, goimports.
 
 ## Recent Changes
 
+- ai-assertion-mapping: Added `AIMapperFunc` callback to `quality.Options` and `AIMapperContext` struct (`internal/quality/ai_mapper.go`) for AI-assisted assertion mapping. When all mechanical passes (direct identity, indirect root, helper bridge, inline call) fail to map an assertion, an optional AI model evaluates the semantic relationship between the assertion and the target function's side effects. AI mappings are assigned confidence 50 (lower than all mechanical passes). Added `tryAIMapping` function, `extractExprSource`/`extractFuncSource` helpers, `BuildAIMapperPrompt`/`ParseAIMapperResponse` public helpers, and 7 tests. `MapAssertionsToEffects` now accepts an optional variadic `AIMapperFunc` parameter (backward-compatible). Updated gaze-reporter agent prompt with "Unmapped Assertion Evaluation" section — the agent reads source files for unmapped assertions and evaluates semantic relationships during `/gaze` command execution. Partially addresses #6.
 - ast-ssa-helper-bridge: Added `CallerArgs []ast.Expr` to `AssertionSite` (`internal/quality/assertion.go`) and `buildHelperBridge` to `mapping.go` for bridging helper function parameters back to caller argument variables. When a test calls `assertEqual(t, got, 12)`, the assertion inside the helper now resolves `got` (helper param) → `got` (test variable) → side effect ID. Added `matchInlineCall` for matching assertions that call the target function inline without assignment (e.g., `if c.Value() != 5`). Mapping accuracy improved from 78.8% (52/66) to 86.4% (57/66). Ratchet floor raised from 76.0% to 85.0%. Partially addresses #6.
 - report-classification-breakdown: Added `classify.CountLabels` helper (`internal/classify/classify.go`) to count side effects by classification label. Added `classifyStepResult` struct to `runClassifyStep` (`internal/aireport/runner_steps.go`) so classification counts flow through the pipeline alongside the raw JSON. Added `Contractual`, `Ambiguous`, `Incidental` fields to `ReportSummary` (`internal/aireport/payload.go`). Updated `pipelineStepFuncs.classifyStep` type to return `*classifyStepResult`. Closes #42.
 - ssa-diagnostics-in-report: Added `SSADegradedPackages []string` to `taxonomy.PackageSummary` (`internal/taxonomy/types.go`) for per-package SSA failure tracking. Added `SSADegraded` and `SSADegradedPackages` to `ReportSummary` (`internal/aireport/payload.go`) so degradation is visible at the report payload level. Changed `runQualityForPackage` to return degraded package path (string) instead of boolean. Quality text report now shows SSA diagnostics section listing failed packages. Updated `QualitySchema` with `ssa_degraded_packages` array field. Closes #46.

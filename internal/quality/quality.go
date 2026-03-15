@@ -43,6 +43,15 @@ type Options struct {
 	// SSA degradation path — inject a function that returns an
 	// error to simulate SSA build failure.
 	BuildSSAFunc func(*packages.Package) (*ssa.Program, *ssa.Package, error)
+
+	// AIMapperFunc is an optional callback for AI-assisted assertion
+	// mapping. When non-nil, it is called as a final fallback for
+	// assertions that all mechanical passes fail to map. The AI
+	// evaluates whether the assertion semantically verifies a side
+	// effect of the target function (e.g., calling store.Get after
+	// store.Set to verify the mutation). Mappings from AI are
+	// assigned confidence 50 (lower than all mechanical passes).
+	AIMapperFunc AIMapperFunc
 }
 
 // DefaultOptions returns options with sensible defaults.
@@ -203,8 +212,9 @@ func Assess(
 				sites := DetectAssertions(tf.Decl, testPkg, opts.MaxHelperDepth)
 
 				// Map assertions to side effects via SSA data flow.
-				mappings, unmapped, discardedIDs := MapAssertionsToEffects(
+				mappings, unmapped, discardedIDs := mapAssertionsToEffectsImpl(
 					ssaFunc, target.SSAFunc, sites, result.SideEffects, testPkg,
+					opts.Stderr, opts.AIMapperFunc,
 				)
 
 				// Compute metrics, including discarded return detection.
