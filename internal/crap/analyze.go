@@ -269,10 +269,43 @@ func computeScores(stats []gocyclo.Stat, coverMap coverMaps, opts Options) []Sco
 			}
 		}
 
+		score.FixStrategy = assignFixStrategy(score, opts.CRAPThreshold)
 		scores = append(scores, score)
 	}
 
 	return scores
+}
+
+// assignFixStrategy determines the recommended remediation action
+// for a function based on its CRAP score, complexity, coverage, and
+// quadrant. Returns nil for functions below the CRAP threshold.
+func assignFixStrategy(s Score, crapThreshold float64) *FixStrategy {
+	if s.CRAP < crapThreshold {
+		return nil
+	}
+
+	// High complexity: even 100% coverage can't bring CRAP below
+	// threshold (since CRAP at 100% coverage = complexity).
+	if float64(s.Complexity) >= crapThreshold {
+		if s.LineCoverage == 0 {
+			fs := FixDecomposeAndTest
+			return &fs
+		}
+		fs := FixDecompose
+		return &fs
+	}
+
+	// Q3 (SimpleButUnderspecified): has line coverage but lacks
+	// contract-level assertions. Tests execute code but don't
+	// verify observable behavior.
+	if s.Quadrant != nil && *s.Quadrant == Q3SimpleButUnderspecified {
+		fs := FixAddAssertions
+		return &fs
+	}
+
+	// Default: needs tests (0% or insufficient coverage).
+	fs := FixAddTests
+	return &fs
 }
 
 // testFileRegexp matches Go test files by suffix.
@@ -321,6 +354,7 @@ func buildSummary(scores []Score, opts Options) Summary {
 	gazeCRAPload := 0
 	gazeCRAPCount := 0
 	quadrantCounts := make(map[Quadrant]int)
+	fixStrategyCounts := make(map[FixStrategy]int)
 	hasGazeCRAP := false
 
 	for _, s := range scores {
@@ -337,14 +371,15 @@ func buildSummary(scores []Score, opts Options) Summary {
 			if *s.GazeCRAP >= opts.GazeCRAPThreshold {
 				gazeCRAPload++
 			}
-			// ContractCoverage is always set alongside GazeCRAP
-			// (GazeCRAP is computed from ContractCoverage).
 			if s.ContractCoverage != nil {
 				totalContractCov += *s.ContractCoverage
 			}
 		}
 		if s.Quadrant != nil {
 			quadrantCounts[*s.Quadrant]++
+		}
+		if s.FixStrategy != nil {
+			fixStrategyCounts[*s.FixStrategy]++
 		}
 	}
 
@@ -369,6 +404,10 @@ func buildSummary(scores []Score, opts Options) Summary {
 		CRAPload:        crapload,
 		CRAPThreshold:   opts.CRAPThreshold,
 		WorstCRAP:       worst,
+	}
+
+	if len(fixStrategyCounts) > 0 {
+		summary.FixStrategyCounts = fixStrategyCounts
 	}
 
 	if hasGazeCRAP {

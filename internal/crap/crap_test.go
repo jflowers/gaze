@@ -1437,3 +1437,60 @@ func TestWriteText_WorstOffendersSection(t *testing.T) {
 		t.Errorf("expected '420.0' CRAP score, got:\n%s", out)
 	}
 }
+
+func TestWriteText_RemediationBreakdown(t *testing.T) {
+	decomposeFS := FixDecompose
+	addTestsFS := FixAddTests
+	addAssertionsFS := FixAddAssertions
+
+	rpt := &Report{
+		Scores: []Score{
+			{Function: "BigFunc", File: "big.go", Line: 1, Complexity: 20, LineCoverage: 80, CRAP: 20, FixStrategy: &decomposeFS},
+			{Function: "UncoveredFunc", File: "unc.go", Line: 1, Complexity: 8, LineCoverage: 0, CRAP: 72, FixStrategy: &addTestsFS},
+			{Function: "WeakAssertions", File: "weak.go", Line: 1, Complexity: 6, LineCoverage: 90, CRAP: 6.1, FixStrategy: &addAssertionsFS},
+		},
+		Summary: Summary{
+			TotalFunctions: 3,
+			CRAPThreshold:  15,
+			CRAPload:       2,
+			FixStrategyCounts: map[FixStrategy]int{
+				FixDecompose:     1,
+				FixAddTests:      1,
+				FixAddAssertions: 1,
+			},
+			WorstCRAP: []Score{
+				{Function: "UncoveredFunc", File: "unc.go", Line: 1, CRAP: 72, FixStrategy: &addTestsFS},
+				{Function: "BigFunc", File: "big.go", Line: 1, CRAP: 20, FixStrategy: &decomposeFS},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := WriteText(&buf, rpt); err != nil {
+		t.Fatal(err)
+	}
+
+	out := stripANSI(buf.String())
+
+	// Verify remediation breakdown section appears.
+	if !strings.Contains(out, "Remediation Breakdown") {
+		t.Errorf("expected 'Remediation Breakdown' section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "decompose") {
+		t.Errorf("expected 'decompose' in remediation breakdown, got:\n%s", out)
+	}
+	if !strings.Contains(out, "add_tests") {
+		t.Errorf("expected 'add_tests' in remediation breakdown, got:\n%s", out)
+	}
+	if !strings.Contains(out, "add_assertions") {
+		t.Errorf("expected 'add_assertions' in remediation breakdown, got:\n%s", out)
+	}
+
+	// Verify worst offenders include strategy labels.
+	if !strings.Contains(out, "[add_tests]") {
+		t.Errorf("expected '[add_tests]' label on worst offender, got:\n%s", out)
+	}
+	if !strings.Contains(out, "[decompose]") {
+		t.Errorf("expected '[decompose]' label on worst offender, got:\n%s", out)
+	}
+}
