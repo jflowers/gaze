@@ -240,6 +240,9 @@ func Assess(
 
 	summary := BuildPackageSummary(reports)
 	summary.SSADegraded = ssaDegraded
+	if ssaDegraded {
+		summary.SSADegradedPackages = []string{testPkg.PkgPath}
+	}
 	return reports, summary, nil
 }
 

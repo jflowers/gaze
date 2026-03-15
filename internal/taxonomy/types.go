@@ -396,6 +396,10 @@ type PackageSummary struct {
 	// require SSA. Test function enumeration and assertion
 	// detection confidence are still populated.
 	SSADegraded bool `json:"ssa_degraded"`
+
+	// SSADegradedPackages lists the package paths where SSA
+	// construction failed. Populated when SSADegraded is true.
+	SSADegradedPackages []string `json:"ssa_degraded_packages,omitempty"`
 }
 
 // GenerateID produces a stable, deterministic ID for a side effect

@@ -146,6 +146,18 @@ func WriteText(w io.Writer, reports []taxonomy.QualityReport, summary *taxonomy.
 		}
 	}
 
+	// SSA diagnostics.
+	if summary != nil && summary.SSADegraded && len(summary.SSADegradedPackages) > 0 {
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "    %s SSA construction failed for %d package(s):\n",
+			warn.Render("⚠"),
+			len(summary.SSADegradedPackages))
+		for _, pkg := range summary.SSADegradedPackages {
+			_, _ = fmt.Fprintf(w, "      - %s\n", pkg)
+		}
+		_, _ = fmt.Fprintln(w, muted.Render("    Quality metrics for these packages are partial (AST-only)."))
+	}
+
 	// Package summary.
 	if summary != nil && summary.TotalTests > 0 {
 		_, _ = fmt.Fprintln(w)
