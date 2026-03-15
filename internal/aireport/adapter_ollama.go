@@ -37,6 +37,25 @@ type ollamaResponse struct {
 	Response string `json:"response"`
 }
 
+// resolveOllamaHost determines the ollama API base URL from config,
+// environment, or default, validates the URL scheme and host, and
+// returns the full /api/generate endpoint URL.
+func resolveOllamaHost(configHost string) (string, error) {
+	host := configHost
+	if host == "" {
+		host = os.Getenv("OLLAMA_HOST")
+	}
+	if host == "" {
+		host = "http://localhost:11434"
+	}
+
+	baseURL, err := url.Parse(host)
+	if err != nil || (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.Host == "" {
+		return "", fmt.Errorf("invalid ollama host URL %q: must be an absolute http or https URL (e.g. http://localhost:11434)", host)
+	}
+	return baseURL.JoinPath("/api/generate").String(), nil
+}
+
 // Format implements AIAdapter. It POSTs the system prompt and payload to
 // the ollama /api/generate endpoint and returns the response field.
 //
@@ -50,27 +69,15 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 		return "", fmt.Errorf("--model is required when using ollama (FR-003)")
 	}
 
-	// Limit payload read to maxAdapterOutputBytes to prevent OOM on oversized JSON.
 	payloadBytes, err := io.ReadAll(io.LimitReader(payload, maxAdapterOutputBytes))
 	if err != nil {
 		return "", fmt.Errorf("reading payload: %w", err)
 	}
 
-	host := a.config.OllamaHost
-	if host == "" {
-		host = os.Getenv("OLLAMA_HOST")
+	generateURL, err := resolveOllamaHost(a.config.OllamaHost)
+	if err != nil {
+		return "", err
 	}
-	if host == "" {
-		host = "http://localhost:11434"
-	}
-
-	// Validate the host URL to prevent SSRF from a malformed OLLAMA_HOST value.
-	// Restrict to http/https schemes to reject ftp://, file://, etc.
-	baseURL, err := url.Parse(host)
-	if err != nil || (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.Host == "" {
-		return "", fmt.Errorf("invalid ollama host URL %q: must be an absolute http or https URL (e.g. http://localhost:11434)", host)
-	}
-	generateURL := baseURL.JoinPath("/api/generate").String()
 
 	reqBody := ollamaRequest{
 		Model:  a.config.Model,
@@ -102,7 +109,6 @@ func (a *OllamaAdapter) Format(ctx context.Context, systemPrompt string, payload
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Cap error body at maxAdapterStderrBytes — this is an error message, not a report.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAdapterStderrBytes))
 		return "", fmt.Errorf("ollama returned HTTP %d: %s", resp.StatusCode, string(body))
 	}

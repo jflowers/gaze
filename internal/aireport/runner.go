@@ -60,70 +60,38 @@ type RunnerOptions struct {
 	AnalyzeFunc func(patterns []string, moduleDir string) (*ReportPayload, error)
 }
 
-// Run executes the report pipeline according to opts.
-//
-// In --format=json mode it assembles a ReportPayload from the four analysis
-// steps (CRAP, Quality, Classification, Docscan) and writes the combined
-// JSON to opts.Stdout. Each step's failure is recorded in PayloadErrors and
-// the remaining steps still run (partial-failure mode).
-//
-// In --format=text mode (default) it additionally calls opts.Adapter.Format
-// with the system prompt and JSON payload to produce a markdown report, then
-// writes that to opts.Stdout and optionally to $GITHUB_STEP_SUMMARY.
-//
-// Returns an error when:
-//   - The AI adapter binary is not on PATH (FR-012, text mode only; checked before analysis).
-//   - No packages match the patterns (FR-013).
-//   - The AI adapter returns empty output (FR-016, text mode only).
-//   - The AI adapter invocation fails (text mode only).
-func Run(opts RunnerOptions) error {
+// validateRunnerOpts applies defaults and validates required fields.
+// In text mode, verifies the adapter is non-nil and the binary is on PATH.
+func validateRunnerOpts(opts *RunnerOptions) error {
 	if opts.Format != "text" && opts.Format != "json" {
 		opts.Format = "text"
 	}
-
-	// In text mode, Adapter is required.
 	if opts.Format == "text" && opts.Adapter == nil {
 		return fmt.Errorf("text format requires a non-nil Adapter")
 	}
-
-	// Pre-flight binary check (FR-012): verify the AI CLI is on PATH in text
-	// mode BEFORE running the analysis pipeline (which may take minutes).
-	// ValidateAdapterBinary is a no-op for adapters that do not implement
-	// AdapterValidator (e.g. FakeAdapter, OllamaAdapter), so tests using
-	// FakeAdapter are unaffected.
 	if opts.Format == "text" {
 		if err := ValidateAdapterBinary(opts.Adapter); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	// Step 1: Run the analysis pipeline to produce the payload.
-	var payload *ReportPayload
-	var err error
-
-	analyzeFunc := opts.AnalyzeFunc
-	if analyzeFunc == nil {
-		analyzeFunc = func(patterns []string, moduleDir string) (*ReportPayload, error) {
-			return runProductionPipeline(patterns, moduleDir, opts.CoverProfile, opts.Stderr, pipelineStepFuncs{})
-		}
-	}
-
-	payload, err = analyzeFunc(opts.Patterns, opts.ModuleDir)
-	if err != nil {
+// runJSONPath writes the payload as formatted JSON to stdout and
+// evaluates thresholds.
+func runJSONPath(payload *ReportPayload, opts RunnerOptions) error {
+	enc := json.NewEncoder(opts.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(payload); err != nil {
 		return err
 	}
+	return evaluateAndPrintThresholds(opts.Thresholds, payload, opts.Stderr)
+}
 
-	// Step 2: --format=json: write payload to stdout, evaluate thresholds, return.
-	if opts.Format == "json" {
-		enc := json.NewEncoder(opts.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(payload); err != nil {
-			return err
-		}
-		return evaluateAndPrintThresholds(opts.Thresholds, payload, opts.Stderr)
-	}
-
-	// Step 3: --format=text: invoke AI adapter.
+// runTextPath invokes the AI adapter with the payload, writes the
+// formatted report to stdout and optionally to GITHUB_STEP_SUMMARY,
+// and evaluates thresholds.
+func runTextPath(payload *ReportPayload, opts RunnerOptions) error {
 	_, _ = fmt.Fprintln(opts.Stderr, "Formatting report...")
 
 	payloadBytes, err := json.Marshal(payload)
@@ -146,18 +114,55 @@ func Run(opts RunnerOptions) error {
 		return fmt.Errorf("AI adapter returned empty output (FR-016): ensure the adapter is configured and working correctly")
 	}
 
-	// Step 4: Write formatted report to stdout.
 	if _, err := fmt.Fprint(opts.Stdout, formatted); err != nil {
 		return fmt.Errorf("writing report to stdout: %w", err)
 	}
 
-	// Step 5: Write to GITHUB_STEP_SUMMARY if set.
 	if opts.StepSummaryPath != "" {
 		_, _ = fmt.Fprintln(opts.Stderr, "Writing Step Summary...")
 		WriteStepSummary(opts.StepSummaryPath, formatted, opts.Stderr)
 	}
 
 	return evaluateAndPrintThresholds(opts.Thresholds, payload, opts.Stderr)
+}
+
+// Run executes the report pipeline according to opts.
+//
+// In --format=json mode it assembles a ReportPayload from the four analysis
+// steps (CRAP, Quality, Classification, Docscan) and writes the combined
+// JSON to opts.Stdout. Each step's failure is recorded in PayloadErrors and
+// the remaining steps still run (partial-failure mode).
+//
+// In --format=text mode (default) it additionally calls opts.Adapter.Format
+// with the system prompt and JSON payload to produce a markdown report, then
+// writes that to opts.Stdout and optionally to $GITHUB_STEP_SUMMARY.
+//
+// Returns an error when:
+//   - The AI adapter binary is not on PATH (FR-012, text mode only; checked before analysis).
+//   - No packages match the patterns (FR-013).
+//   - The AI adapter returns empty output (FR-016, text mode only).
+//   - The AI adapter invocation fails (text mode only).
+func Run(opts RunnerOptions) error {
+	if err := validateRunnerOpts(&opts); err != nil {
+		return err
+	}
+
+	analyzeFunc := opts.AnalyzeFunc
+	if analyzeFunc == nil {
+		analyzeFunc = func(patterns []string, moduleDir string) (*ReportPayload, error) {
+			return runProductionPipeline(patterns, moduleDir, opts.CoverProfile, opts.Stderr, pipelineStepFuncs{})
+		}
+	}
+
+	payload, err := analyzeFunc(opts.Patterns, opts.ModuleDir)
+	if err != nil {
+		return err
+	}
+
+	if opts.Format == "json" {
+		return runJSONPath(payload, opts)
+	}
+	return runTextPath(payload, opts)
 }
 
 // evaluateAndPrintThresholds evaluates cfg thresholds against payload and

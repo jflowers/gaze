@@ -22,28 +22,13 @@ func WriteJSON(w io.Writer, report *Report) error {
 	return enc.Encode(report)
 }
 
-// WriteText writes the CRAP report as human-readable styled text to w.
-// Returns nil on success, or an error if writing to w fails.
-func WriteText(w io.Writer, rpt *Report) error {
-	styles := report.DefaultStyles()
-
-	if len(rpt.Scores) == 0 {
-		_, _ = fmt.Fprintln(w, styles.Muted.Render("No functions analyzed."))
-		return nil
-	}
-
-	// Sort by CRAP score descending for display.
-	sorted := make([]Score, len(rpt.Scores))
-	copy(sorted, rpt.Scores)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].CRAP > sorted[j].CRAP
-	})
-
-	// Build table rows.
+// writeScoreTable builds and writes the CRAP score table with
+// threshold markers and color styling.
+func writeScoreTable(w io.Writer, sorted []Score, threshold float64, styles report.Styles) {
 	rows := make([][]string, 0, len(sorted))
 	for _, s := range sorted {
 		marker := ""
-		if s.CRAP >= rpt.Summary.CRAPThreshold {
+		if s.CRAP >= threshold {
 			marker = " *"
 		}
 		file := shortenPath(s.File)
@@ -56,8 +41,6 @@ func WriteText(w io.Writer, rpt *Report) error {
 		})
 	}
 
-	threshold := rpt.Summary.CRAPThreshold
-
 	t := table.New().
 		Border(lipgloss.NormalBorder()).
 		BorderStyle(styles.Border).
@@ -65,7 +48,6 @@ func WriteText(w io.Writer, rpt *Report) error {
 			if row == table.HeaderRow {
 				return styles.Header
 			}
-			// Color CRAP score column based on threshold.
 			if col == 0 && row >= 0 && row < len(sorted) {
 				if sorted[row].CRAP >= threshold {
 					return styles.CRAPBad
@@ -78,59 +60,91 @@ func WriteText(w io.Writer, rpt *Report) error {
 		Rows(rows...)
 
 	_, _ = fmt.Fprintln(w, t)
+}
 
-	// Summary.
+// writeSummarySection writes the summary statistics section including
+// CRAPload, GazeCRAP threshold, and GazeCRAPload (when available).
+func writeSummarySection(w io.Writer, summary Summary, styles report.Styles) {
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, styles.Header.Render("--- Summary ---"))
-	_, _ = fmt.Fprintf(w, "%s  %d\n", styles.SummaryLabel.Render("Functions analyzed:"), rpt.Summary.TotalFunctions)
-	_, _ = fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg complexity:"), rpt.Summary.AvgComplexity)
-	_, _ = fmt.Fprintf(w, "%s  %.1f%%\n", styles.SummaryLabel.Render("Avg line coverage:"), rpt.Summary.AvgLineCoverage)
-	_, _ = fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg CRAP score:"), rpt.Summary.AvgCRAP)
-	_, _ = fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("CRAP threshold:"), rpt.Summary.CRAPThreshold)
+	_, _ = fmt.Fprintf(w, "%s  %d\n", styles.SummaryLabel.Render("Functions analyzed:"), summary.TotalFunctions)
+	_, _ = fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg complexity:"), summary.AvgComplexity)
+	_, _ = fmt.Fprintf(w, "%s  %.1f%%\n", styles.SummaryLabel.Render("Avg line coverage:"), summary.AvgLineCoverage)
+	_, _ = fmt.Fprintf(w, "%s  %.1f\n", styles.SummaryLabel.Render("Avg CRAP score:"), summary.AvgCRAP)
+	_, _ = fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("CRAP threshold:"), summary.CRAPThreshold)
 
-	craploadStr := fmt.Sprintf("%d", rpt.Summary.CRAPload)
-	if rpt.Summary.CRAPload > 0 {
+	craploadStr := fmt.Sprintf("%d", summary.CRAPload)
+	if summary.CRAPload > 0 {
 		craploadStr = styles.CRAPBad.Render(craploadStr) + styles.Muted.Render(" (functions at or above threshold)")
 	}
 	_, _ = fmt.Fprintf(w, "%s  %s\n", styles.SummaryLabel.Render("CRAPload:"), craploadStr)
 
-	// GazeCRAP and quadrant stats (when available).
-	if rpt.Summary.GazeCRAPload != nil && rpt.Summary.GazeCRAPThreshold != nil {
-		_, _ = fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("GazeCRAP threshold:"), *rpt.Summary.GazeCRAPThreshold)
-		gazeCRAPloadStr := fmt.Sprintf("%d", *rpt.Summary.GazeCRAPload)
-		if *rpt.Summary.GazeCRAPload > 0 {
+	if summary.GazeCRAPload != nil && summary.GazeCRAPThreshold != nil {
+		_, _ = fmt.Fprintf(w, "%s  %.0f\n", styles.SummaryLabel.Render("GazeCRAP threshold:"), *summary.GazeCRAPThreshold)
+		gazeCRAPloadStr := fmt.Sprintf("%d", *summary.GazeCRAPload)
+		if *summary.GazeCRAPload > 0 {
 			gazeCRAPloadStr = styles.CRAPBad.Render(gazeCRAPloadStr) + styles.Muted.Render(" (functions at or above threshold)")
 		}
 		_, _ = fmt.Fprintf(w, "%s  %s\n", styles.SummaryLabel.Render("GazeCRAPload:"), gazeCRAPloadStr)
 	}
+}
 
-	// Quadrant breakdown.
-	if len(rpt.Summary.QuadrantCounts) > 0 {
-		_, _ = fmt.Fprintln(w)
-		_, _ = fmt.Fprintln(w, styles.Header.Render("--- Quadrant Breakdown ---"))
-		for _, q := range []Quadrant{Q1Safe, Q2ComplexButTested, Q3SimpleButUnderspecified, Q4Dangerous} {
-			count := rpt.Summary.QuadrantCounts[q]
-			_, _ = fmt.Fprintf(w, "  %-30s  %d\n", string(q), count)
+// writeQuadrantSection writes the quadrant breakdown section.
+func writeQuadrantSection(w io.Writer, counts map[Quadrant]int, styles report.Styles) {
+	if len(counts) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, styles.Header.Render("--- Quadrant Breakdown ---"))
+	for _, q := range []Quadrant{Q1Safe, Q2ComplexButTested, Q3SimpleButUnderspecified, Q4Dangerous} {
+		count := counts[q]
+		_, _ = fmt.Fprintf(w, "  %-30s  %d\n", string(q), count)
+	}
+}
+
+// writeWorstSection writes the worst offenders section with
+// threshold-based coloring.
+func writeWorstSection(w io.Writer, worst []Score, threshold float64, styles report.Styles) {
+	if len(worst) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, styles.Header.Render(
+		fmt.Sprintf("--- Worst Offenders (top %d by CRAP) ---", len(worst))))
+	for i, s := range worst {
+		score := fmt.Sprintf("%.1f", s.CRAP)
+		if s.CRAP >= threshold {
+			score = styles.CRAPBad.Render(score)
+		} else {
+			score = styles.CRAPGood.Render(score)
 		}
+		_, _ = fmt.Fprintf(w, "  %d. %s  %s  %s\n",
+			i+1, score, s.Function,
+			styles.Muted.Render(fmt.Sprintf("(%s:%d)", shortenPath(s.File), s.Line)))
+	}
+}
+
+// WriteText writes the CRAP report as human-readable styled text to w.
+// Returns nil on success, or an error if writing to w fails.
+func WriteText(w io.Writer, rpt *Report) error {
+	styles := report.DefaultStyles()
+
+	if len(rpt.Scores) == 0 {
+		_, _ = fmt.Fprintln(w, styles.Muted.Render("No functions analyzed."))
+		return nil
 	}
 
-	// Worst offenders.
-	if len(rpt.Summary.WorstCRAP) > 0 {
-		_, _ = fmt.Fprintln(w)
-		_, _ = fmt.Fprintln(w, styles.Header.Render(
-			fmt.Sprintf("--- Worst Offenders (top %d by CRAP) ---", len(rpt.Summary.WorstCRAP))))
-		for i, s := range rpt.Summary.WorstCRAP {
-			score := fmt.Sprintf("%.1f", s.CRAP)
-			if s.CRAP >= threshold {
-				score = styles.CRAPBad.Render(score)
-			} else {
-				score = styles.CRAPGood.Render(score)
-			}
-			_, _ = fmt.Fprintf(w, "  %d. %s  %s  %s\n",
-				i+1, score, s.Function,
-				styles.Muted.Render(fmt.Sprintf("(%s:%d)", shortenPath(s.File), s.Line)))
-		}
-	}
+	sorted := make([]Score, len(rpt.Scores))
+	copy(sorted, rpt.Scores)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].CRAP > sorted[j].CRAP
+	})
+
+	threshold := rpt.Summary.CRAPThreshold
+	writeScoreTable(w, sorted, threshold, styles)
+	writeSummarySection(w, rpt.Summary, styles)
+	writeQuadrantSection(w, rpt.Summary.QuadrantCounts, styles)
+	writeWorstSection(w, rpt.Summary.WorstCRAP, threshold, styles)
 
 	return nil
 }
