@@ -1066,7 +1066,9 @@ func TestSC003_MappingAccuracy(t *testing.T) {
 	// Accuracy improved from 73.8% (31/42) to 78.8% (52/66).
 	// After helper parameter bridging (CallerArgs on AssertionSite):
 	// Accuracy improved from 78.8% (52/66) to 84.8% (56/66).
-	const baselineFloor = 83.0 // ratchet: current baseline is ~84.8%
+	// After inline call matching (matchInlineCall):
+	// Accuracy improved from 84.8% (56/66) to 86.4% (57/66).
+	const baselineFloor = 85.0 // ratchet: current baseline is ~86.4%
 	if accuracy < baselineFloor {
 		t.Errorf("SC-003: mapping accuracy %.1f%% regressed below baseline floor %.0f%% (%d/%d mapped)",
 			accuracy, baselineFloor, mappedAssertions, totalAssertions)

@@ -73,9 +73,23 @@ func MapAssertionsToEffects(
 	// and correlating LHS identifiers with side effects.
 	objToEffectID := traceTargetValues(targetCall, effects, testPkg, testFunc, targetFunc)
 
+	// Build return-value effect ID for inline call matching.
+	var returnEffectID string
+	for _, e := range effects {
+		if e.Type == taxonomy.ReturnValue {
+			returnEffectID = e.ID
+			break
+		}
+	}
+
 	// Match assertion expressions to traced values.
 	for _, site := range sites {
 		mapping := matchAssertionToEffect(site, objToEffectID, effectMap, testPkg)
+		if mapping == nil && returnEffectID != "" {
+			// Fallback: check if the assertion expression contains
+			// an inline call to the target function (e.g., if f() != x).
+			mapping = matchInlineCall(site, targetFunc, returnEffectID, effectMap, testPkg)
+		}
 		if mapping != nil {
 			mapped = append(mapped, *mapping)
 		} else {
@@ -832,6 +846,82 @@ func matchAssertionToEffect(
 	})
 
 	return matched
+}
+
+// matchInlineCall checks if the assertion expression contains a direct
+// call to the target function (e.g., `if c.Value() != 5`). When the
+// return value is used inline without assignment, the normal tracing
+// pipeline can't map it because there's no types.Object in objToEffectID.
+// This fallback detects the call by comparing the callee's name and
+// package with the target function.
+func matchInlineCall(
+	site AssertionSite,
+	targetFunc *ssa.Function,
+	returnEffectID string,
+	effectMap map[string]*taxonomy.SideEffect,
+	testPkg *packages.Package,
+) *taxonomy.AssertionMapping {
+	if site.Expr == nil || targetFunc == nil {
+		return nil
+	}
+
+	info := testPkg.TypesInfo
+	if info == nil {
+		return nil
+	}
+
+	targetName := targetFunc.Name()
+	targetPkg := ""
+	if targetFunc.Package() != nil {
+		targetPkg = targetFunc.Package().Pkg.Path()
+	}
+
+	var found bool
+	ast.Inspect(site.Expr, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Resolve the callee name.
+		var calleeName, calleePkg string
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			calleeName = fn.Name
+			if obj := info.Uses[fn]; obj != nil && obj.Pkg() != nil {
+				calleePkg = obj.Pkg().Path()
+			}
+		case *ast.SelectorExpr:
+			calleeName = fn.Sel.Name
+			if sel, ok := info.Selections[fn]; ok && sel.Obj().Pkg() != nil {
+				calleePkg = sel.Obj().Pkg().Path()
+			}
+		}
+
+		if calleeName == targetName && calleePkg == targetPkg {
+			found = true
+		}
+		return !found
+	})
+
+	if !found {
+		return nil
+	}
+
+	effect := effectMap[returnEffectID]
+	if effect == nil {
+		return nil
+	}
+
+	return &taxonomy.AssertionMapping{
+		AssertionLocation: site.Location,
+		AssertionType:     mapKindToType(site.Kind),
+		SideEffectID:      returnEffectID,
+		Confidence:        60, // Inline call match (lower confidence)
+	}
 }
 
 // buildHelperBridge constructs a map from helper function parameter
