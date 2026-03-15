@@ -5,4 +5,7 @@
 - [x] Update TestUnmappedReason_HelpersFixture to TestHelperParameterBridge
 - [x] Update ratchet floor from 76.0% to 83.0%
 - [x] Verify mapping accuracy improved to 84.8%
+- [x] Add matchInlineCall for inline call return matching (confidence 60)
+- [x] Verify mapping accuracy improved to 86.4% (57/66)
+- [x] Update ratchet floor to 85.0%
 - [x] Run full quality test suite
