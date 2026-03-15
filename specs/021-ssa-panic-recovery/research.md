@@ -57,6 +57,13 @@ suppress by configuring the standard logger.
    `slog.Debug` with structured fields. However, gaze doesn't use `slog`
    anywhere yet, and introducing it for 2 log lines may be premature.
 
+> **Correction (issue #34):** `slog.Debug` was initially chosen for the
+> debug line but was unreachable in all deployment scenarios — gaze has
+> no mechanism (`--debug` flag, env var, or `slog.SetLogLoggerLevel` call)
+> to lower the default handler level from Info to Debug. Reverted to
+> `log.Printf("debug: ...")` for consistency with the selected approach
+> described above.
+
 ## R2: recover() Placement Strategy
 
 ### Decision

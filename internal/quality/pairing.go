@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/types"
 	"log"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -135,7 +134,7 @@ func BuildTestSSA(pkg *packages.Package) (program *ssa.Program, ssaPkg *ssa.Pack
 
 	if r := safeSSABuild(prog.Build); r != nil {
 		log.Printf("warning: SSA build skipped for %s: internal panic recovered", pkg.PkgPath)
-		slog.Debug("SSA panic value", "pkg", pkg.PkgPath, "panic", r)
+		log.Printf("debug: SSA panic value for %s: %v", pkg.PkgPath, r)
 		return nil, nil, fmt.Errorf("SSA build panicked for package %s: internal panic recovered", pkg.PkgPath)
 	}
 

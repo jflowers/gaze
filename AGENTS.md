@@ -125,7 +125,25 @@ specs/
   020-report-coverprofile/       # spec.md, plan.md, tasks.md, research.md, data-model.md, quickstart.md, checklists/
 ```
 
-Branch names follow the same numbering pattern (e.g., `001-side-effect-detection`).
+OpenSpec changes use kebab-case names and are archived after merge under `openspec/changes/archive/`:
+
+```text
+openspec/
+  changes/
+    report-actionability/          # proposal.md, design.md, specs/, tasks.md (active)
+    reporter-fix-strategy-awareness/ # proposal.md, design.md, specs/, tasks.md (active)
+    archive/
+      2026-03-12-fix-xtools-go125-panic/
+      2026-03-13-assess-graceful-degradation/
+      2026-03-14-adapter-format-decomposition/
+      2026-03-14-crapload-analyze-decomposition/
+      2026-03-14-pipeline-step-testing/
+      2026-03-14-ssa-goroutine-panic/
+      2026-03-15-q4-complexity-reduction/
+  specs/                           # Main specs (synced from delta specs)
+```
+
+Branch names follow the same numbering pattern for Speckit (e.g., `001-side-effect-detection`) or kebab-case for OpenSpec (e.g., `assess-graceful-degradation`).
 
 ### Task Completion Bookkeeping
 
