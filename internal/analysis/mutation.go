@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"go/types"
 	"log"
-	"log/slog"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -49,7 +48,7 @@ func BuildSSA(pkg *packages.Package) (ssaPkg *ssa.Package) {
 
 	if r := safeSSABuild(prog.Build); r != nil {
 		log.Printf("warning: SSA build skipped for %s: internal panic recovered", pkg.PkgPath)
-		slog.Debug("SSA panic value", "pkg", pkg.PkgPath, "panic", r)
+		log.Printf("debug: SSA panic value for %s: %v", pkg.PkgPath, r)
 		return nil
 	}
 
