@@ -708,6 +708,13 @@ func matchAssertionToEffect(
 		return nil
 	}
 
+	// Build supplemental param→arg bridging for helper assertions.
+	// When a test calls assertEqual(t, got, 12), the assertion
+	// expression inside assertEqual references the helper's
+	// parameter objects. We bridge these back to the caller's
+	// argument objects to find matches in objToEffectID.
+	helperBridge := buildHelperBridge(site, objToEffectID, info)
+
 	// Pass 1: Direct identity matching (confidence 75).
 	var matched *taxonomy.AssertionMapping
 	ast.Inspect(site.Expr, func(n ast.Node) bool {
@@ -734,6 +741,7 @@ func matchAssertionToEffect(
 			return true
 		}
 
+		// Check direct match first.
 		if effectID, ok := objToEffectID[obj]; ok {
 			effect := effectMap[effectID]
 			if effect == nil {
@@ -746,6 +754,24 @@ func matchAssertionToEffect(
 				Confidence:        75, // SSA-traced direct match
 			}
 			return false
+		}
+		// Check helper parameter bridge — if this identifier is
+		// a helper parameter, resolve it to the caller's argument
+		// and check objToEffectID with the caller's object.
+		if callerObj, ok := helperBridge[obj]; ok {
+			if effectID, ok := objToEffectID[callerObj]; ok {
+				effect := effectMap[effectID]
+				if effect == nil {
+					return true
+				}
+				matched = &taxonomy.AssertionMapping{
+					AssertionLocation: site.Location,
+					AssertionType:     mapKindToType(site.Kind),
+					SideEffectID:      effectID,
+					Confidence:        70, // Helper parameter bridge
+				}
+				return false
+			}
 		}
 		return true
 	})
@@ -806,6 +832,76 @@ func matchAssertionToEffect(
 	})
 
 	return matched
+}
+
+// buildHelperBridge constructs a map from helper function parameter
+// objects to the caller's argument objects. This enables bridging
+// assertions inside helper functions back to the test's variables.
+//
+// For example, given:
+//
+//	func assertEqual(t *testing.T, got, want int) {
+//	    if got != want { t.Errorf(...) }
+//	}
+//	// in test body:
+//	assertEqual(t, result, 42)
+//
+// The bridge maps: helper's "got" param → test's "result" arg.
+// Only argument positions that have identifiers resolvable via
+// TypesInfo are included.
+func buildHelperBridge(
+	site AssertionSite,
+	objToEffectID map[types.Object]string,
+	info *types.Info,
+) map[types.Object]types.Object {
+	if site.Depth == 0 || len(site.CallerArgs) == 0 || site.FuncDecl == nil {
+		return nil
+	}
+
+	params := site.FuncDecl.Type.Params
+	if params == nil {
+		return nil
+	}
+
+	bridge := make(map[types.Object]types.Object)
+	argIdx := 0
+
+	for _, field := range params.List {
+		for _, name := range field.Names {
+			if argIdx >= len(site.CallerArgs) {
+				return bridge
+			}
+			arg := site.CallerArgs[argIdx]
+			argIdx++
+
+			// Resolve the param's types.Object.
+			paramObj := info.Defs[name]
+			if paramObj == nil {
+				continue
+			}
+
+			// Resolve the caller argument's types.Object.
+			argIdent, ok := arg.(*ast.Ident)
+			if !ok {
+				continue // only handle simple identifiers
+			}
+			argObj := info.Uses[argIdent]
+			if argObj == nil {
+				argObj = info.Defs[argIdent]
+			}
+			if argObj == nil {
+				continue
+			}
+
+			// Only bridge if the caller's arg object is in
+			// objToEffectID — otherwise the bridge is useless.
+			if _, ok := objToEffectID[argObj]; ok {
+				bridge[paramObj] = argObj
+			}
+		}
+	}
+
+	return bridge
 }
 
 // filterEffectsByType returns effects matching any of the given types.

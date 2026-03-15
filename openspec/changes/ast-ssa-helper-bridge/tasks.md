@@ -1,0 +1,8 @@
+- [x] Add CallerArgs field to AssertionSite
+- [x] Populate CallerArgs in detectHelperAssertions
+- [x] Add buildHelperBridge function
+- [x] Extend matchAssertionToEffect Pass 1 with bridge check
+- [x] Update TestUnmappedReason_HelpersFixture to TestHelperParameterBridge
+- [x] Update ratchet floor from 76.0% to 83.0%
+- [x] Verify mapping accuracy improved to 84.8%
+- [x] Run full quality test suite
