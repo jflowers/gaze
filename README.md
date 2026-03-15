@@ -266,6 +266,33 @@ gaze quality --config=.gaze.yaml --contractual-threshold=90 ./internal/analysis
 | `--min-contract-coverage` | | Fail if contract coverage is below this percentage (0 = no limit) |
 | `--max-over-specification` | | Fail if over-specification count exceeds this (0 = no limit) |
 
+#### How Target Inference Works
+
+Gaze automatically determines which function each test exercises by walking the test function's SSA (Static Single Assignment) call graph. A function is considered a "target" when:
+
+1. It is in the same package as the test (minus the `_test` suffix)
+2. It is not a test, benchmark, init, or closure function
+3. It is called from the test body (including `t.Run` sub-tests)
+
+**Common causes of "multiple target functions detected" warnings:**
+
+- **Setup helpers called from test body**: Functions like `writeCredentials()`, `createTempDir()`, or `newMockServer()` are detected as targets because they're called from the test body and live in the same package. To fix: move setup to `TestMain` or extract to a `testutil_test.go` file with functions that don't match the target package path.
+
+- **Multi-function integration tests**: Tests that call `Create()`, then `Read()`, then `Delete()` in sequence exercise multiple targets. Gaze reports all detected targets and the contract coverage is diluted across them. To fix: use sub-tests (`t.Run`) where each sub-test exercises one function.
+
+**What does NOT affect target detection:**
+
+- `t.Helper()` — this affects stack frame reporting in test failures, not SSA call graph analysis. Marking a function as a helper does **not** prevent it from being detected as a target.
+- Function naming conventions — Gaze does **not** use `TestFoo` → `Foo` name matching. It relies entirely on SSA call graph analysis.
+- Assertion libraries — the assertion library used (stdlib, testify, go-cmp) does not affect target detection.
+
+**Best practices for clear target inference:**
+
+1. Name test functions to match their target: `TestFoo_Scenario` exercises `Foo`
+2. Keep setup in helpers that accept `*testing.T` — Gaze detects these as helpers, not targets, when they only set up fixtures
+3. Use `t.Run` sub-tests for integration tests that call multiple functions
+4. Use `--target=FuncName` flag to restrict analysis to a specific target when automatic detection is ambiguous
+
 ### `gaze schema` -- JSON Schema Output
 
 Print the JSON Schema (Draft 2020-12) that documents the structure of `gaze analyze --format=json` output. Useful for validating output or generating client types.
@@ -473,7 +500,7 @@ internal/
 
 - **Direct function body only.** Gaze analyzes the immediate function body. Transitive side effects (effects produced by called functions) are out of scope for v1.
 - **P3-P4 side effects not yet detected.** The taxonomy defines types for stdout/stderr writes, environment mutations, mutex operations, reflection, unsafe, and other P3-P4 effects, but detection logic is not yet implemented for these tiers.
-- **GazeCRAP accuracy is limited.** The quality pipeline is wired into the CRAP command and GazeCRAP scores are computed when contract coverage data is available. However, assertion-to-side-effect mapping accuracy is currently ~74% (target: 90%), primarily affecting helper function assertions and testify field-access patterns (tracked as GitHub Issue #6).
+- **GazeCRAP accuracy is limited.** The quality pipeline is wired into the CRAP command and GazeCRAP scores are computed when contract coverage data is available. However, assertion-to-side-effect mapping accuracy is currently ~85% (target: 90%), primarily affecting inline call returns and complex helper patterns (tracked as GitHub Issue #6).
 - **No CGo or unsafe analysis.** Functions using `cgo` or `unsafe.Pointer` are not analyzed for their specific side effects.
 - **Single package loading.** The `analyze` command processes one package at a time. Use shell loops or scripting for multi-package analysis.
 
