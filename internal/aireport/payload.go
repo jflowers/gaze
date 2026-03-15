@@ -31,6 +31,18 @@ type ReportSummary struct {
 	// SSADegradedPackages lists the package paths where SSA
 	// construction failed.
 	SSADegradedPackages []string
+
+	// Contractual is the number of side effects classified as
+	// contractual across all analyzed packages.
+	Contractual int
+
+	// Ambiguous is the number of side effects classified as
+	// ambiguous across all analyzed packages.
+	Ambiguous int
+
+	// Incidental is the number of side effects classified as
+	// incidental across all analyzed packages.
+	Incidental int
 }
 
 // ReportPayload is the combined analysis data passed to the AI adapter

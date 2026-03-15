@@ -160,8 +160,17 @@ func runQualityForPackage(
 	return reports, ""
 }
 
-// runClassifyStep runs classification on all matched packages and returns the JSON output.
-func runClassifyStep(patterns []string, moduleDir string) (json.RawMessage, error) {
+// classifyStepResult holds the outputs of runClassifyStep.
+type classifyStepResult struct {
+	JSON        json.RawMessage
+	Contractual int
+	Ambiguous   int
+	Incidental  int
+}
+
+// runClassifyStep runs classification on all matched packages and returns the JSON output
+// alongside typed classification label counts.
+func runClassifyStep(patterns []string, moduleDir string) (*classifyStepResult, error) {
 	// Use the first resolved package path for analysis + classify.
 	pkgPaths, err := resolvePackagePaths(patterns, moduleDir)
 	if err != nil {
@@ -190,9 +199,20 @@ func runClassifyStep(patterns []string, moduleDir string) (json.RawMessage, erro
 		allResults = append(allResults, classified...)
 	}
 
-	return captureJSON(func(w io.Writer) error {
+	raw, err := captureJSON(func(w io.Writer) error {
 		return report.WriteJSON(w, allResults, "")
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	contractual, ambiguous, incidental := classify.CountLabels(allResults)
+	return &classifyStepResult{
+		JSON:        raw,
+		Contractual: contractual,
+		Ambiguous:   ambiguous,
+		Incidental:  incidental,
+	}, nil
 }
 
 // runDocscanStep runs the documentation scanner and returns the JSON output.
