@@ -200,7 +200,7 @@ func errString(err error) *string {
 type pipelineStepFuncs struct {
 	crapStep     func([]string, string, string, io.Writer) (*crapStepResult, error)
 	qualityStep  func([]string, string, io.Writer) (*qualityStepResult, error)
-	classifyStep func([]string, string) (json.RawMessage, error)
+	classifyStep func([]string, string) (*classifyStepResult, error)
 	docscanStep  func(string) (json.RawMessage, error)
 }
 
@@ -258,10 +258,13 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 
 	// Step 3: Classification analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (Classification)")
-	if classifyJSON, err := steps.classifyStep(patterns, moduleDir); err != nil {
+	if classifyRes, err := steps.classifyStep(patterns, moduleDir); err != nil {
 		payload.Errors.Classify = errString(err)
 	} else {
-		payload.Classify = classifyJSON
+		payload.Classify = classifyRes.JSON
+		payload.Summary.Contractual = classifyRes.Contractual
+		payload.Summary.Ambiguous = classifyRes.Ambiguous
+		payload.Summary.Incidental = classifyRes.Incidental
 	}
 
 	// Step 4: Documentation scan.

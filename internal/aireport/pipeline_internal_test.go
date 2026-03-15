@@ -25,8 +25,13 @@ func fakeSteps() pipelineStepFuncs {
 				AvgContractCoverage: 85,
 			}, nil
 		},
-		classifyStep: func(_ []string, _ string) (json.RawMessage, error) {
-			return json.RawMessage(`{"classify":"ok"}`), nil
+		classifyStep: func(_ []string, _ string) (*classifyStepResult, error) {
+			return &classifyStepResult{
+				JSON:        json.RawMessage(`{"classify":"ok"}`),
+				Contractual: 10,
+				Ambiguous:   3,
+				Incidental:  1,
+			}, nil
 		},
 		docscanStep: func(_ string) (json.RawMessage, error) {
 			return json.RawMessage(`{"docscan":"ok"}`), nil
@@ -77,6 +82,17 @@ func TestRunProductionPipeline_AllStepsSucceed(t *testing.T) {
 	}
 	if len(payload.Summary.SSADegradedPackages) != 0 {
 		t.Errorf("expected empty SSADegradedPackages, got %v", payload.Summary.SSADegradedPackages)
+	}
+
+	// Classification counts should be propagated from classify step.
+	if payload.Summary.Contractual != 10 {
+		t.Errorf("expected Contractual=10, got %d", payload.Summary.Contractual)
+	}
+	if payload.Summary.Ambiguous != 3 {
+		t.Errorf("expected Ambiguous=3, got %d", payload.Summary.Ambiguous)
+	}
+	if payload.Summary.Incidental != 1 {
+		t.Errorf("expected Incidental=1, got %d", payload.Summary.Incidental)
 	}
 }
 
@@ -138,7 +154,7 @@ func TestRunProductionPipeline_QualityStepFails(t *testing.T) {
 func TestRunProductionPipeline_ClassifyStepFails(t *testing.T) {
 	var stderr bytes.Buffer
 	steps := fakeSteps()
-	steps.classifyStep = func(_ []string, _ string) (json.RawMessage, error) {
+	steps.classifyStep = func(_ []string, _ string) (*classifyStepResult, error) {
 		return nil, fmt.Errorf("classify failed")
 	}
 

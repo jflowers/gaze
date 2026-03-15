@@ -233,3 +233,25 @@ func lookupFuncObj(m map[string]types.Object, receiver, funcName string) types.O
 	}
 	return m[funcName]
 }
+
+// CountLabels counts the number of classified side effects by label
+// across all analysis results. Side effects with nil Classification
+// are not counted.
+func CountLabels(results []taxonomy.AnalysisResult) (contractual, ambiguous, incidental int) {
+	for _, r := range results {
+		for _, se := range r.SideEffects {
+			if se.Classification == nil {
+				continue
+			}
+			switch se.Classification.Label {
+			case taxonomy.Contractual:
+				contractual++
+			case taxonomy.Ambiguous:
+				ambiguous++
+			case taxonomy.Incidental:
+				incidental++
+			}
+		}
+	}
+	return contractual, ambiguous, incidental
+}
