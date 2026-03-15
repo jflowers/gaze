@@ -35,9 +35,31 @@ Gaze is a static analysis tool for Go that detects observable side effects in fu
 
 **Rule**: A Pull Request is only "Ready for Human" once the `/review-council` command returns an **APPROVE** status from all four reviewers.
 
-## Speckit Workflow (Mandatory)
+## Spec-First Development (Mandatory)
 
-All non-trivial feature work **must** go through the Speckit pipeline. The constitution (`.specify/memory/constitution.md`) is the highest-authority document in this project — all work must align with it.
+All changes that modify production code, test code, agent prompts, embedded assets, or CI configuration **must** be preceded by a spec workflow. The constitution (`.specify/memory/constitution.md`) is the highest-authority document in this project — all work must align with it.
+
+Two spec workflows are available:
+
+| Workflow | Location | Best For |
+|----------|----------|----------|
+| **Speckit** | `specs/NNN-name/` | Numbered feature specs with the full pipeline (specify → clarify → plan → tasks → implement) |
+| **OpenSpec** | `openspec/changes/name/` | Targeted changes with lightweight artifacts (proposal → design → specs → tasks) via `/opsx-propose` and `/opsx-apply` |
+
+**What requires a spec** (no exceptions without explicit user override):
+- New features or capabilities
+- Refactoring that changes function signatures, extracts helpers, or moves code between packages
+- Test additions or assertion strengthening across multiple functions
+- Agent prompt changes (embedded assets under `internal/scaffold/assets/`)
+- CI workflow modifications
+- Data model changes (new struct fields, JSON schema updates)
+
+**What is exempt** (may be done directly):
+- Constitution amendments (governed by the constitution's own Governance section)
+- Typo corrections, comment-only changes, single-line formatting fixes
+- Emergency hotfixes for critical production bugs (must be retroactively documented)
+
+When an agent is unsure whether a change is trivial, it **must** ask the user rather than proceeding without a spec. The cost of an unnecessary spec is minutes; the cost of an unplanned change is rework, drift, and broken CI.
 
 ### Pipeline
 

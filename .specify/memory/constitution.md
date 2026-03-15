@@ -1,36 +1,28 @@
 <!--
   SYNC IMPACT REPORT
   ==================
-  Version change: 1.0.0 → 1.1.0 (MINOR: new principle added)
-  Amendment date: 2026-03-05
-  Feature: 017-testing-persona
+  Version change: 1.1.0 → 1.2.0 (MINOR: workflow requirement added)
+  Amendment date: 2026-03-15
+  Feature: spec-first-guardrails
 
-  Added principles:
-    - IV. Testability (dual scope: Gaze internals + user codebase analysis)
+  Added workflow requirements:
+    - Spec-First Development (Development Workflow section)
+      All changes that modify production code, test code, agent prompts,
+      embedded assets, or CI configuration must be preceded by a spec
+      workflow. Narrow exemptions for constitution amendments, trivial
+      fixes, and emergency hotfixes.
 
   Unchanged principles:
     - I. Accuracy
     - II. Minimal Assumptions
     - III. Actionable Output
+    - IV. Testability
 
   Unchanged sections:
-    - Development Workflow
     - Governance
 
-  Templates requiring updates:
-    ✅ .specify/templates/plan-template.md — no changes needed;
-       Constitution Check section is generic and evaluates all active
-       principles dynamically.
-    ✅ .specify/templates/spec-template.md — no changes needed;
-       requirements format already uses MUST/SHOULD language.
-    ✅ .specify/templates/tasks-template.md — no changes needed;
-       task phases are feature-driven, not principle-specific.
-    ✅ .specify/templates/checklist-template.md — no changes needed.
-    ✅ .specify/templates/agent-file-template.md — no changes needed.
-    ✅ No command files in .specify/templates/commands/ (directory absent).
-    ✅ README.md — single-line placeholder; no principle refs to update.
-
   Previous version history:
+    - 1.1.0 (2026-03-05): Added Principle IV: Testability
     - 1.0.0 (2026-02-20): Initial ratification with 3 principles
 -->
 
@@ -115,6 +107,23 @@ trusted — by users or by Gaze itself.
 
 ## Development Workflow
 
+- **Spec-First Development**: All changes that modify production code,
+  test code, agent prompts, embedded assets, or CI configuration MUST
+  be preceded by a spec workflow (either the Speckit pipeline under
+  `specs/` or the OpenSpec pipeline under `openspec/changes/`). The
+  spec artifacts (proposal, design, tasks at minimum) MUST exist
+  before implementation begins. This ensures every change has a
+  planning record, a reviewable intent, and a traceable rationale.
+  Exempt from this requirement:
+    - Constitution amendments (governed by the Governance section below)
+    - Trivial fixes: typo corrections, comment-only changes, and
+      single-line formatting fixes that do not alter behavior
+    - Emergency hotfixes: critical production bugs where the fix is
+      a single well-understood correction (must be retroactively
+      documented)
+  When in doubt, use a spec. The cost of an unnecessary spec is
+  minutes; the cost of an unplanned change is rework, drift, and
+  broken CI.
 - **Branching**: All work MUST occur on feature branches. Direct
   commits to the main branch are prohibited except for trivial
   documentation fixes.
@@ -147,4 +156,4 @@ above.
   the Constitution Check gate MUST verify that the proposed work
   aligns with all active principles.
 
-**Version**: 1.1.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-05
+**Version**: 1.2.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-15
