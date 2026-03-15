@@ -38,6 +38,15 @@ func TestEvaluateThresholds_ZeroThresholdWithZeroActual(t *testing.T) {
 	if !results[0].Passed {
 		t.Error("expected result.Passed=true")
 	}
+	if results[0].Name != "CRAPload" {
+		t.Errorf("expected Name=CRAPload, got %q", results[0].Name)
+	}
+	if results[0].Actual != 0 {
+		t.Errorf("expected Actual=0, got %d", results[0].Actual)
+	}
+	if results[0].Limit != 0 {
+		t.Errorf("expected Limit=0, got %d", results[0].Limit)
+	}
 }
 
 // TestEvaluateThresholds_ZeroThresholdWithPositiveActual verifies that *0 threshold
@@ -72,8 +81,20 @@ func TestEvaluateThresholds_BelowLimit(t *testing.T) {
 	if !passed {
 		t.Error("expected passed=true when actual < limit")
 	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
 	if !results[0].Passed {
 		t.Error("expected result.Passed=true")
+	}
+	if results[0].Name != "CRAPload" {
+		t.Errorf("expected Name=CRAPload, got %q", results[0].Name)
+	}
+	if results[0].Actual != 3 {
+		t.Errorf("expected Actual=3, got %d", results[0].Actual)
+	}
+	if results[0].Limit != 5 {
+		t.Errorf("expected Limit=5, got %d", results[0].Limit)
 	}
 }
 
@@ -87,8 +108,20 @@ func TestEvaluateThresholds_AboveLimit(t *testing.T) {
 	if passed {
 		t.Error("expected passed=false when actual > limit")
 	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
 	if results[0].Passed {
 		t.Error("expected result.Passed=false")
+	}
+	if results[0].Name != "CRAPload" {
+		t.Errorf("expected Name=CRAPload, got %q", results[0].Name)
+	}
+	if results[0].Actual != 8 {
+		t.Errorf("expected Actual=8, got %d", results[0].Actual)
+	}
+	if results[0].Limit != 5 {
+		t.Errorf("expected Limit=5, got %d", results[0].Limit)
 	}
 }
 
@@ -123,11 +156,29 @@ func TestEvaluateThresholds_AllThreeFields(t *testing.T) {
 	if !byName["CRAPload"].Passed {
 		t.Error("expected CRAPload to pass")
 	}
+	if byName["CRAPload"].Actual != 4 {
+		t.Errorf("expected CRAPload.Actual=4, got %d", byName["CRAPload"].Actual)
+	}
+	if byName["CRAPload"].Limit != 5 {
+		t.Errorf("expected CRAPload.Limit=5, got %d", byName["CRAPload"].Limit)
+	}
 	if byName["GazeCRAPload"].Passed {
 		t.Error("expected GazeCRAPload to fail")
 	}
+	if byName["GazeCRAPload"].Actual != 2 {
+		t.Errorf("expected GazeCRAPload.Actual=2, got %d", byName["GazeCRAPload"].Actual)
+	}
+	if byName["GazeCRAPload"].Limit != 1 {
+		t.Errorf("expected GazeCRAPload.Limit=1, got %d", byName["GazeCRAPload"].Limit)
+	}
 	if !byName["AvgContractCoverage"].Passed {
 		t.Error("expected AvgContractCoverage to pass")
+	}
+	if byName["AvgContractCoverage"].Actual != 60 {
+		t.Errorf("expected AvgContractCoverage.Actual=60, got %d", byName["AvgContractCoverage"].Actual)
+	}
+	if byName["AvgContractCoverage"].Limit != 50 {
+		t.Errorf("expected AvgContractCoverage.Limit=50, got %d", byName["AvgContractCoverage"].Limit)
 	}
 }
 
@@ -190,6 +241,54 @@ func TestEvaluateThresholds_NilPayload(t *testing.T) {
 	}
 	if len(results) != 1 || !results[0].Passed {
 		t.Errorf("unexpected results: %+v", results)
+	}
+}
+
+// TestEvaluateThresholds_MinContractCoverageDirection verifies that
+// MinContractCoverage uses >= (not <=). actual=60, limit=60 should
+// pass (60 >= 60 is true). actual=59, limit=60 should fail.
+func TestEvaluateThresholds_MinContractCoverageDirection(t *testing.T) {
+	// Boundary: actual == limit → should pass (>= semantics).
+	payload := &ReportPayload{
+		Summary: ReportSummary{AvgContractCoverage: 60},
+	}
+	cfg := ThresholdConfig{MinContractCoverage: intPtr(60)}
+	results, passed := EvaluateThresholds(cfg, payload)
+	if !passed {
+		t.Error("expected passed=true when actual=60 and limit=60 (>= semantics)")
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Error("expected result.Passed=true at boundary")
+	}
+	if results[0].Name != "AvgContractCoverage" {
+		t.Errorf("expected Name=AvgContractCoverage, got %q", results[0].Name)
+	}
+	if results[0].Actual != 60 {
+		t.Errorf("expected Actual=60, got %d", results[0].Actual)
+	}
+	if results[0].Limit != 60 {
+		t.Errorf("expected Limit=60, got %d", results[0].Limit)
+	}
+
+	// Below boundary: actual < limit → should fail.
+	payload2 := &ReportPayload{
+		Summary: ReportSummary{AvgContractCoverage: 59},
+	}
+	results2, passed2 := EvaluateThresholds(cfg, payload2)
+	if passed2 {
+		t.Error("expected passed=false when actual=59 and limit=60")
+	}
+	if len(results2) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results2))
+	}
+	if results2[0].Passed {
+		t.Error("expected result.Passed=false below boundary")
+	}
+	if results2[0].Actual != 59 {
+		t.Errorf("expected Actual=59, got %d", results2[0].Actual)
 	}
 }
 

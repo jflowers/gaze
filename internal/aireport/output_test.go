@@ -9,22 +9,33 @@ import (
 )
 
 // TestWriteStepSummary_EmptyPath verifies that an empty path emits a warning
-// and returns without writing anything.
+// identifying the specific condition and returns without writing anything.
 func TestWriteStepSummary_EmptyPath(t *testing.T) {
 	var stderr strings.Builder
 	WriteStepSummary("", "content", &stderr)
-	if !strings.Contains(stderr.String(), "warning") {
-		t.Errorf("expected warning for empty path, got: %q", stderr.String())
+	msg := stderr.String()
+	if !strings.Contains(msg, "warning") {
+		t.Errorf("expected warning for empty path, got: %q", msg)
+	}
+	if !strings.Contains(msg, "empty") {
+		t.Errorf("expected warning to mention 'empty', got: %q", msg)
 	}
 }
 
 // TestWriteStepSummary_RelativePath verifies that a relative path emits a
-// warning and returns without writing anything.
+// warning identifying the path and condition, and returns without writing.
 func TestWriteStepSummary_RelativePath(t *testing.T) {
 	var stderr strings.Builder
 	WriteStepSummary("relative/path/summary.md", "content", &stderr)
-	if !strings.Contains(stderr.String(), "warning") {
-		t.Errorf("expected warning for relative path, got: %q", stderr.String())
+	msg := stderr.String()
+	if !strings.Contains(msg, "warning") {
+		t.Errorf("expected warning for relative path, got: %q", msg)
+	}
+	if !strings.Contains(msg, "not an absolute path") {
+		t.Errorf("expected warning to mention 'not an absolute path', got: %q", msg)
+	}
+	if !strings.Contains(msg, "relative/path/summary.md") {
+		t.Errorf("expected warning to include the path, got: %q", msg)
 	}
 }
 
@@ -46,10 +57,12 @@ func TestWriteStepSummary_ExistingFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), existing) {
-		t.Errorf("expected existing content preserved, got: %s", data)
+	content := string(data)
+	// Verify append semantics: existing content must appear before appended.
+	if !strings.HasPrefix(content, existing) {
+		t.Errorf("expected content to start with existing text (append, not overwrite), got: %s", data)
 	}
-	if !strings.Contains(string(data), "# Appended") {
+	if !strings.Contains(content, "# Appended") {
 		t.Errorf("expected appended content, got: %s", data)
 	}
 	if stderr.String() != "" {
@@ -73,6 +86,15 @@ func TestWriteStepSummary_NonExistentFile(t *testing.T) {
 	if !strings.Contains(string(data), "# New content") {
 		t.Errorf("expected written content, got: %s", data)
 	}
+	// Verify file permissions (0644).
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatalf("stat created file: %v", err)
+	}
+	perm := info.Mode().Perm()
+	if perm != 0644 {
+		t.Errorf("expected file permissions 0644, got %04o", perm)
+	}
 	if stderr.String() != "" {
 		t.Errorf("expected no warning, got: %q", stderr.String())
 	}
@@ -85,7 +107,6 @@ func TestWriteStepSummary_UnwritablePath(t *testing.T) {
 		t.Skip("chmod not reliable on Windows")
 	}
 	dir := t.TempDir()
-	// Make the directory unwritable so creating a file inside it fails.
 	if err := os.Chmod(dir, 0555); err != nil {
 		t.Fatal(err)
 	}
@@ -95,8 +116,12 @@ func TestWriteStepSummary_UnwritablePath(t *testing.T) {
 	var stderr strings.Builder
 	WriteStepSummary(p, "content", &stderr)
 
-	if !strings.Contains(stderr.String(), "warning") {
-		t.Errorf("expected warning for unwritable path, got: %q", stderr.String())
+	msg := stderr.String()
+	if !strings.Contains(msg, "warning") {
+		t.Errorf("expected warning for unwritable path, got: %q", msg)
+	}
+	if !strings.Contains(msg, "could not open") {
+		t.Errorf("expected warning to mention 'could not open', got: %q", msg)
 	}
 }
 
@@ -120,8 +145,12 @@ func TestWriteStepSummary_SymlinkPath(t *testing.T) {
 	WriteStepSummary(link, "content", &stderr)
 
 	// O_NOFOLLOW should cause ELOOP; warning emitted, no panic.
-	if !strings.Contains(stderr.String(), "warning") {
-		t.Errorf("expected warning for symlink path, got: %q", stderr.String())
+	msg := stderr.String()
+	if !strings.Contains(msg, "warning") {
+		t.Errorf("expected warning for symlink path, got: %q", msg)
+	}
+	if !strings.Contains(msg, "symlink") {
+		t.Errorf("expected warning to mention 'symlink', got: %q", msg)
 	}
 	// The target file must not have been written to.
 	data, _ := os.ReadFile(target)
