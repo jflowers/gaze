@@ -238,3 +238,129 @@ func TestComputeScores_GazeCRAPNotFound(t *testing.T) {
 		t.Errorf("expected nil Quadrant when callback returns false, got %v", *s.Quadrant)
 	}
 }
+
+// --- FixStrategy Tests ---
+
+func TestAssignFixStrategy_Decompose(t *testing.T) {
+	// Complexity 20 >= threshold 15, coverage 80% > 0.
+	s := Score{Complexity: 20, LineCoverage: 80, CRAP: Formula(20, 80)}
+	got := assignFixStrategy(s, 15)
+	if got == nil {
+		t.Fatal("expected non-nil FixStrategy")
+	}
+	if *got != FixDecompose {
+		t.Errorf("expected FixDecompose, got %q", *got)
+	}
+}
+
+func TestAssignFixStrategy_DecomposeAndTest(t *testing.T) {
+	// Complexity 18 >= threshold 15, coverage 0%.
+	s := Score{Complexity: 18, LineCoverage: 0, CRAP: Formula(18, 0)}
+	got := assignFixStrategy(s, 15)
+	if got == nil {
+		t.Fatal("expected non-nil FixStrategy")
+	}
+	if *got != FixDecomposeAndTest {
+		t.Errorf("expected FixDecomposeAndTest, got %q", *got)
+	}
+}
+
+func TestAssignFixStrategy_AddTests(t *testing.T) {
+	// Complexity 8 < threshold 15, coverage 0%.
+	s := Score{Complexity: 8, LineCoverage: 0, CRAP: Formula(8, 0)}
+	got := assignFixStrategy(s, 15)
+	if got == nil {
+		t.Fatal("expected non-nil FixStrategy")
+	}
+	if *got != FixAddTests {
+		t.Errorf("expected FixAddTests, got %q", *got)
+	}
+}
+
+func TestAssignFixStrategy_AddAssertions(t *testing.T) {
+	// Complexity 6, line coverage 0% (gives CRAP 42, above threshold),
+	// but quadrant Q3 means tests exist with inadequate assertions.
+	// In practice Q3 functions have high line coverage but low contract
+	// coverage — the CRAP score is high because GazeCRAP uses contract
+	// coverage (which is low) rather than line coverage.
+	q := Q3SimpleButUnderspecified
+	s := Score{
+		Complexity:   6,
+		LineCoverage: 0,
+		CRAP:         Formula(6, 0), // CRAP 42, above threshold
+		Quadrant:     &q,
+	}
+	got := assignFixStrategy(s, 15)
+	if got == nil {
+		t.Fatal("expected non-nil FixStrategy")
+	}
+	if *got != FixAddAssertions {
+		t.Errorf("expected FixAddAssertions, got %q", *got)
+	}
+}
+
+func TestAssignFixStrategy_BelowThreshold(t *testing.T) {
+	// CRAP 8.0 < threshold 15, should return nil.
+	s := Score{Complexity: 3, LineCoverage: 80, CRAP: Formula(3, 80)}
+	got := assignFixStrategy(s, 15)
+	if got != nil {
+		t.Errorf("expected nil FixStrategy for below-threshold function, got %q", *got)
+	}
+}
+
+func TestComputeScores_FixStrategyAssigned(t *testing.T) {
+	// Verify computeScores assigns FixStrategy to above-threshold scores.
+	stats := []gocyclo.Stat{
+		makeStat("pkg", "HighComplexity", "/src/foo.go", 10, 20),
+		makeStat("pkg", "LowCRAP", "/src/foo.go", 20, 2),
+	}
+	cm := makeCoverMap(map[coverKey]float64{
+		{file: "/src/foo.go", line: 10}: 50.0,
+		{file: "/src/foo.go", line: 20}: 90.0,
+	})
+	opts := DefaultOptions()
+
+	scores := computeScores(stats, cm, opts)
+	if len(scores) != 2 {
+		t.Fatalf("expected 2 scores, got %d", len(scores))
+	}
+
+	// HighComplexity (cx=20, cov=50%) should get FixDecompose.
+	if scores[0].FixStrategy == nil {
+		t.Fatal("expected non-nil FixStrategy for HighComplexity")
+	}
+	if *scores[0].FixStrategy != FixDecompose {
+		t.Errorf("expected FixDecompose for HighComplexity, got %q", *scores[0].FixStrategy)
+	}
+
+	// LowCRAP (cx=2, cov=90%) should have nil FixStrategy.
+	if scores[1].FixStrategy != nil {
+		t.Errorf("expected nil FixStrategy for LowCRAP, got %q", *scores[1].FixStrategy)
+	}
+}
+
+func TestBuildSummary_FixStrategyCounts(t *testing.T) {
+	decomposeFS := FixDecompose
+	addTestsFS := FixAddTests
+	scores := []Score{
+		{Complexity: 20, LineCoverage: 80, CRAP: 20, FixStrategy: &decomposeFS},
+		{Complexity: 18, LineCoverage: 50, CRAP: 18, FixStrategy: &decomposeFS},
+		{Complexity: 8, LineCoverage: 0, CRAP: 72, FixStrategy: &addTestsFS},
+		{Complexity: 3, LineCoverage: 90, CRAP: 3.1}, // below threshold, no strategy
+	}
+	opts := DefaultOptions()
+	summary := buildSummary(scores, opts)
+
+	if summary.FixStrategyCounts == nil {
+		t.Fatal("expected non-nil FixStrategyCounts")
+	}
+	if summary.FixStrategyCounts[FixDecompose] != 2 {
+		t.Errorf("expected decompose=2, got %d", summary.FixStrategyCounts[FixDecompose])
+	}
+	if summary.FixStrategyCounts[FixAddTests] != 1 {
+		t.Errorf("expected add_tests=1, got %d", summary.FixStrategyCounts[FixAddTests])
+	}
+	if summary.FixStrategyCounts[FixAddAssertions] != 0 {
+		t.Errorf("expected add_assertions=0, got %d", summary.FixStrategyCounts[FixAddAssertions])
+	}
+}

@@ -46,6 +46,11 @@ type Score struct {
 
 	// Quadrant classification (nil if GazeCRAP unavailable).
 	Quadrant *Quadrant `json:"quadrant,omitempty"`
+
+	// FixStrategy is the recommended remediation action for this
+	// function. Only populated when CRAP >= CRAPThreshold (i.e.,
+	// the function is in the CRAPload). Nil for healthy functions.
+	FixStrategy *FixStrategy `json:"fix_strategy,omitempty"`
 }
 
 // Quadrant classifies a function based on CRAP and GazeCRAP scores
@@ -60,21 +65,50 @@ const (
 	Q4Dangerous               Quadrant = "Q4_Dangerous"
 )
 
+// FixStrategy describes the recommended remediation action for a
+// function that exceeds the CRAP threshold.
+type FixStrategy string
+
+// Fix strategy constants.
+const (
+	// FixDecompose indicates the function's complexity is so high
+	// that even 100% coverage cannot bring CRAP below threshold.
+	// The function must be split into smaller units.
+	FixDecompose FixStrategy = "decompose"
+
+	// FixAddTests indicates the function has zero line coverage
+	// and complexity below the threshold. Adding tests will bring
+	// CRAP below threshold.
+	FixAddTests FixStrategy = "add_tests"
+
+	// FixAddAssertions indicates the function has adequate line
+	// coverage but inadequate contract coverage (Q3 quadrant).
+	// Existing tests execute the code but don't verify observable
+	// behavior. Add assertions to existing tests.
+	FixAddAssertions FixStrategy = "add_assertions"
+
+	// FixDecomposeAndTest indicates the function has both high
+	// complexity (>= threshold) and zero coverage. It needs
+	// decomposition AND tests.
+	FixDecomposeAndTest FixStrategy = "decompose_and_test"
+)
+
 // Summary holds aggregate statistics for a CRAP report.
 type Summary struct {
-	TotalFunctions      int              `json:"total_functions"`
-	AvgComplexity       float64          `json:"avg_complexity"`
-	AvgLineCoverage     float64          `json:"avg_line_coverage"`
-	AvgCRAP             float64          `json:"avg_crap"`
-	CRAPload            int              `json:"crapload"`
-	CRAPThreshold       float64          `json:"crap_threshold"`
-	GazeCRAPload        *int             `json:"gaze_crapload,omitempty"`
-	GazeCRAPThreshold   *float64         `json:"gaze_crap_threshold,omitempty"`
-	AvgGazeCRAP         *float64         `json:"avg_gaze_crap,omitempty"`
-	AvgContractCoverage *float64         `json:"avg_contract_coverage,omitempty"`
-	QuadrantCounts      map[Quadrant]int `json:"quadrant_counts,omitempty"`
-	WorstCRAP           []Score          `json:"worst_crap"`
-	WorstGazeCRAP       []Score          `json:"worst_gaze_crap,omitempty"`
+	TotalFunctions      int                 `json:"total_functions"`
+	AvgComplexity       float64             `json:"avg_complexity"`
+	AvgLineCoverage     float64             `json:"avg_line_coverage"`
+	AvgCRAP             float64             `json:"avg_crap"`
+	CRAPload            int                 `json:"crapload"`
+	CRAPThreshold       float64             `json:"crap_threshold"`
+	GazeCRAPload        *int                `json:"gaze_crapload,omitempty"`
+	GazeCRAPThreshold   *float64            `json:"gaze_crap_threshold,omitempty"`
+	AvgGazeCRAP         *float64            `json:"avg_gaze_crap,omitempty"`
+	AvgContractCoverage *float64            `json:"avg_contract_coverage,omitempty"`
+	QuadrantCounts      map[Quadrant]int    `json:"quadrant_counts,omitempty"`
+	FixStrategyCounts   map[FixStrategy]int `json:"fix_strategy_counts,omitempty"`
+	WorstCRAP           []Score             `json:"worst_crap"`
+	WorstGazeCRAP       []Score             `json:"worst_gaze_crap,omitempty"`
 }
 
 // Report is the complete CRAP analysis output.

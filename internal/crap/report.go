@@ -102,8 +102,24 @@ func writeQuadrantSection(w io.Writer, counts map[Quadrant]int, styles report.St
 	}
 }
 
+// writeRemediationSection writes the remediation breakdown section
+// showing how many functions need each type of fix.
+func writeRemediationSection(w io.Writer, counts map[FixStrategy]int, styles report.Styles) {
+	if len(counts) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, styles.Header.Render("--- Remediation Breakdown ---"))
+	for _, fs := range []FixStrategy{FixDecompose, FixAddTests, FixAddAssertions, FixDecomposeAndTest} {
+		count := counts[fs]
+		if count > 0 {
+			_, _ = fmt.Fprintf(w, "  %-20s  %d\n", string(fs), count)
+		}
+	}
+}
+
 // writeWorstSection writes the worst offenders section with
-// threshold-based coloring.
+// threshold-based coloring and fix strategy labels.
 func writeWorstSection(w io.Writer, worst []Score, threshold float64, styles report.Styles) {
 	if len(worst) == 0 {
 		return
@@ -118,8 +134,12 @@ func writeWorstSection(w io.Writer, worst []Score, threshold float64, styles rep
 		} else {
 			score = styles.CRAPGood.Render(score)
 		}
-		_, _ = fmt.Fprintf(w, "  %d. %s  %s  %s\n",
-			i+1, score, s.Function,
+		strategyLabel := ""
+		if s.FixStrategy != nil {
+			strategyLabel = fmt.Sprintf(" [%s]", *s.FixStrategy)
+		}
+		_, _ = fmt.Fprintf(w, "  %d. %s  %s%s  %s\n",
+			i+1, score, s.Function, strategyLabel,
 			styles.Muted.Render(fmt.Sprintf("(%s:%d)", shortenPath(s.File), s.Line)))
 	}
 }
@@ -144,6 +164,7 @@ func WriteText(w io.Writer, rpt *Report) error {
 	writeScoreTable(w, sorted, threshold, styles)
 	writeSummarySection(w, rpt.Summary, styles)
 	writeQuadrantSection(w, rpt.Summary.QuadrantCounts, styles)
+	writeRemediationSection(w, rpt.Summary.FixStrategyCounts, styles)
 	writeWorstSection(w, rpt.Summary.WorstCRAP, threshold, styles)
 
 	return nil
