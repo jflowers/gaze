@@ -1126,12 +1126,12 @@ func TestAnalyze_WithPrebuiltProfile(t *testing.T) {
 	modRoot := moduleRoot(t)
 
 	// Build a minimal coverage profile that references crap.go.
-	// Formula (lines 89-92) and ClassifyQuadrant (lines 97-107)
+	// Formula (lines 124-128) and ClassifyQuadrant (lines 134-148)
 	// are marked as covered (Count=1); everything else is absent
 	// and defaults to 0% coverage.
 	profileContent := "mode: set\n" +
-		"github.com/unbound-force/gaze/internal/crap/crap.go:89.39,92.2 2 1\n" +
-		"github.com/unbound-force/gaze/internal/crap/crap.go:97.57,105.2 3 1\n"
+		"github.com/unbound-force/gaze/internal/crap/crap.go:124.39,128.2 2 1\n" +
+		"github.com/unbound-force/gaze/internal/crap/crap.go:134.57,148.2 3 1\n"
 
 	profileFile := filepath.Join(t.TempDir(), "cover.out")
 	if err := os.WriteFile(profileFile, []byte(profileContent), 0o644); err != nil {
@@ -1198,7 +1198,7 @@ func TestAnalyze_ContractCoverageFunc(t *testing.T) {
 	modRoot := moduleRoot(t)
 
 	profileContent := "mode: set\n" +
-		"github.com/unbound-force/gaze/internal/crap/crap.go:89.39,92.2 2 1\n"
+		"github.com/unbound-force/gaze/internal/crap/crap.go:124.39,128.2 2 1\n"
 	profileFile := filepath.Join(t.TempDir(), "cover.out")
 	if err := os.WriteFile(profileFile, []byte(profileContent), 0o644); err != nil {
 		t.Fatalf("writing cover profile: %v", err)
