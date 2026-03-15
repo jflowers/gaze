@@ -162,6 +162,46 @@ If quality analysis is not available or returns no data, omit
 this section entirely. If a warning is needed (e.g., "0 tests
 found"), use the warning callout format: `> ⚠️ <message>`
 
+### Unmapped Assertion Evaluation
+
+When the quality JSON output contains `unmapped_assertions`, you
+SHOULD evaluate each one to determine if it semantically verifies
+a side effect of the target function — even though the mechanical
+mapping pipeline could not trace the variable flow.
+
+For each unmapped assertion:
+1. Use the Read tool to examine the assertion's source location
+   and the surrounding test function body
+2. Read the target function's side effects from the quality JSON
+3. Evaluate: does this assertion verify any side effect through
+   a semantic relationship? Common patterns:
+   - Calling a getter after a setter to verify a mutation
+     (e.g., `store.Get()` after `store.Set()`)
+   - Checking a return value through an intermediate helper
+   - Asserting on state that the target function modified
+4. If yes, report it as an AI-mapped assertion at confidence 50
+
+Report AI-mapped assertions in a `🧪 AI-Mapped Assertions`
+subsection after the quality summary:
+
+```
+### 🧪 AI-Mapped Assertions (N additional)
+| Assertion | Verifies | Confidence |
+|-----------|----------|------------|
+| `store_test.go:23` `store.Get("key")` | Set's ReceiverMutation | 50 |
+```
+
+Adjust the contract coverage calculation to include AI-mapped
+assertions. Note the adjusted coverage clearly:
+`Contract Coverage: 85% (mechanical) → 95% (with AI mapping)`
+
+Skip this evaluation if:
+- There are no unmapped assertions
+- The quality JSON has no `unmapped_assertions` field
+- The unmapped assertions are clearly unrelated to the target
+  (cross-target assertions where the test exercises multiple
+  functions and the assertion is on a different function's output)
+
 ## Full Mode
 
 Run all available gaze commands in sequence:

@@ -1,16 +1,15 @@
 <!--
   SYNC IMPACT REPORT
   ==================
-  Version change: 1.1.0 → 1.2.0 (MINOR: workflow requirement added)
+  Version change: 1.2.0 → 1.3.0 (MINOR: review council gate added)
   Amendment date: 2026-03-15
-  Feature: spec-first-guardrails
+  Feature: review-council-gate
 
   Added workflow requirements:
-    - Spec-First Development (Development Workflow section)
-      All changes that modify production code, test code, agent prompts,
-      embedded assets, or CI configuration must be preceded by a spec
-      workflow. Narrow exemptions for constitution amendments, trivial
-      fixes, and emergency hotfixes.
+    - Review Council Gate (Development Workflow section)
+      Before submitting a PR, agents must run /review-council and
+      receive APPROVE from all four reviewers. Minimal changes
+      between council approval and PR submission.
 
   Unchanged principles:
     - I. Accuracy
@@ -22,6 +21,7 @@
     - Governance
 
   Previous version history:
+    - 1.2.0 (2026-03-15): Added Spec-First Development requirement
     - 1.1.0 (2026-03-05): Added Principle IV: Testability
     - 1.0.0 (2026-02-20): Initial ratification with 3 principles
 -->
@@ -129,6 +129,13 @@ trusted — by users or by Gaze itself.
   documentation fixes.
 - **Code Review**: Every pull request MUST receive at least one
   approving review before merge.
+- **Review Council Gate**: Before submitting a pull request, agents
+  MUST run the `/review-council` command and receive an APPROVE
+  verdict from all four reviewers (Adversary, Architect, Guard,
+  Tester). Any REQUEST CHANGES findings MUST be resolved before
+  PR submission. There MUST be minimal to no code changes between
+  the council's APPROVE and the PR submission — the council reviews
+  the code that will be submitted, not a draft that changes afterward.
 - **Continuous Integration**: The CI pipeline MUST pass (build, lint,
   tests) before a pull request is eligible for merge.
 - **Releases**: Follow semantic versioning (MAJOR.MINOR.PATCH).
@@ -156,4 +163,4 @@ above.
   the Constitution Check gate MUST verify that the proposed work
   aligns with all active principles.
 
-**Version**: 1.2.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-15
+**Version**: 1.3.0 | **Ratified**: 2026-02-20 | **Last Amended**: 2026-03-15

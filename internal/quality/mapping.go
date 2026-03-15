@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"io"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -38,7 +39,29 @@ func MapAssertionsToEffects(
 	sites []AssertionSite,
 	effects []taxonomy.SideEffect,
 	testPkg *packages.Package,
+	aiMapper ...AIMapperFunc,
 ) (mapped []taxonomy.AssertionMapping, unmapped []taxonomy.AssertionMapping, discardedIDs map[string]bool) {
+	return mapAssertionsToEffectsImpl(testFunc, targetFunc, sites, effects, testPkg, nil, aiMapper...)
+}
+
+// mapAssertionsToEffectsImpl is the internal implementation that
+// accepts a stderr writer for AI mapper error logging.
+func mapAssertionsToEffectsImpl(
+	testFunc *ssa.Function,
+	targetFunc *ssa.Function,
+	sites []AssertionSite,
+	effects []taxonomy.SideEffect,
+	testPkg *packages.Package,
+	stderr io.Writer,
+	aiMapper ...AIMapperFunc,
+) (mapped []taxonomy.AssertionMapping, unmapped []taxonomy.AssertionMapping, discardedIDs map[string]bool) {
+	// Extract the optional AI mapper (variadic to preserve backward compat).
+	// At most one AIMapperFunc is used; additional values are ignored.
+	var aiMapperFn AIMapperFunc
+	if len(aiMapper) > 0 {
+		aiMapperFn = aiMapper[0]
+	}
+
 	discardedIDs = make(map[string]bool)
 
 	if len(sites) == 0 || len(effects) == 0 {
@@ -89,6 +112,11 @@ func MapAssertionsToEffects(
 			// Fallback: check if the assertion expression contains
 			// an inline call to the target function (e.g., if f() != x).
 			mapping = matchInlineCall(site, targetFunc, returnEffectID, effectMap, testPkg)
+		}
+		if mapping == nil && aiMapperFn != nil {
+			// AI fallback: for structurally disconnected assertions,
+			// ask the AI to evaluate the semantic relationship.
+			mapping = tryAIMapping(site, targetFunc, effects, testPkg.Fset, aiMapperFn, stderr)
 		}
 		if mapping != nil {
 			mapped = append(mapped, *mapping)
