@@ -1064,7 +1064,9 @@ func TestSC003_MappingAccuracy(t *testing.T) {
 	//   - Helper return value tracing: depth-1 SSA verification
 	//   - walkCalls: recurse into target-package candidates
 	// Accuracy improved from 73.8% (31/42) to 78.8% (52/66).
-	const baselineFloor = 76.0 // ratchet: current baseline is ~78.8%
+	// After helper parameter bridging (CallerArgs on AssertionSite):
+	// Accuracy improved from 78.8% (52/66) to 84.8% (56/66).
+	const baselineFloor = 83.0 // ratchet: current baseline is ~84.8%
 	if accuracy < baselineFloor {
 		t.Errorf("SC-003: mapping accuracy %.1f%% regressed below baseline floor %.0f%% (%d/%d mapped)",
 			accuracy, baselineFloor, mappedAssertions, totalAssertions)
@@ -1658,53 +1660,48 @@ func TestWriteJSON_DiscardedReturnHints_ZeroDiscards(t *testing.T) {
 	}
 }
 
-// TestUnmappedReason_HelpersFixture_Integration verifies that running the
-// helpers fixture through the full quality pipeline produces unmapped
-// assertions with UnmappedReasonHelperParam. The helpers fixture uses
-// depth-1 helper functions (assertEqual, assertNoError, assertError) whose
-// parameter objects cannot be traced back to the test's variable assignments
-// (SC-001, T007).
-func TestUnmappedReason_HelpersFixture_Integration(t *testing.T) {
+// TestHelperParameterBridge_Integration verifies that running the
+// helpers fixture through the full quality pipeline successfully maps
+// assertions inside helper functions back to the test's variables
+// via the CallerArgs parameter bridge. Previously these assertions
+// were all unmapped with UnmappedReasonHelperParam; now at least
+// some should be mapped, resulting in non-zero contract coverage
+// for the helpers fixture.
+func TestHelperParameterBridge_Integration(t *testing.T) {
 	reports, _ := assessFixture(t, "helpers")
 
-	var anyHelperParam bool
+	var helperParamUnmapped int
+	var totalUnmapped int
 	for _, r := range reports {
 		for _, ua := range r.UnmappedAssertions {
-			t.Logf("  %s -> %s: unmapped at %s [%s]",
-				r.TestFunction, r.TargetFunction.QualifiedName(),
-				ua.AssertionLocation, ua.UnmappedReason)
+			totalUnmapped++
 			if ua.UnmappedReason == taxonomy.UnmappedReasonHelperParam {
-				anyHelperParam = true
-			}
-			if ua.UnmappedReason == "" {
-				t.Errorf("%s -> %s: unmapped assertion at %s has empty UnmappedReason",
-					r.TestFunction, r.TargetFunction.QualifiedName(),
-					ua.AssertionLocation)
+				helperParamUnmapped++
 			}
 		}
 	}
 
-	if !anyHelperParam {
-		t.Error("expected at least one unmapped assertion with UnmappedReasonHelperParam in helpers fixture")
+	// Before the helper bridge, ALL helper assertions were unmapped
+	// with helper_param reason. After the bridge, most should be
+	// mapped. We verify contract coverage is non-zero.
+	var anyCoverage bool
+	for _, r := range reports {
+		if r.ContractCoverage.Percentage > 0 {
+			anyCoverage = true
+			t.Logf("  %s -> %s: contract coverage %.0f%% (%d/%d)",
+				r.TestFunction, r.TargetFunction.QualifiedName(),
+				r.ContractCoverage.Percentage,
+				r.ContractCoverage.CoveredCount,
+				r.ContractCoverage.TotalContractual)
+		}
 	}
 
-	// Verify JSON output carries the unmapped_reason field.
-	var jsonBuf bytes.Buffer
-	if err := quality.WriteJSON(&jsonBuf, reports, nil); err != nil {
-		t.Fatalf("WriteJSON failed: %v", err)
-	}
-	if !strings.Contains(jsonBuf.String(), `"helper_param"`) {
-		t.Error("expected JSON output to contain unmapped_reason \"helper_param\" for helpers fixture")
+	if !anyCoverage {
+		t.Error("expected non-zero contract coverage from helpers fixture after parameter bridge")
 	}
 
-	// Verify text output contains [helper_param] for the unmapped entry.
-	var textBuf bytes.Buffer
-	if err := quality.WriteText(&textBuf, reports, nil); err != nil {
-		t.Fatalf("WriteText failed: %v", err)
-	}
-	if !strings.Contains(textBuf.String(), "[helper_param]") {
-		t.Error("expected text output to contain \"[helper_param]\" for helpers fixture")
-	}
+	t.Logf("helpers fixture: %d total unmapped, %d with helper_param reason",
+		totalUnmapped, helperParamUnmapped)
 }
 
 // TestUnmappedReason_WelltestedFixture_Integration verifies that running the

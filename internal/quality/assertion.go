@@ -64,6 +64,12 @@ type AssertionSite struct {
 	// Expr is the comparison or call expression that constitutes
 	// the assertion.
 	Expr ast.Expr
+
+	// CallerArgs is the argument expressions from the call site
+	// that invoked the helper function. Only populated when
+	// Depth > 0. Used to bridge helper parameters back to the
+	// caller's variables for assertion mapping.
+	CallerArgs []ast.Expr
 }
 
 // DetectAssertions walks the test function's AST looking for
@@ -471,7 +477,13 @@ func (d *assertionDetector) detectHelperAssertions(
 		return nil
 	}
 
-	return d.detect(helperDecl, depth+1)
+	sites := d.detect(helperDecl, depth+1)
+	// Attach caller arguments so the mapper can bridge helper
+	// parameters back to the test's variables.
+	for i := range sites {
+		sites[i].CallerArgs = call.Args
+	}
+	return sites
 }
 
 // extractFuncName extracts the function name from a call expression.
