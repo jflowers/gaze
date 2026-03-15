@@ -66,6 +66,8 @@ func runCRAPStep(patterns []string, moduleDir string, coverProfile string, stder
 type qualityStepResult struct {
 	JSON                json.RawMessage
 	AvgContractCoverage int
+	SSADegraded         bool
+	SSADegradedPackages []string
 }
 
 // runQualityStep runs the quality pipeline across all matched packages and
@@ -86,17 +88,20 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qua
 	modPkgs := resolveModulePackages(moduleDir)
 
 	var allReports []taxonomy.QualityReport
-	var anyDegraded bool
+	var degradedPkgs []string
 	for _, pkgPath := range pkgPaths {
-		reports, degraded := runQualityForPackage(pkgPath, gazeConfig, modPkgs, stderr)
-		if degraded {
-			anyDegraded = true
+		reports, degradedPkg := runQualityForPackage(pkgPath, gazeConfig, modPkgs, stderr)
+		if degradedPkg != "" {
+			degradedPkgs = append(degradedPkgs, degradedPkg)
 		}
 		allReports = append(allReports, reports...)
 	}
 
 	summary := quality.BuildPackageSummary(allReports)
-	summary.SSADegraded = anyDegraded
+	if len(degradedPkgs) > 0 {
+		summary.SSADegraded = true
+		summary.SSADegradedPackages = degradedPkgs
+	}
 	raw, err := captureJSON(func(w io.Writer) error {
 		return quality.WriteJSON(w, allReports, summary)
 	})
@@ -111,44 +116,48 @@ func runQualityStep(patterns []string, moduleDir string, stderr io.Writer) (*qua
 	return &qualityStepResult{
 		JSON:                raw,
 		AvgContractCoverage: avgCov,
+		SSADegraded:         len(degradedPkgs) > 0,
+		SSADegradedPackages: degradedPkgs,
 	}, nil
 }
 
 // runQualityForPackage runs the quality pipeline on a single package.
 // modPkgs should be pre-resolved by the caller (hoist LoadModule out of loops).
-// Returns (nil, false) if the package has no tests or analysis fails.
-// The second return value indicates whether SSA construction failed
-// and results are degraded (partial).
+// Returns (nil, "") if the package has no tests or analysis fails.
+// The second return value is the degraded package path (empty string
+// if not degraded, package path if SSA construction failed).
 func runQualityForPackage(
 	pkgPath string,
 	gazeConfig *config.GazeConfig,
 	modPkgs []*packages.Package,
 	stderr io.Writer,
-) ([]taxonomy.QualityReport, bool) {
+) ([]taxonomy.QualityReport, string) {
 	analysisOpts := analysis.Options{IncludeUnexported: false}
 	results, err := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
 	if err != nil || len(results) == 0 {
-		return nil, false
+		return nil, ""
 	}
 
 	cfg := gazeConfig
 	classified, err := runClassifyResults(results, pkgPath, cfg, modPkgs)
 	if err != nil || len(classified) == 0 {
-		return nil, false
+		return nil, ""
 	}
 
 	testPkg, err := loadTestPackageForQuality(pkgPath)
 	if err != nil {
-		return nil, false
+		return nil, ""
 	}
 
 	qualOpts := quality.Options{Stderr: stderr}
 	reports, summary, err := quality.Assess(classified, testPkg, qualOpts)
 	if err != nil {
-		return nil, false
+		return nil, ""
 	}
-	degraded := summary != nil && summary.SSADegraded
-	return reports, degraded
+	if summary != nil && summary.SSADegraded {
+		return reports, pkgPath
+	}
+	return reports, ""
 }
 
 // runClassifyStep runs classification on all matched packages and returns the JSON output.

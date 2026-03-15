@@ -57,8 +57,10 @@ func TestReportPayload_JSONRoundTrip(t *testing.T) {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	// Summary is not serialised, so decoded.Summary should be zero.
-	if decoded.Summary != (ReportSummary{}) {
+	// Summary is not serialised (json:"-"), so decoded.Summary should be zero.
+	if decoded.Summary.CRAPload != 0 || decoded.Summary.GazeCRAPload != 0 ||
+		decoded.Summary.AvgContractCoverage != 0 || decoded.Summary.SSADegraded ||
+		len(decoded.Summary.SSADegradedPackages) != 0 {
 		t.Errorf("expected decoded Summary to be zero-value, got %+v", decoded.Summary)
 	}
 

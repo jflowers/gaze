@@ -404,6 +404,11 @@ const QualitySchema = `{
         "ssa_degraded": {
           "type": "boolean",
           "description": "True when SSA construction failed and quality results are partial"
+        },
+        "ssa_degraded_packages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Package paths where SSA construction failed"
         }
       }
     },

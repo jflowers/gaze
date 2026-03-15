@@ -578,6 +578,7 @@ func TestQualitySchema_ValidatesDegradedOutput(t *testing.T) {
 			"total_over_specifications":      0,
 			"assertion_detection_confidence": 80,
 			"ssa_degraded":                   true,
+			"ssa_degraded_packages":          []string{"github.com/example/pkg/chrome"},
 		},
 	}
 

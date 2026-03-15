@@ -23,6 +23,14 @@ type ReportSummary struct {
 	// AvgContractCoverage is the average contract coverage percentage across
 	// all assessed packages (from quality.Summary.AvgContractCoverage).
 	AvgContractCoverage int
+
+	// SSADegraded is true when SSA construction failed for one or
+	// more packages and quality results are partial.
+	SSADegraded bool
+
+	// SSADegradedPackages lists the package paths where SSA
+	// construction failed.
+	SSADegradedPackages []string
 }
 
 // ReportPayload is the combined analysis data passed to the AI adapter

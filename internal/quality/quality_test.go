@@ -2724,6 +2724,14 @@ func TestAssess_SSADegraded(t *testing.T) {
 		t.Error("expected at least one degraded report with non-zero AssertionDetectionConfidence")
 	}
 
+	// SSADegradedPackages should contain the package path.
+	if len(summary.SSADegradedPackages) != 1 {
+		t.Fatalf("expected 1 SSADegradedPackage, got %d", len(summary.SSADegradedPackages))
+	}
+	if summary.SSADegradedPackages[0] != pkg.PkgPath {
+		t.Errorf("expected SSADegradedPackages[0]=%q, got %q", pkg.PkgPath, summary.SSADegradedPackages[0])
+	}
+
 	// Warning should have been written to stderr.
 	stderrStr := stderr.String()
 	if !strings.Contains(stderrStr, "SSA construction failed") {

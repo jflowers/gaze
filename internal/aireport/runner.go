@@ -252,6 +252,8 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 	} else {
 		payload.Quality = qualRes.JSON
 		payload.Summary.AvgContractCoverage = qualRes.AvgContractCoverage
+		payload.Summary.SSADegraded = qualRes.SSADegraded
+		payload.Summary.SSADegradedPackages = qualRes.SSADegradedPackages
 	}
 
 	// Step 3: Classification analysis.

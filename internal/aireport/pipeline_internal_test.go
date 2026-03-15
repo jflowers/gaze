@@ -70,6 +70,14 @@ func TestRunProductionPipeline_AllStepsSucceed(t *testing.T) {
 	if payload.Errors.Docscan != nil {
 		t.Errorf("expected nil Docscan error, got: %v", *payload.Errors.Docscan)
 	}
+
+	// SSA should not be degraded when all steps succeed.
+	if payload.Summary.SSADegraded {
+		t.Error("expected SSADegraded=false when all steps succeed")
+	}
+	if len(payload.Summary.SSADegradedPackages) != 0 {
+		t.Errorf("expected empty SSADegradedPackages, got %v", payload.Summary.SSADegradedPackages)
+	}
 }
 
 func TestRunProductionPipeline_CRAPStepFails(t *testing.T) {
