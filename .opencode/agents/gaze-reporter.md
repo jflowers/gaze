@@ -130,6 +130,10 @@ Produce a summary containing:
    interpreting what the Q4 function count means in practical
    terms (e.g., whether the risk is from low coverage or high
    complexity, and whether the fix is more tests or decomposition).
+8. **Remediation Breakdown** (if `fix_strategy_counts` is present
+   in the JSON summary) — show a table or summary line with counts
+   per strategy: `decompose`, `add_tests`, `add_assertions`,
+   `decompose_and_test`. Use these to inform the recommendations.
 
 ---
 
@@ -236,6 +240,24 @@ Present in this order:
      Resolve, Run)
    - Names a specific function or package
    - Includes a brief rationale with at least one concrete metric
+
+   **Fix Strategy Awareness**: When the CRAP JSON includes
+   `fix_strategy` fields, use them to inform recommendations:
+   - `decompose` → recommend splitting the function
+   - `add_tests` → recommend writing tests. For functions with
+     `add_tests` strategy, use the Read tool to examine the
+     function signature in the source file. If the function
+     takes concrete external types (e.g., `*http.Client`,
+     `*sql.DB`, `*exec.Cmd`) instead of interfaces, recommend
+     extracting an interface or adding a dependency injection
+     point before writing tests. Phrase as: "Refactor [function]
+     to accept an interface instead of [concrete type], then
+     add tests."
+   - `add_assertions` → recommend strengthening assertions in
+     existing tests (tests execute the code but don't verify
+     observable behavior)
+   - `decompose_and_test` → recommend both decomposition and
+     tests, starting with decomposition
 
 ## Output Format
 
