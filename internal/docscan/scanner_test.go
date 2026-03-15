@@ -38,12 +38,34 @@ func TestScan_FindsMarkdownFiles(t *testing.T) {
 		t.Fatalf("Scan() error: %v", err)
 	}
 
-	// Expect README.md, CHANGELOG.md, CONTRIBUTING.md,
+	// The fixture contains exactly 6 markdown files:
+	// README.md, CHANGELOG.md, CONTRIBUTING.md,
 	// docs/architecture.md, vendor/README.md, pkg/mypackage/doc.md
-	if len(docs) < 5 {
-		t.Errorf("expected >= 5 docs, got %d", len(docs))
+	if len(docs) != 6 {
+		t.Errorf("expected exactly 6 docs (no excludes), got %d", len(docs))
 		for _, d := range docs {
 			t.Logf("  %s (priority %d)", d.Path, d.Priority)
+		}
+	}
+
+	expected := map[string]bool{
+		"README.md":            false,
+		"CHANGELOG.md":         false,
+		"CONTRIBUTING.md":      false,
+		"docs/architecture.md": false,
+		"vendor/README.md":     false,
+		"pkg/mypackage/doc.md": false,
+	}
+	for _, d := range docs {
+		if _, ok := expected[d.Path]; ok {
+			expected[d.Path] = true
+		} else {
+			t.Errorf("unexpected file discovered: %q", d.Path)
+		}
+	}
+	for path, found := range expected {
+		if !found {
+			t.Errorf("expected file not discovered: %q", path)
 		}
 	}
 }
@@ -118,11 +140,14 @@ func TestScan_PriorityOrdering(t *testing.T) {
 		t.Fatal("expected documents, got none")
 	}
 
-	// First doc should be same-package priority.
+	// First doc should be same-package priority (pkg/mypackage/doc.md).
 	first := docs[0]
 	if first.Priority != docscan.PrioritySamePackage {
 		t.Errorf("first doc should be PrioritySamePackage (1), got priority %d (path: %s)",
 			first.Priority, first.Path)
+	}
+	if first.Path != "pkg/mypackage/doc.md" {
+		t.Errorf("first doc should be pkg/mypackage/doc.md, got %q", first.Path)
 	}
 
 	// Verify monotonically non-decreasing priority values.
@@ -131,6 +156,19 @@ func TestScan_PriorityOrdering(t *testing.T) {
 			t.Errorf("priority ordering violated at index %d: %d (%s) > %d (%s)",
 				i, docs[i-1].Priority, docs[i-1].Path,
 				docs[i].Priority, docs[i].Path)
+		}
+		// Within the same priority tier, verify alphabetical ordering.
+		if docs[i].Priority == docs[i-1].Priority && docs[i].Path < docs[i-1].Path {
+			t.Errorf("alphabetical ordering violated within tier %d at index %d: %q should come before %q",
+				docs[i].Priority, i, docs[i].Path, docs[i-1].Path)
+		}
+	}
+
+	// Verify that README.md gets PriorityModuleRoot.
+	for _, d := range docs {
+		if d.Path == "README.md" && d.Priority != docscan.PriorityModuleRoot {
+			t.Errorf("README.md should be PriorityModuleRoot (%d), got %d",
+				docscan.PriorityModuleRoot, d.Priority)
 		}
 	}
 }
@@ -150,9 +188,9 @@ func TestScan_EmptyRepo(t *testing.T) {
 	}
 }
 
-// TestScan_ContentIsPopulated verifies that Content field is
-// non-empty for discovered documents.
-func TestScan_ContentIsPopulated(t *testing.T) {
+// TestScan_ContentMatchesDisk verifies that Content field matches
+// the actual file content on disk for discovered documents.
+func TestScan_ContentMatchesDisk(t *testing.T) {
 	repo := repoFixture(t)
 	docs, err := docscan.Scan(repo, docscan.ScanOptions{
 		Config: config.DefaultConfig(),
@@ -163,6 +201,17 @@ func TestScan_ContentIsPopulated(t *testing.T) {
 	for _, d := range docs {
 		if d.Content == "" {
 			t.Errorf("document %q has empty content", d.Path)
+			continue
+		}
+		// Verify content matches the actual file on disk.
+		diskContent, err := os.ReadFile(filepath.Join(repo, d.Path))
+		if err != nil {
+			t.Errorf("reading %q from disk: %v", d.Path, err)
+			continue
+		}
+		if d.Content != string(diskContent) {
+			t.Errorf("document %q: content does not match disk (got %d bytes, disk has %d bytes)",
+				d.Path, len(d.Content), len(diskContent))
 		}
 	}
 }
@@ -293,5 +342,28 @@ func TestScan_SkipsHiddenDirs(t *testing.T) {
 		if d.Path == ".git/COMMIT_EDITMSG.md" {
 			t.Errorf(".git directory should be skipped, found: %s", d.Path)
 		}
+	}
+
+	// Positive assertion: README.md should be found.
+	found := false
+	for _, d := range docs {
+		if d.Path == "README.md" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected README.md to be found")
+	}
+}
+
+// TestScan_InvalidRepoRoot verifies that Scan returns an error for
+// a non-existent directory.
+func TestScan_InvalidRepoRoot(t *testing.T) {
+	_, err := docscan.Scan("/nonexistent/path/that/does/not/exist", docscan.ScanOptions{
+		Config: config.DefaultConfig(),
+	})
+	if err == nil {
+		t.Error("expected error for non-existent repoRoot, got nil")
 	}
 }
