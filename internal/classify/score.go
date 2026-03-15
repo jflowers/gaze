@@ -17,21 +17,14 @@ const baseConfidence = 50
 // signals (FR-007).
 const maxContradictionPenalty = 20
 
-// ComputeScore computes the confidence score from a set of signals,
-// applies contradiction detection and penalty, clamps to 0-100,
-// and returns a Classification based on the configured thresholds.
-func ComputeScore(signals []taxonomy.Signal, cfg *config.GazeConfig) taxonomy.Classification {
-	if cfg == nil {
-		cfg = config.DefaultConfig()
-	}
-
-	score := baseConfidence
-	hasPositive := false
-	hasNegative := false
-
+// accumulateSignals sums signal weights from the base confidence,
+// skipping zero-weight/empty-source signals. Returns the accumulated
+// score and whether positive and negative signals were both present.
+func accumulateSignals(signals []taxonomy.Signal) (score int, hasPositive, hasNegative bool) {
+	score = baseConfidence
 	for _, s := range signals {
 		if s.Weight == 0 && s.Source == "" {
-			continue // Skip zero/empty signals.
+			continue
 		}
 		score += s.Weight
 		if s.Weight > 0 {
@@ -41,6 +34,40 @@ func ComputeScore(signals []taxonomy.Signal, cfg *config.GazeConfig) taxonomy.Cl
 			hasNegative = true
 		}
 	}
+	return score, hasPositive, hasNegative
+}
+
+// classifyLabel determines the classification label and reasoning
+// string based on the score and configured thresholds.
+func classifyLabel(score, contractualThreshold, incidentalThreshold int) (taxonomy.ClassificationLabel, string) {
+	switch {
+	case score >= contractualThreshold:
+		return taxonomy.Contractual, fmt.Sprintf(
+			"confidence %d >= %d (contractual threshold)",
+			score, contractualThreshold,
+		)
+	case score < incidentalThreshold:
+		return taxonomy.Incidental, fmt.Sprintf(
+			"confidence %d < %d (incidental threshold)",
+			score, incidentalThreshold,
+		)
+	default:
+		return taxonomy.Ambiguous, fmt.Sprintf(
+			"confidence %d in ambiguous range [%d, %d)",
+			score, incidentalThreshold, contractualThreshold,
+		)
+	}
+}
+
+// ComputeScore computes the confidence score from a set of signals,
+// applies contradiction detection and penalty, clamps to 0-100,
+// and returns a Classification based on the configured thresholds.
+func ComputeScore(signals []taxonomy.Signal, cfg *config.GazeConfig) taxonomy.Classification {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+
+	score, hasPositive, hasNegative := accumulateSignals(signals)
 
 	// Apply contradiction penalty if both positive and negative
 	// signals exist.
@@ -63,40 +90,17 @@ func ComputeScore(signals []taxonomy.Signal, cfg *config.GazeConfig) taxonomy.Cl
 		score = 100
 	}
 
-	// Apply thresholds.
-	contractualThreshold := cfg.Classification.Thresholds.Contractual
-	incidentalThreshold := cfg.Classification.Thresholds.Incidental
-
-	var label taxonomy.ClassificationLabel
-	var reasoning string
-
-	switch {
-	case score >= contractualThreshold:
-		label = taxonomy.Contractual
-		reasoning = fmt.Sprintf(
-			"confidence %d >= %d (contractual threshold)",
-			score, contractualThreshold,
-		)
-	case score < incidentalThreshold:
-		label = taxonomy.Incidental
-		reasoning = fmt.Sprintf(
-			"confidence %d < %d (incidental threshold)",
-			score, incidentalThreshold,
-		)
-	default:
-		label = taxonomy.Ambiguous
-		reasoning = fmt.Sprintf(
-			"confidence %d in ambiguous range [%d, %d)",
-			score, incidentalThreshold, contractualThreshold,
-		)
-	}
+	label, reasoning := classifyLabel(
+		score,
+		cfg.Classification.Thresholds.Contractual,
+		cfg.Classification.Thresholds.Incidental,
+	)
 
 	if contradictionApplied {
 		reasoning += "; contradiction penalty applied"
 	}
 
 	// Filter out empty signals from the result.
-	// Always return a non-nil slice so JSON marshals as [] not null.
 	filtered := make([]taxonomy.Signal, 0, len(signals))
 	for _, s := range signals {
 		if s.Source != "" {

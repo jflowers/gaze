@@ -151,11 +151,12 @@ func insertMarkerAfterFrontmatter(content []byte, marker string) []byte {
 //
 // Run returns a Result summarizing what was created, skipped,
 // overwritten, or updated.
-func Run(opts Options) (*Result, error) {
+// applyDefaults sets zero-valued Options fields to their defaults.
+func applyDefaults(opts *Options) error {
 	if opts.TargetDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("getting working directory: %w", err)
+			return fmt.Errorf("getting working directory: %w", err)
 		}
 		opts.TargetDir = cwd
 	}
@@ -164,6 +165,100 @@ func Run(opts Options) (*Result, error) {
 	}
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
+	}
+	return nil
+}
+
+// handleToolOwnedFile compares the existing file at outPath with the
+// new content. If they differ, the file is overwritten. Returns an
+// action string ("updated" or "skipped") and any error.
+func handleToolOwnedFile(outPath string, content []byte, displayPath string) (string, error) {
+	existing, err := os.ReadFile(outPath)
+	if err != nil {
+		return "", fmt.Errorf("reading existing %s: %w", displayPath, err)
+	}
+	if bytes.Equal(existing, content) {
+		return "skipped", nil
+	}
+	// Content differs — overwrite. Ensure parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return "", fmt.Errorf("creating directory for %s: %w", displayPath, err)
+	}
+	if err := os.WriteFile(outPath, content, 0o644); err != nil {
+		return "", fmt.Errorf("updating %s: %w", displayPath, err)
+	}
+	return "updated", nil
+}
+
+// writeNewFile creates parent directories and writes content to
+// outPath. Returns an action string ("overwritten" or "created")
+// based on whether the file previously existed.
+func writeNewFile(outPath string, content []byte, exists bool, displayPath string) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return "", fmt.Errorf("creating directory %s: %w", filepath.Dir(outPath), err)
+	}
+	if err := os.WriteFile(outPath, content, 0o644); err != nil {
+		return "", fmt.Errorf("creating %s: %w", displayPath, err)
+	}
+	if exists {
+		return "overwritten", nil
+	}
+	return "created", nil
+}
+
+// processAssetFile handles a single embedded asset: checks existence,
+// reads content, inserts the version marker, and writes or skips
+// based on force/tool-ownership semantics. Returns the action taken
+// ("created", "overwritten", "updated", "skipped") or an error.
+func processAssetFile(embeddedPath, relPath string, opts Options, marker string) (string, error) {
+	outPath := filepath.Join(opts.TargetDir, ".opencode", relPath)
+	displayPath := filepath.Join(".opencode", relPath)
+
+	_, statErr := os.Stat(outPath)
+	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+		return "", fmt.Errorf("checking %s: %w", displayPath, statErr)
+	}
+	exists := statErr == nil
+
+	content, err := assets.ReadFile(embeddedPath)
+	if err != nil {
+		return "", fmt.Errorf("reading embedded asset %s: %w", embeddedPath, err)
+	}
+
+	out := insertMarkerAfterFrontmatter(content, marker)
+
+	if exists && !opts.Force {
+		if isToolOwned(relPath) {
+			return handleToolOwnedFile(outPath, out, displayPath)
+		}
+		return "skipped", nil
+	}
+
+	return writeNewFile(outPath, out, exists, displayPath)
+}
+
+// Run scaffolds OpenCode agent, command, and reference files into
+// the target directory. It creates .opencode/agents/,
+// .opencode/command/, and .opencode/references/ subdirectories
+// and writes the embedded quality-reporting files.
+//
+// Each file is prepended with a version marker comment:
+//
+//	<!-- scaffolded by gaze vX.Y.Z -->
+//
+// Files are classified as user-owned or tool-owned via
+// isToolOwned(). If a user-owned file already exists
+// and opts.Force is false, the file is skipped. Tool-owned files
+// use overwrite-on-diff: they are replaced when their content
+// differs from the embedded version, even without --force. If
+// opts.Force is true, all files are overwritten regardless of
+// ownership.
+//
+// Run returns a Result summarizing what was created, skipped,
+// overwritten, or updated.
+func Run(opts Options) (*Result, error) {
+	if err := applyDefaults(&opts); err != nil {
+		return nil, err
 	}
 
 	// Check for go.mod and warn if absent.
@@ -177,8 +272,7 @@ func Run(opts Options) (*Result, error) {
 	result := &Result{}
 	marker := versionMarker(opts.Version)
 
-	// Walk the embedded assets directory and write each file.
-	err := fs.WalkDir(assets, "assets", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(assets, "assets", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -186,73 +280,22 @@ func Run(opts Options) (*Result, error) {
 			return nil
 		}
 
-		// Strip the "assets/" prefix to get the relative path
-		// under .opencode/.
-		relPath := strings.TrimPrefix(path, "assets/")
-		outPath := filepath.Join(opts.TargetDir, ".opencode", relPath)
-
-		// Check if the file already exists. Return an error for
-		// stat failures other than "not exist" (e.g., permission
-		// denied) rather than silently treating them as absent.
-		_, statErr := os.Stat(outPath)
-		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-			return fmt.Errorf("checking %s: %w", filepath.Join(".opencode", relPath), statErr)
-		}
-		exists := statErr == nil
-
-		// Read the embedded file content.
-		content, err := assets.ReadFile(path)
+		relPath := strings.TrimPrefix(p, "assets/")
+		action, err := processAssetFile(p, relPath, opts, marker)
 		if err != nil {
-			return fmt.Errorf("reading embedded asset %s: %w", path, err)
+			return err
 		}
 
-		// Insert version marker after YAML frontmatter.
-		out := insertMarkerAfterFrontmatter(content, marker)
-
-		if exists && !opts.Force {
-			// Tool-owned files (references/) use overwrite-on-diff:
-			// compare content and overwrite if different, skip if
-			// identical. User-owned files (agents/, command/) retain
-			// the existing skip-if-present behavior.
-			if isToolOwned(relPath) {
-				existing, readErr := os.ReadFile(outPath)
-				if readErr != nil {
-					return fmt.Errorf("reading existing %s: %w", filepath.Join(".opencode", relPath), readErr)
-				}
-				if bytes.Equal(existing, out) {
-					result.Skipped = append(result.Skipped, filepath.Join(".opencode", relPath))
-					return nil
-				}
-				// Content differs — overwrite the tool-owned file.
-				// Ensure parent directory exists (guards against edge
-				// cases like broken symlinks or deleted directories).
-				if mkErr := os.MkdirAll(filepath.Dir(outPath), 0o755); mkErr != nil {
-					return fmt.Errorf("creating directory for %s: %w", filepath.Join(".opencode", relPath), mkErr)
-				}
-				if writeErr := os.WriteFile(outPath, out, 0o644); writeErr != nil {
-					return fmt.Errorf("updating %s: %w", filepath.Join(".opencode", relPath), writeErr)
-				}
-				result.Updated = append(result.Updated, filepath.Join(".opencode", relPath))
-				return nil
-			}
-			result.Skipped = append(result.Skipped, filepath.Join(".opencode", relPath))
-			return nil
-		}
-
-		// Create parent directories.
-		dir := filepath.Dir(outPath)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("creating directory %s: %w", dir, err)
-		}
-
-		if err := os.WriteFile(outPath, out, 0o644); err != nil {
-			return fmt.Errorf("creating %s: %w", filepath.Join(".opencode", relPath), err)
-		}
-
-		if exists {
-			result.Overwritten = append(result.Overwritten, filepath.Join(".opencode", relPath))
-		} else {
-			result.Created = append(result.Created, filepath.Join(".opencode", relPath))
+		displayPath := filepath.Join(".opencode", relPath)
+		switch action {
+		case "created":
+			result.Created = append(result.Created, displayPath)
+		case "overwritten":
+			result.Overwritten = append(result.Overwritten, displayPath)
+		case "updated":
+			result.Updated = append(result.Updated, displayPath)
+		case "skipped":
+			result.Skipped = append(result.Skipped, displayPath)
 		}
 		return nil
 	})
@@ -260,9 +303,7 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	// Print summary.
 	printSummary(opts.Stdout, result)
-
 	return result, nil
 }
 
