@@ -727,7 +727,7 @@ func stubAnalyze(_ []string, _ string, _ crap.Options) (*crap.Report, error) {
 	return stubReport(), nil
 }
 
-func stubCoverageNil(_ []string, _ string, _ io.Writer) func(string, string) (float64, bool) {
+func stubCoverageNil(_ []string, _ string, _ io.Writer) func(string, string) (crap.ContractCoverageInfo, bool) {
 	return nil
 }
 
@@ -1521,13 +1521,13 @@ func TestBuildContractCoverageFunc_WelltestedPackage(t *testing.T) {
 
 	// The closure must be callable without panic and return coverage
 	// data for known functions in the welltested fixture.
-	pct, ok := fn("welltested", "Add")
-	t.Logf("welltested:Add contract coverage: %.1f%% (found=%v)", pct, ok)
+	info, ok := fn("welltested", "Add")
+	t.Logf("welltested:Add contract coverage: %.1f%% (found=%v, reason=%q)", info.Percentage, ok, info.Reason)
 	if !ok {
 		t.Fatal("expected ok=true for welltested:Add, got ok=false")
 	}
-	if pct <= 0 {
-		t.Errorf("expected pct > 0 for welltested:Add (well-tested fixture should have non-zero coverage), got %.1f", pct)
+	if info.Percentage <= 0 {
+		t.Errorf("expected pct > 0 for welltested:Add (well-tested fixture should have non-zero coverage), got %.1f", info.Percentage)
 	}
 }
 

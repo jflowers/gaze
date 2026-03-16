@@ -138,8 +138,17 @@ func writeWorstSection(w io.Writer, worst []Score, threshold float64, styles rep
 		if s.FixStrategy != nil {
 			strategyLabel = fmt.Sprintf(" [%s]", *s.FixStrategy)
 		}
-		_, _ = fmt.Fprintf(w, "  %d. %s  %s%s  %s\n",
-			i+1, score, s.Function, strategyLabel,
+		reasonLabel := ""
+		if s.ContractCoverageReason != nil {
+			if *s.ContractCoverageReason == "all_effects_ambiguous" && s.EffectConfidenceRange != nil {
+				reasonLabel = fmt.Sprintf(" (all effects ambiguous, confidence %d-%d)",
+					s.EffectConfidenceRange[0], s.EffectConfidenceRange[1])
+			} else {
+				reasonLabel = fmt.Sprintf(" (%s)", *s.ContractCoverageReason)
+			}
+		}
+		_, _ = fmt.Fprintf(w, "  %d. %s  %s%s%s  %s\n",
+			i+1, score, s.Function, strategyLabel, reasonLabel,
 			styles.Muted.Render(fmt.Sprintf("(%s:%d)", shortenPath(s.File), s.Line)))
 	}
 }

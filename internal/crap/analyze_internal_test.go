@@ -151,11 +151,11 @@ func TestComputeScores_GazeCRAP(t *testing.T) {
 		{file: "/src/foo.go", line: 10}: 90.0,
 	})
 	opts := DefaultOptions()
-	opts.ContractCoverageFunc = func(pkg, fn string) (float64, bool) {
+	opts.ContractCoverageFunc = func(pkg, fn string) (ContractCoverageInfo, bool) {
 		if pkg == "pkg" && fn == "Foo" {
-			return 75.0, true
+			return ContractCoverageInfo{Percentage: 75.0}, true
 		}
-		return 0, false
+		return ContractCoverageInfo{}, false
 	}
 
 	scores := computeScores(stats, cm, opts)
@@ -218,8 +218,8 @@ func TestComputeScores_GazeCRAPNotFound(t *testing.T) {
 	})
 	opts := DefaultOptions()
 	// ContractCoverageFunc is set but returns false for this function.
-	opts.ContractCoverageFunc = func(pkg, fn string) (float64, bool) {
-		return 0, false
+	opts.ContractCoverageFunc = func(pkg, fn string) (ContractCoverageInfo, bool) {
+		return ContractCoverageInfo{}, false
 	}
 
 	scores := computeScores(stats, cm, opts)
@@ -362,5 +362,67 @@ func TestBuildSummary_FixStrategyCounts(t *testing.T) {
 	}
 	if summary.FixStrategyCounts[FixAddAssertions] != 0 {
 		t.Errorf("expected add_assertions=0, got %d", summary.FixStrategyCounts[FixAddAssertions])
+	}
+}
+
+func TestComputeScores_CoverageReason_AllAmbiguous(t *testing.T) {
+	stats := []gocyclo.Stat{
+		makeStat("pkg", "Foo", "/src/foo.go", 10, 5),
+	}
+	cm := makeCoverMap(map[coverKey]float64{
+		{file: "/src/foo.go", line: 10}: 80.0,
+	})
+	opts := DefaultOptions()
+	opts.ContractCoverageFunc = func(pkg, fn string) (ContractCoverageInfo, bool) {
+		return ContractCoverageInfo{
+			Percentage:    0,
+			Reason:        "all_effects_ambiguous",
+			MinConfidence: 78,
+			MaxConfidence: 79,
+		}, true
+	}
+
+	scores := computeScores(stats, cm, opts)
+	if len(scores) != 1 {
+		t.Fatalf("expected 1 score, got %d", len(scores))
+	}
+	s := scores[0]
+	if s.ContractCoverageReason == nil {
+		t.Fatal("expected non-nil ContractCoverageReason")
+	}
+	if *s.ContractCoverageReason != "all_effects_ambiguous" {
+		t.Errorf("expected 'all_effects_ambiguous', got %q", *s.ContractCoverageReason)
+	}
+	if s.EffectConfidenceRange == nil {
+		t.Fatal("expected non-nil EffectConfidenceRange")
+	}
+	if s.EffectConfidenceRange[0] != 78 || s.EffectConfidenceRange[1] != 79 {
+		t.Errorf("expected confidence range [78,79], got [%d,%d]",
+			s.EffectConfidenceRange[0], s.EffectConfidenceRange[1])
+	}
+}
+
+func TestComputeScores_CoverageReason_Normal(t *testing.T) {
+	stats := []gocyclo.Stat{
+		makeStat("pkg", "Foo", "/src/foo.go", 10, 5),
+	}
+	cm := makeCoverMap(map[coverKey]float64{
+		{file: "/src/foo.go", line: 10}: 80.0,
+	})
+	opts := DefaultOptions()
+	opts.ContractCoverageFunc = func(pkg, fn string) (ContractCoverageInfo, bool) {
+		return ContractCoverageInfo{Percentage: 85.0}, true
+	}
+
+	scores := computeScores(stats, cm, opts)
+	if len(scores) != 1 {
+		t.Fatalf("expected 1 score, got %d", len(scores))
+	}
+	if scores[0].ContractCoverageReason != nil {
+		t.Errorf("expected nil ContractCoverageReason for normal coverage, got %q",
+			*scores[0].ContractCoverageReason)
+	}
+	if scores[0].EffectConfidenceRange != nil {
+		t.Errorf("expected nil EffectConfidenceRange for normal coverage")
 	}
 }

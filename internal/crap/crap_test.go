@@ -1206,11 +1206,11 @@ func TestAnalyze_ContractCoverageFunc(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.CoverProfile = profileFile
-	opts.ContractCoverageFunc = func(pkg, function string) (float64, bool) {
+	opts.ContractCoverageFunc = func(pkg, function string) (ContractCoverageInfo, bool) {
 		if function == "Formula" {
-			return 80.0, true
+			return ContractCoverageInfo{Percentage: 80.0}, true
 		}
-		return 0, false
+		return ContractCoverageInfo{}, false
 	}
 
 	report, err := Analyze([]string{"./internal/crap"}, modRoot, opts)

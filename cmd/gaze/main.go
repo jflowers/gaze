@@ -402,7 +402,7 @@ type crapParams struct {
 
 	// coverageFunc overrides buildContractCoverageFunc for testing.
 	// When nil, the production buildContractCoverageFunc is called.
-	coverageFunc func([]string, string, io.Writer) func(string, string) (float64, bool)
+	coverageFunc func([]string, string, io.Writer) func(string, string) (crap.ContractCoverageInfo, bool)
 }
 
 func newSchemaCmd() *cobra.Command {
@@ -611,7 +611,7 @@ func buildContractCoverageFunc(
 	patterns []string,
 	moduleDir string,
 	stderr io.Writer,
-) func(pkg, function string) (float64, bool) {
+) func(pkg, function string) (crap.ContractCoverageInfo, bool) {
 	pkgPaths, err := resolvePackagePaths(patterns, moduleDir)
 	if err != nil {
 		logger.Debug("quality pipeline: failed to resolve packages", "err", err)
@@ -629,8 +629,8 @@ func buildContractCoverageFunc(
 		gazeConfig = config.DefaultConfig()
 	}
 
-	// Build coverage map: "shortPkg:qualifiedName" -> percentage.
-	coverageMap := make(map[string]float64)
+	// Build coverage map: "shortPkg:qualifiedName" -> coverage info.
+	coverageMap := make(map[string]crap.ContractCoverageInfo)
 
 	for _, pkgPath := range pkgPaths {
 		reports := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
@@ -643,8 +643,40 @@ func buildContractCoverageFunc(
 			}
 			shortPkg := extractShortPkgName(report.TargetFunction.Package)
 			key := shortPkg + ":" + report.TargetFunction.QualifiedName()
-			if existing, ok := coverageMap[key]; !ok || report.ContractCoverage.Percentage > existing {
-				coverageMap[key] = report.ContractCoverage.Percentage
+
+			info := crap.ContractCoverageInfo{
+				Percentage: report.ContractCoverage.Percentage,
+			}
+
+			// Compute coverage reason from classification data.
+			if report.ContractCoverage.TotalContractual == 0 {
+				allAmbiguous := true
+				minConf, maxConf := 100, 0
+				effectCount := 0
+				for _, e := range report.AmbiguousEffects {
+					if e.Classification != nil {
+						effectCount++
+						if e.Classification.Confidence < minConf {
+							minConf = e.Classification.Confidence
+						}
+						if e.Classification.Confidence > maxConf {
+							maxConf = e.Classification.Confidence
+						}
+					}
+				}
+				// Also check gaps and any other effects
+				// via the full quality report.
+				if effectCount > 0 && allAmbiguous {
+					info.Reason = "all_effects_ambiguous"
+					info.MinConfidence = minConf
+					info.MaxConfidence = maxConf
+				} else if effectCount == 0 {
+					info.Reason = "no_effects_detected"
+				}
+			}
+
+			if existing, ok := coverageMap[key]; !ok || info.Percentage > existing.Percentage {
+				coverageMap[key] = info
 			}
 		}
 	}
@@ -656,10 +688,10 @@ func buildContractCoverageFunc(
 	logger.Info("quality pipeline complete",
 		"functions_with_coverage", len(coverageMap))
 
-	return func(pkg, function string) (float64, bool) {
+	return func(pkg, function string) (crap.ContractCoverageInfo, bool) {
 		key := pkg + ":" + function
-		pct, ok := coverageMap[key]
-		return pct, ok
+		info, ok := coverageMap[key]
+		return info, ok
 	}
 }
 

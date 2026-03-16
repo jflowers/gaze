@@ -51,6 +51,16 @@ type Score struct {
 	// function. Only populated when CRAP >= CRAPThreshold (i.e.,
 	// the function is in the CRAPload). Nil for healthy functions.
 	FixStrategy *FixStrategy `json:"fix_strategy,omitempty"`
+
+	// ContractCoverageReason explains why contract coverage is
+	// what it is. Nil for normal coverage. Populated when the
+	// reason is diagnostic (e.g., all effects are ambiguous).
+	ContractCoverageReason *string `json:"contract_coverage_reason,omitempty"`
+
+	// EffectConfidenceRange is [min, max] classification confidence
+	// across all side effects. Only populated when
+	// ContractCoverageReason is "all_effects_ambiguous".
+	EffectConfidenceRange *[2]int `json:"effect_confidence_range,omitempty"`
 }
 
 // Quadrant classifies a function based on CRAP and GazeCRAP scores
