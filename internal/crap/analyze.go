@@ -37,12 +37,36 @@ type Options struct {
 	// during coverage analysis. If nil, warnings are suppressed.
 	Stderr io.Writer
 
-	// ContractCoverageFunc is an optional function that returns the
-	// contract coverage percentage (0-100) for a given function.
-	// When provided, GazeCRAP scores, contract coverage, and
-	// quadrant classifications are computed for each function.
+	// ContractCoverageFunc is an optional function that returns
+	// contract coverage info for a given function. When provided,
+	// GazeCRAP scores, contract coverage, quadrant classifications,
+	// and coverage reason diagnostics are computed.
 	// If nil, GazeCRAP fields remain unavailable (FR-015).
-	ContractCoverageFunc func(pkg, function string) (float64, bool)
+	ContractCoverageFunc func(pkg, function string) (ContractCoverageInfo, bool)
+}
+
+// ContractCoverageInfo carries contract coverage data from the
+// quality pipeline to the CRAP scoring pipeline. It replaces the
+// former bare float64 return from ContractCoverageFunc to include
+// diagnostic information about why coverage is what it is.
+type ContractCoverageInfo struct {
+	// Percentage is the contract coverage percentage (0-100).
+	Percentage float64
+
+	// Reason explains why coverage is what it is. Empty string
+	// for normal coverage. Values:
+	//   "all_effects_ambiguous" — all effects classified ambiguous
+	//   "no_effects_detected"  — function has no side effects
+	//   "no_assertions_mapped" — effects exist but none mapped
+	Reason string
+
+	// MinConfidence is the lowest classification confidence across
+	// all side effects. Zero if no effects.
+	MinConfidence int
+
+	// MaxConfidence is the highest classification confidence across
+	// all side effects. Zero if no effects.
+	MaxConfidence int
 }
 
 // DefaultOptions returns options with sensible defaults.
@@ -256,16 +280,25 @@ func computeScores(stats []gocyclo.Stat, coverMap coverMaps, opts Options) []Sco
 
 		// Compute GazeCRAP if contract coverage is available.
 		if opts.ContractCoverageFunc != nil {
-			ccPct, ok := opts.ContractCoverageFunc(stat.PkgName, stat.FuncName)
+			ccInfo, ok := opts.ContractCoverageFunc(stat.PkgName, stat.FuncName)
 			if ok {
-				gazeCRAP := Formula(stat.Complexity, ccPct)
+				gazeCRAP := Formula(stat.Complexity, ccInfo.Percentage)
 				quadrant := ClassifyQuadrant(
 					crapScore, gazeCRAP,
 					opts.CRAPThreshold, opts.GazeCRAPThreshold,
 				)
-				score.ContractCoverage = &ccPct
+				pct := ccInfo.Percentage
+				score.ContractCoverage = &pct
 				score.GazeCRAP = &gazeCRAP
 				score.Quadrant = &quadrant
+
+				if ccInfo.Reason != "" {
+					score.ContractCoverageReason = &ccInfo.Reason
+				}
+				if ccInfo.Reason == "all_effects_ambiguous" {
+					r := [2]int{ccInfo.MinConfidence, ccInfo.MaxConfidence}
+					score.EffectConfidenceRange = &r
+				}
 			}
 		}
 
