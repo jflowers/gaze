@@ -727,8 +727,8 @@ func stubAnalyze(_ []string, _ string, _ crap.Options) (*crap.Report, error) {
 	return stubReport(), nil
 }
 
-func stubCoverageNil(_ []string, _ string, _ io.Writer) func(string, string) (crap.ContractCoverageInfo, bool) {
-	return nil
+func stubCoverageNil(_ []string, _ string, _ io.Writer) (func(string, string) (crap.ContractCoverageInfo, bool), []string) {
+	return nil, nil
 }
 
 func TestRunCrap_TextOutput(t *testing.T) {
@@ -1452,7 +1452,7 @@ func TestAnalyzePackageCoverage_ValidPackage(t *testing.T) {
 	}
 	gazeConfig := config.DefaultConfig()
 	var stderr bytes.Buffer
-	reports := analyzePackageCoverage(
+	reports, _ := analyzePackageCoverage(
 		"github.com/unbound-force/gaze/internal/quality/testdata/src/welltested",
 		gazeConfig,
 		&stderr,
@@ -1465,7 +1465,7 @@ func TestAnalyzePackageCoverage_ValidPackage(t *testing.T) {
 func TestAnalyzePackageCoverage_InvalidPackage(t *testing.T) {
 	gazeConfig := config.DefaultConfig()
 	var stderr bytes.Buffer
-	reports := analyzePackageCoverage(
+	reports, _ := analyzePackageCoverage(
 		"github.com/nonexistent/does/not/exist",
 		gazeConfig,
 		&stderr,
@@ -1483,7 +1483,7 @@ func TestAnalyzePackageCoverage_InvalidPackage(t *testing.T) {
 // unresolvable pattern returns nil without panicking.
 func TestBuildContractCoverageFunc_InvalidPattern(t *testing.T) {
 	var buf bytes.Buffer
-	fn := buildContractCoverageFunc(
+	fn, _ := buildContractCoverageFunc(
 		[]string{"github.com/nonexistent/package/does/not/exist"},
 		t.TempDir(), // empty dir — packages.Load will find nothing
 		&buf,
@@ -1513,7 +1513,7 @@ func TestBuildContractCoverageFunc_WelltestedPackage(t *testing.T) {
 	pattern := "github.com/unbound-force/gaze/internal/quality/testdata/src/welltested"
 
 	var buf bytes.Buffer
-	fn := buildContractCoverageFunc([]string{pattern}, ".", &buf)
+	fn, _ := buildContractCoverageFunc([]string{pattern}, ".", &buf)
 
 	if fn == nil {
 		t.Fatal("buildContractCoverageFunc returned nil; expected non-nil closure for well-tested package")

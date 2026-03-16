@@ -402,7 +402,7 @@ type crapParams struct {
 
 	// coverageFunc overrides buildContractCoverageFunc for testing.
 	// When nil, the production buildContractCoverageFunc is called.
-	coverageFunc func([]string, string, io.Writer) func(string, string) (crap.ContractCoverageInfo, bool)
+	coverageFunc func([]string, string, io.Writer) (func(string, string) (crap.ContractCoverageInfo, bool), []string)
 }
 
 func newSchemaCmd() *cobra.Command {
@@ -434,9 +434,12 @@ func runCrap(p crapParams) error {
 		if buildCoverage == nil {
 			buildCoverage = buildContractCoverageFunc
 		}
-		ccFunc := buildCoverage(p.patterns, p.moduleDir, p.stderr)
+		ccFunc, degradedPkgs := buildCoverage(p.patterns, p.moduleDir, p.stderr)
 		if ccFunc != nil {
 			p.opts.ContractCoverageFunc = ccFunc
+		}
+		if len(degradedPkgs) > 0 {
+			p.opts.SSADegradedPackages = degradedPkgs
 		}
 	}
 
@@ -549,12 +552,13 @@ func resolvePackagePaths(patterns []string, moduleDir string) ([]string, error) 
 
 // analyzePackageCoverage runs the 4-step quality pipeline on a single
 // package (analysis -> classify -> test-load -> quality assess) and
-// returns the quality reports. Returns nil if any step fails.
+// returns the quality reports. The second return value is the degraded
+// package path (empty if SSA succeeded). Returns nil if any step fails.
 func analyzePackageCoverage(
 	pkgPath string,
 	gazeConfig *config.GazeConfig,
 	stderr io.Writer,
-) []taxonomy.QualityReport {
+) ([]taxonomy.QualityReport, string) {
 	analysisOpts := analysis.Options{
 		IncludeUnexported: false,
 		Version:           version,
@@ -564,25 +568,25 @@ func analyzePackageCoverage(
 	results, err := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
 	if err != nil {
 		logger.Debug("quality pipeline: analysis failed", "pkg", pkgPath, "err", err)
-		return nil
+		return nil, ""
 	}
 	if len(results) == 0 {
 		logger.Debug("quality pipeline: no analysis results", "pkg", pkgPath)
-		return nil
+		return nil, ""
 	}
 
 	// Step 2: Classify (Spec 002).
 	classified, err := runClassify(results, pkgPath, gazeConfig, false)
 	if err != nil {
 		logger.Debug("quality pipeline: classification failed", "pkg", pkgPath, "err", err)
-		return nil
+		return nil, ""
 	}
 
 	// Step 3: Load test package.
 	testPkg, err := loadTestPackage(pkgPath)
 	if err != nil {
 		logger.Debug("quality pipeline: test package load failed", "pkg", pkgPath, "err", err)
-		return nil
+		return nil, ""
 	}
 
 	// Step 4: Assess quality (Spec 003).
@@ -593,12 +597,13 @@ func analyzePackageCoverage(
 	reports, summary, err := quality.Assess(classified, testPkg, qualOpts)
 	if err != nil {
 		logger.Debug("quality pipeline: quality assessment failed", "pkg", pkgPath, "err", err)
-		return nil
+		return nil, ""
 	}
 	if summary != nil && summary.SSADegraded {
 		logger.Warn("quality pipeline: SSA degraded, contract coverage unavailable", "pkg", pkgPath)
+		return reports, pkgPath
 	}
-	return reports
+	return reports, ""
 }
 
 // buildContractCoverageFunc runs the quality pipeline across the
@@ -611,15 +616,15 @@ func buildContractCoverageFunc(
 	patterns []string,
 	moduleDir string,
 	stderr io.Writer,
-) func(pkg, function string) (crap.ContractCoverageInfo, bool) {
+) (func(pkg, function string) (crap.ContractCoverageInfo, bool), []string) {
 	pkgPaths, err := resolvePackagePaths(patterns, moduleDir)
 	if err != nil {
 		logger.Debug("quality pipeline: failed to resolve packages", "err", err)
-		return nil
+		return nil, nil
 	}
 
 	if len(pkgPaths) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Load config once for all packages.
@@ -631,9 +636,13 @@ func buildContractCoverageFunc(
 
 	// Build coverage map: "shortPkg:qualifiedName" -> coverage info.
 	coverageMap := make(map[string]crap.ContractCoverageInfo)
+	var degradedPkgs []string
 
 	for _, pkgPath := range pkgPaths {
-		reports := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
+		reports, degradedPkg := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
+		if degradedPkg != "" {
+			degradedPkgs = append(degradedPkgs, degradedPkg)
+		}
 		for _, report := range reports {
 			// Skip degraded reports — they have zero-valued
 			// TargetFunction and would create phantom entries
@@ -682,7 +691,7 @@ func buildContractCoverageFunc(
 	}
 
 	if len(coverageMap) == 0 {
-		return nil
+		return nil, degradedPkgs
 	}
 
 	logger.Info("quality pipeline complete",
@@ -692,7 +701,7 @@ func buildContractCoverageFunc(
 		key := pkg + ":" + function
 		info, ok := coverageMap[key]
 		return info, ok
-	}
+	}, degradedPkgs
 }
 
 // extractShortPkgName returns the short package name from a full
