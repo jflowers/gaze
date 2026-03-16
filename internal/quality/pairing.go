@@ -195,7 +195,8 @@ func InferTargets(
 			names = append(names, t.FuncName)
 		}
 		warnings = append(warnings, fmt.Sprintf(
-			"multiple target functions detected: %s", strings.Join(names, ", ")))
+			"multiple target functions detected: %s. See README 'How Target Inference Works' for guidance",
+			strings.Join(names, ", ")))
 	}
 
 	return targets, warnings
