@@ -102,6 +102,20 @@ func writeQuadrantSection(w io.Writer, counts map[Quadrant]int, styles report.St
 	}
 }
 
+// writeSSADiagnostics writes an SSA degradation warning when
+// packages had SSA construction failures.
+func writeSSADiagnostics(w io.Writer, degradedPkgs []string, styles report.Styles) {
+	if len(degradedPkgs) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "  ⚠ SSA construction failed for %d package(s):\n", len(degradedPkgs))
+	for _, pkg := range degradedPkgs {
+		_, _ = fmt.Fprintf(w, "    - %s\n", pkg)
+	}
+	_, _ = fmt.Fprintln(w, styles.Muted.Render("  Contract coverage and GazeCRAP metrics are partial."))
+}
+
 // writeRemediationSection writes the remediation breakdown section
 // showing how many functions need each type of fix.
 func writeRemediationSection(w io.Writer, counts map[FixStrategy]int, styles report.Styles) {
@@ -172,6 +186,7 @@ func WriteText(w io.Writer, rpt *Report) error {
 	threshold := rpt.Summary.CRAPThreshold
 	writeScoreTable(w, sorted, threshold, styles)
 	writeSummarySection(w, rpt.Summary, styles)
+	writeSSADiagnostics(w, rpt.Summary.SSADegradedPackages, styles)
 	writeQuadrantSection(w, rpt.Summary.QuadrantCounts, styles)
 	writeRemediationSection(w, rpt.Summary.FixStrategyCounts, styles)
 	writeWorstSection(w, rpt.Summary.WorstCRAP, threshold, styles)

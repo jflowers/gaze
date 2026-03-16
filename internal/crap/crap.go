@@ -119,6 +119,12 @@ type Summary struct {
 	FixStrategyCounts   map[FixStrategy]int `json:"fix_strategy_counts,omitempty"`
 	WorstCRAP           []Score             `json:"worst_crap"`
 	WorstGazeCRAP       []Score             `json:"worst_gaze_crap,omitempty"`
+
+	// SSADegradedPackages lists package paths where SSA construction
+	// failed. When non-empty, contract coverage and GazeCRAP metrics
+	// are based on a subset of analyzed functions. Consumers should
+	// caveat the metrics accordingly.
+	SSADegradedPackages []string `json:"ssa_degraded_packages,omitempty"`
 }
 
 // Report is the complete CRAP analysis output.

@@ -43,6 +43,11 @@ type Options struct {
 	// and coverage reason diagnostics are computed.
 	// If nil, GazeCRAP fields remain unavailable (FR-015).
 	ContractCoverageFunc func(pkg, function string) (ContractCoverageInfo, bool)
+
+	// SSADegradedPackages lists package paths where SSA construction
+	// failed during quality analysis. Propagated to Summary so the
+	// CRAP JSON output indicates which packages have partial data.
+	SSADegradedPackages []string
 }
 
 // ContractCoverageInfo carries contract coverage data from the
@@ -441,6 +446,10 @@ func buildSummary(scores []Score, opts Options) Summary {
 
 	if len(fixStrategyCounts) > 0 {
 		summary.FixStrategyCounts = fixStrategyCounts
+	}
+
+	if len(opts.SSADegradedPackages) > 0 {
+		summary.SSADegradedPackages = opts.SSADegradedPackages
 	}
 
 	if hasGazeCRAP {
