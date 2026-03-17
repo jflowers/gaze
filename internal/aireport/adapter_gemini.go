@@ -67,7 +67,7 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 	}
 
 	// Gemini reads GEMINI.md from the working directory, so cmdDir = tmpDir.
-	outBytes, err := runSubprocess(ctx, "gemini", args, tmpDir, payload)
+	outBytes, stderrBytes, err := runSubprocess(ctx, "gemini", args, tmpDir, payload)
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +78,7 @@ func (a *GeminiAdapter) Format(ctx context.Context, systemPrompt string, payload
 	}
 
 	if strings.TrimSpace(resp.Response) == "" {
-		return "", fmt.Errorf("gemini returned empty response field (FR-016): ensure the gemini CLI is working correctly")
+		return "", fmt.Errorf("gemini returned empty response field (FR-016): ensure the gemini CLI is working correctly%s", formatStderrSuffix(stderrBytes))
 	}
 	return resp.Response, nil
 }
