@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/tools/go/packages"
+
 	"github.com/unbound-force/gaze/internal/analysis"
 	"github.com/unbound-force/gaze/internal/classify"
 	"github.com/unbound-force/gaze/internal/config"
@@ -17,7 +19,6 @@ import (
 	"github.com/unbound-force/gaze/internal/quality"
 	"github.com/unbound-force/gaze/internal/report"
 	"github.com/unbound-force/gaze/internal/taxonomy"
-	"golang.org/x/tools/go/packages"
 )
 
 // crapStepResult holds the outputs of runCRAPStep.
@@ -35,10 +36,18 @@ type crapStepResult struct {
 // non-empty, it is forwarded to crap.Options.CoverProfile so that crap.Analyze
 // reads the supplied file directly instead of spawning go test internally
 // (FR-001, FR-002). An empty string uses the default internal generation path.
-func runCRAPStep(patterns []string, moduleDir string, coverProfile string, stderr io.Writer) (*crapStepResult, error) {
+//
+// contractCoverageFunc is an optional callback for GazeCRAP scoring. When
+// non-nil, it is set on crap.Options.ContractCoverageFunc, enabling
+// GazeCRAP scores, quadrant classification, and GazeCRAPload computation.
+// When nil, only line-coverage-based CRAP scores are produced (spec 022).
+func runCRAPStep(patterns []string, moduleDir string, coverProfile string, stderr io.Writer, contractCoverageFunc func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error) {
 	opts := crap.DefaultOptions()
 	opts.CoverProfile = coverProfile
 	opts.Stderr = stderr
+	if contractCoverageFunc != nil {
+		opts.ContractCoverageFunc = contractCoverageFunc
+	}
 
 	rpt, err := crap.Analyze(patterns, moduleDir, opts)
 	if err != nil {

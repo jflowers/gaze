@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/unbound-force/gaze/internal/aireport"
-	"github.com/unbound-force/gaze/internal/config"
 	"github.com/unbound-force/gaze/internal/crap"
 	"github.com/unbound-force/gaze/internal/taxonomy"
 )
@@ -1339,197 +1338,9 @@ func TestRunInit_ForceFlag(t *testing.T) {
 // extractShortPkgName tests
 // ---------------------------------------------------------------------------
 
-func TestExtractShortPkgName_WithSlash(t *testing.T) {
-	got := extractShortPkgName("github.com/unbound-force/gaze/internal/crap")
-	if got != "crap" {
-		t.Errorf("extractShortPkgName(...crap) = %q, want %q", got, "crap")
-	}
-}
-
-func TestExtractShortPkgName_NoSlash(t *testing.T) {
-	got := extractShortPkgName("main")
-	if got != "main" {
-		t.Errorf("extractShortPkgName(main) = %q, want %q", got, "main")
-	}
-}
-
-func TestExtractShortPkgName_TrailingSlash(t *testing.T) {
-	// Last segment after final slash is an empty string when path ends with /.
-	got := extractShortPkgName("github.com/user/repo/")
-	if got != "" {
-		t.Errorf("extractShortPkgName(.../repo/) = %q, want %q (empty)", got, "")
-	}
-}
-
-func TestExtractShortPkgName_Empty(t *testing.T) {
-	got := extractShortPkgName("")
-	if got != "" {
-		t.Errorf("extractShortPkgName('') = %q, want %q", got, "")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// resolvePackagePaths tests (US4 — T023)
-// ---------------------------------------------------------------------------
-
-func TestResolvePackagePaths_ValidPattern(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping: resolves packages via go/packages")
-	}
-	paths, err := resolvePackagePaths([]string{"./internal/docscan/..."}, ".")
-	if err != nil {
-		t.Fatalf("resolvePackagePaths failed: %v", err)
-	}
-	if len(paths) == 0 {
-		t.Error("expected non-empty package paths")
-	}
-}
-
-func TestResolvePackagePaths_FilterTestSuffix(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping: resolves packages via go/packages")
-	}
-	paths, err := resolvePackagePaths([]string{"./internal/docscan/..."}, ".")
-	if err != nil {
-		t.Fatalf("resolvePackagePaths failed: %v", err)
-	}
-	for _, p := range paths {
-		if strings.HasSuffix(p, "_test") {
-			t.Errorf("test-variant package should have been filtered: %s", p)
-		}
-	}
-}
-
-func TestResolvePackagePaths_AllTestVariants(t *testing.T) {
-	// When patterns resolve to only test-variant packages, the
-	// result should be empty (not an error).
-	if testing.Short() {
-		t.Skip("skipping: resolves packages via go/packages")
-	}
-	// Use a pattern that resolves real packages; since we can't
-	// easily control which packages are resolved, just verify the
-	// filter is applied. The key invariant is that the returned
-	// slice never contains _test suffixed paths.
-	paths, err := resolvePackagePaths([]string{"./..."}, ".")
-	if err != nil {
-		t.Fatalf("resolvePackagePaths failed: %v", err)
-	}
-	for _, p := range paths {
-		if strings.HasSuffix(p, "_test") {
-			t.Errorf("expected no _test packages, found: %s", p)
-		}
-	}
-}
-
-func TestResolvePackagePaths_InvalidPattern(t *testing.T) {
-	// Use a temp dir with no go.mod. packages.Load may return the
-	// pattern as an unresolved package entry (with errors) or
-	// return an error, depending on the Go version and toolchain.
-	// The key contract: the function must not panic.
-	paths, err := resolvePackagePaths(
-		[]string{"github.com/nonexistent/does/not/exist"},
-		t.TempDir(),
-	)
-	// Log the result for diagnostic visibility, but accept any
-	// non-panic outcome. The function is a thin wrapper around
-	// packages.Load whose behavior varies by environment.
-	t.Logf("resolvePackagePaths returned paths=%v, err=%v", paths, err)
-	// Verify no _test packages leak through even for invalid patterns.
-	for _, p := range paths {
-		if strings.HasSuffix(p, "_test") {
-			t.Errorf("test-variant package should have been filtered: %s", p)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// analyzePackageCoverage tests (US4 — T023)
-// ---------------------------------------------------------------------------
-
-func TestAnalyzePackageCoverage_ValidPackage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping: loads real packages via analysis pipeline")
-	}
-	gazeConfig := config.DefaultConfig()
-	var stderr bytes.Buffer
-	reports, _ := analyzePackageCoverage(
-		"github.com/unbound-force/gaze/internal/quality/testdata/src/welltested",
-		gazeConfig,
-		&stderr,
-	)
-	if len(reports) == 0 {
-		t.Error("expected non-nil quality reports for well-tested package")
-	}
-}
-
-func TestAnalyzePackageCoverage_InvalidPackage(t *testing.T) {
-	gazeConfig := config.DefaultConfig()
-	var stderr bytes.Buffer
-	reports, _ := analyzePackageCoverage(
-		"github.com/nonexistent/does/not/exist",
-		gazeConfig,
-		&stderr,
-	)
-	if reports != nil {
-		t.Error("expected nil reports for non-existent package")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// buildContractCoverageFunc tests
-// ---------------------------------------------------------------------------
-
-// TestBuildContractCoverageFunc_InvalidPattern verifies that an
-// unresolvable pattern returns nil without panicking.
-func TestBuildContractCoverageFunc_InvalidPattern(t *testing.T) {
-	var buf bytes.Buffer
-	fn, _ := buildContractCoverageFunc(
-		[]string{"github.com/nonexistent/package/does/not/exist"},
-		t.TempDir(), // empty dir — packages.Load will find nothing
-		&buf,
-	)
-	// Either nil (no packages resolved) or a valid closure that
-	// always returns (0, false). Both are acceptable; the important
-	// invariant is no panic.
-	if fn != nil {
-		// If a closure was returned, it must not panic and must
-		// return ok=false for an unknown key.
-		_, ok := fn("nonexistent", "Foo")
-		if ok {
-			t.Error("expected ok=false for unknown pkg:func key")
-		}
-	}
-}
-
-// TestBuildContractCoverageFunc_WelltestedPackage verifies that the
-// function returns a callable closure for a package that has tests.
-// This exercises the quality pipeline integration path.
-func TestBuildContractCoverageFunc_WelltestedPackage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping: runs quality pipeline (package loading)")
-	}
-
-	// Use the welltested fixture which has known contractual functions.
-	pattern := "github.com/unbound-force/gaze/internal/quality/testdata/src/welltested"
-
-	var buf bytes.Buffer
-	fn, _ := buildContractCoverageFunc([]string{pattern}, ".", &buf)
-
-	if fn == nil {
-		t.Fatal("buildContractCoverageFunc returned nil; expected non-nil closure for well-tested package")
-	}
-
-	// The closure must be callable without panic and return coverage
-	// data for known functions in the welltested fixture.
-	info, ok := fn("welltested", "Add")
-	t.Logf("welltested:Add contract coverage: %.1f%% (found=%v, reason=%q)", info.Percentage, ok, info.Reason)
-	if !ok {
-		t.Fatal("expected ok=true for welltested:Add, got ok=false")
-	}
-	if info.Percentage <= 0 {
-		t.Errorf("expected pct > 0 for welltested:Add (well-tested fixture should have non-zero coverage), got %.1f", info.Percentage)
-	}
-}
+// Tests for extractShortPkgName, resolvePackagePaths,
+// analyzePackageCoverage, and BuildContractCoverageFunc have been
+// moved to internal/crap/contract_test.go (spec 022).
 
 // ---------------------------------------------------------------------------
 // gaze report tests (T-008, T-027 through T-035, SC-001 through SC-006)
@@ -2007,6 +1818,12 @@ func TestRunReport_GazeCRAPloadThresholds(t *testing.T) {
 			maxGazeCrapload: intPtr(0),
 			expectFail:      true,
 		},
+		{
+			name:            "SC-003 PASS: GazeCRAPload=0 below threshold=5 → pass",
+			payload:         &aireport.ReportPayload{Summary: aireport.ReportSummary{GazeCRAPload: 0}},
+			maxGazeCrapload: intPtr(5),
+			expectFail:      false,
+		},
 	}
 
 	for _, tc := range cases {
@@ -2050,6 +1867,142 @@ func TestRunReport_GazeCRAPloadThresholds(t *testing.T) {
 				t.Errorf("expected 'GazeCRAPload' label in stderr output, got: %q", stderr.String())
 			}
 		})
+	}
+}
+
+// TestSC002_GazeCRAPloadMatchBetweenCrapAndReport verifies SC-002: the
+// gaze_crapload value from gaze report matches gaze crap standalone
+// with the same coverprofile and package pattern (exact match).
+// Guarded by testing.Short() — runs the full quality+CRAP pipeline.
+func TestSC002_GazeCRAPloadMatchBetweenCrapAndReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: runs full quality+CRAP pipeline (SC-002)")
+	}
+
+	// Use the welltested fixture — it has known contractual functions
+	// that produce non-nil GazeCRAPload, ensuring SC-002 is not vacuous.
+	pattern := "github.com/unbound-force/gaze/internal/quality/testdata/src/welltested"
+	moduleDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	// Run gaze crap standalone with BuildContractCoverageFunc.
+	crapOpts := crap.DefaultOptions()
+	crapOpts.Stderr = io.Discard
+	ccFunc, _ := crap.BuildContractCoverageFunc([]string{pattern}, moduleDir, io.Discard)
+	if ccFunc != nil {
+		crapOpts.ContractCoverageFunc = ccFunc
+	}
+	crapReport, err := crap.Analyze([]string{pattern}, moduleDir, crapOpts)
+	if err != nil {
+		t.Fatalf("crap.Analyze: %v", err)
+	}
+
+	// Run gaze report (JSON format, no AI adapter).
+	var reportStdout, reportStderr bytes.Buffer
+	reportErr := runReport(reportParams{
+		patterns: []string{pattern},
+		format:   "json",
+		stdout:   &reportStdout,
+		stderr:   &reportStderr,
+	})
+	if reportErr != nil {
+		t.Fatalf("runReport: %v\nstderr: %s", reportErr, reportStderr.String())
+	}
+
+	// Parse the report JSON to extract gaze_crapload from CRAP summary.
+	var reportJSON struct {
+		CRAP json.RawMessage `json:"crap"`
+	}
+	if err := json.Unmarshal(reportStdout.Bytes(), &reportJSON); err != nil {
+		t.Fatalf("unmarshal report JSON: %v", err)
+	}
+	var crapJSON struct {
+		Summary struct {
+			GazeCRAPload *int `json:"gaze_crapload"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(reportJSON.CRAP, &crapJSON); err != nil {
+		t.Fatalf("unmarshal CRAP JSON: %v", err)
+	}
+
+	// Compare GazeCRAPload values.
+	var crapStandalone int
+	if crapReport.Summary.GazeCRAPload != nil {
+		crapStandalone = *crapReport.Summary.GazeCRAPload
+	}
+	var reportValue int
+	if crapJSON.Summary.GazeCRAPload != nil {
+		reportValue = *crapJSON.Summary.GazeCRAPload
+	}
+
+	t.Logf("SC-002: gaze crap GazeCRAPload=%d, gaze report GazeCRAPload=%d", crapStandalone, reportValue)
+
+	// Guard against vacuous pass: if both sides produced nil GazeCRAPload,
+	// the test is not verifying any real data flow (0 == 0 trivially).
+	if crapReport.Summary.GazeCRAPload == nil && crapJSON.Summary.GazeCRAPload == nil {
+		t.Skip("SC-002: both sides produced nil GazeCRAPload — test is vacuous; use a fixture with known contract coverage")
+	}
+
+	if crapStandalone != reportValue {
+		t.Errorf("SC-002 FAIL: gaze crap GazeCRAPload=%d != gaze report GazeCRAPload=%d", crapStandalone, reportValue)
+	}
+}
+
+// TestSC004_PayloadContainsQuadrantCounts verifies SC-004's data
+// precondition: when the report pipeline produces GazeCRAP data, the
+// JSON payload passed to the AI adapter contains quadrant_counts.
+// Uses FakeAdapter to capture the payload without a real AI model.
+func TestSC004_PayloadContainsQuadrantCounts(t *testing.T) {
+	crapJSON := json.RawMessage(`{
+		"summary": {
+			"total_functions": 10,
+			"crapload": 2,
+			"gaze_crapload": 1,
+			"quadrant_counts": {"Q1_Safe": 7, "Q2_ComplexButTested": 1, "Q3_NeedsTests": 1, "Q4_Dangerous": 1}
+		},
+		"scores": []
+	}`)
+
+	fakeAdapter := &aireport.FakeAdapter{Response: "# Fake Report\nOK"}
+
+	var stderr bytes.Buffer
+	err := runReport(reportParams{
+		patterns:    []string{"./..."},
+		format:      "text",
+		stdout:      io.Discard,
+		stderr:      &stderr,
+		adapterName: "claude", // triggers text path with adapter
+		runnerFunc: func(opts aireport.RunnerOptions) error {
+			return aireport.Run(aireport.RunnerOptions{
+				Patterns: opts.Patterns,
+				Format:   opts.Format,
+				Stdout:   opts.Stdout,
+				Stderr:   opts.Stderr,
+				Adapter:  fakeAdapter,
+				AnalyzeFunc: func([]string, string) (*aireport.ReportPayload, error) {
+					return &aireport.ReportPayload{
+						CRAP: crapJSON,
+					}, nil
+				},
+			})
+		},
+	})
+	if err != nil {
+		t.Fatalf("runReport: %v", err)
+	}
+
+	if len(fakeAdapter.Calls) == 0 {
+		t.Fatal("expected at least one FakeAdapter.Format call")
+	}
+
+	payloadStr := string(fakeAdapter.Calls[0].Payload)
+	if !strings.Contains(payloadStr, "quadrant_counts") {
+		t.Errorf("SC-004 FAIL: payload passed to AI adapter does not contain 'quadrant_counts'.\nPayload excerpt: %.500s", payloadStr)
+	}
+	if !strings.Contains(payloadStr, "gaze_crapload") {
+		t.Errorf("SC-004 FAIL: payload passed to AI adapter does not contain 'gaze_crapload'.\nPayload excerpt: %.500s", payloadStr)
 	}
 }
 

@@ -316,6 +316,7 @@ Formatters: gofmt, goimports.
 - N/A — ephemeral temp dir only; cleaned up via `defer os.RemoveAll` (019-opencode-adapter)
 - Go 1.25.0 (module minimum; `go.mod` directive) + `golang.org/x/tools@v0.43.0` (SSA builder), `charmbracelet/log` (available but not currently used for runtime logging — project uses `fmt.Fprintf(stderr, ...)`) (021-ssa-panic-recovery)
 - N/A (no persistence changes) (021-ssa-panic-recovery)
+- Go 1.25+ + `golang.org/x/tools` (SSA builder), Cobra (CLI) (022-report-gazecrap-pipeline)
 
 - Go 1.24+ + `golang.org/x/tools` (go/packages, go/ssa), Cobra (CLI), Bubble Tea/Lipgloss (TUI)
 - Filesystem only (embedded assets via `embed.FS`)
@@ -323,6 +324,7 @@ Formatters: gofmt, goimports.
 
 ## Recent Changes
 
+- 022-report-gazecrap-pipeline: Extracted `buildContractCoverageFunc` from `cmd/gaze/main.go` to `internal/crap/contract.go` as `BuildContractCoverageFunc`. Wired it into `runProductionPipeline` (`internal/aireport/runner.go`) before the CRAP step so that `gaze report` produces GazeCRAP scores, quadrant distribution (`quadrant_counts`), and `gaze_crapload` in its JSON output. Expanded `runCRAPStep` and `pipelineStepFuncs` signatures to accept a `ContractCoverageFunc` parameter. The `--max-gaze-crapload` threshold now evaluates against actual computed GazeCRAPload (previously always passed with value 0). Added `TestSC002_GazeCRAPloadMatchBetweenCrapAndReport` (exact-match test between `gaze crap` and `gaze report`), `TestSC004_PayloadContainsQuadrantCounts` (FakeAdapter payload assertion), and `TestRunProductionPipeline_GazeCRAPloadFlowsThroughPipeline` (pipeline data flow test).
 - target-warning-guidance: Updated "multiple target functions detected" warning in `InferTargets` (`internal/quality/pairing.go`) to reference README "How Target Inference Works" section, giving users guidance on resolving ambiguous target detection. Closes #61.
 - ssa-diagnostics-in-report: Added `SSADegradedPackages []string` to `crap.Summary` (`internal/crap/crap.go`) and `crap.Options` (`internal/crap/analyze.go`) for per-package SSA failure tracking in CRAP output. Changed `analyzePackageCoverage` to return degraded package path. Changed `buildContractCoverageFunc` to collect degraded packages and pass them through to `crap.Options`. CRAP text report now shows SSA diagnostics section listing failed packages. Closes #62.
 - coverage-reason-guidance: Added `ContractCoverageReason` and `EffectConfidenceRange` fields to `crap.Score` (`internal/crap/crap.go`). When contract coverage is 0% because all effects are classified "ambiguous", the reason field explains why and the confidence range shows how close effects are to the contractual threshold. Changed `ContractCoverageFunc` to return `ContractCoverageInfo` struct instead of bare `float64`, carrying the reason and confidence range alongside the percentage. Text report worst-offenders section now displays the reason (e.g., "all effects ambiguous, confidence 78-79"). Closes #60.
