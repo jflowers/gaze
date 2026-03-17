@@ -44,14 +44,14 @@ Gaze Version: v1.0.0 · Go: 1.24.6 · Date: 2026-03-01
 | Metric | Value |
 |--------|------:|
 | Total functions analyzed | 42 |
-| CRAPload | 5 (functions ≥ threshold 15) |
+| CRAPload | 5 (functions ≥ threshold T) |
 
 GazeCRAP Quadrant Distribution
 | Quadrant | Count | Meaning |
 |----------|-------|---------|
-| 🟢 Q1 — Safe | 30 | Low complexity, high coverage |
-| 🟡 Q2 — Complex But Tested | 5 | High complexity, covered |
-| 🔴 Q4 — Dangerous | 3 | Complex AND untested |
+| 🟢 Q1 — Safe | 30 | Low complexity, high contract coverage |
+| 🟡 Q2 — Complex But Tested | 5 | High complexity, contracts verified |
+| 🔴 Q4 — Dangerous | 3 | Complex AND contracts not adequately verified |
 | ⚪ Q3 — Needs Tests | 4 | Simple but underspecified |
 
 1. 🔴 Add tests for zero-coverage function processQueue (complexity 8, 0% coverage).
@@ -110,7 +110,8 @@ Produce a summary containing:
    - Average line coverage (percentage)
    - Average CRAP score
    - CRAPload (CRAP >= threshold) — always show count AND
-     percentage of total, e.g., "24 (functions ≥ threshold 15)"
+      context, e.g., "24 (functions ≥ threshold T)" where T is
+      read from `summary.crap_threshold` in the JSON
 2. **Top 5 worst CRAP scores** — table with columns:
    - Function name
    - CRAP score
@@ -400,7 +401,34 @@ data sections).
 ### CRAPload Format
 
 Always include count and context:
-"24 (functions ≥ threshold 15)"
+"N (functions ≥ threshold T)"
+where T is read from `summary.crap_threshold` in the JSON data.
+
+### Scoring Consistency Rules
+
+These rules ensure the agent report matches the CLI's deterministic
+output. Violations produce misleading reports.
+
+1. **CRAPload threshold**: Read `summary.crap_threshold` from the
+   CRAP JSON data. Display as `"N (functions >= threshold T)"` where
+   T is the value from the data. Do NOT hardcode a threshold value.
+   Do NOT substitute your own threshold.
+
+2. **Contract coverage**: Use the module-wide average from the
+   quality package summary (`avg_contract_coverage`). Do NOT compute
+   a subset average from selected functions or packages. If module-
+   level quality returns 0 tests, note this limitation — do NOT
+   substitute a favorable subset average as the headline metric.
+
+3. **GazeCRAPload**: Read from `summary.gaze_crapload` in the CRAP
+   JSON data. When absent, state "N/A" — do NOT compute a proxy.
+
+4. **Worst offenders**: Render CRAP scores, fix strategies, and
+   coverage values exactly as they appear in the JSON. Do NOT
+   re-threshold or re-rank based on different criteria.
+
+5. **Quadrant counts**: Render from `summary.quadrant_counts`
+   in the CRAP JSON. Do NOT recompute quadrant assignments.
 
 ## Reference Files
 
