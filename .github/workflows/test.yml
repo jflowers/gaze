@@ -37,6 +37,8 @@ jobs:
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: |
+          mkdir -p ~/.local/share/opencode
+          echo "{\"opencode\":{\"type\":\"api\",\"key\":\"$OPENCODE_API_KEY\"}}" > ~/.local/share/opencode/auth.json
           go build -o gaze ./cmd/gaze
           ./gaze report ./... \
             --ai=opencode \
