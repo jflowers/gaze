@@ -26,7 +26,11 @@ jobs:
         run: go build ./...
 
       - name: Test
-        run: go test -race -count=1 -short ./...
+        run: go test -race -count=1 -short -coverprofile=coverage.out ./...
+
+      - name: Gaze quality report
+        if: matrix.go-version == '1.24'
+        run: go run ./cmd/gaze report ./... --coverprofile=coverage.out --max-crapload=16 --max-gaze-crapload=5
 
   e2e:
     name: E2E Tests (Go ${{ matrix.go-version }})
