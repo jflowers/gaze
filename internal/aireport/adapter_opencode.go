@@ -78,14 +78,14 @@ func (a *OpenCodeAdapter) Format(ctx context.Context, systemPrompt string, paylo
 	}
 	args = append(args, "")
 
-	outBytes, err := runSubprocess(ctx, "opencode", args, "", payload)
+	outBytes, stderrBytes, err := runSubprocess(ctx, "opencode", args, "", payload)
 	if err != nil {
 		return "", err
 	}
 
 	result := string(outBytes)
 	if strings.TrimSpace(result) == "" {
-		return "", fmt.Errorf("opencode returned empty output (FR-009): ensure the opencode CLI is working correctly")
+		return "", fmt.Errorf("opencode returned empty output (FR-009): ensure the opencode CLI is working correctly%s", formatStderrSuffix(stderrBytes))
 	}
 	return result, nil
 }

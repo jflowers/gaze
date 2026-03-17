@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,6 +38,14 @@ type AIAdapter interface {
 // used by the Gemini adapter which places GEMINI.md in a temp
 // directory and sets the subprocess working directory there.
 //
+// On success (exit code 0), both stdout and stderr bytes are returned.
+// Callers can use stderr for diagnostic messages when stdout is empty
+// (e.g., authentication errors that the subprocess writes to stderr
+// while exiting 0).
+//
+// On failure (non-zero exit), an error is returned with stderr
+// embedded in the error message; stdout and stderr bytes are nil.
+//
 // This function is shared by the three subprocess-based AI adapters
 // (Claude, Gemini, OpenCode) to eliminate duplicated pipe setup,
 // output limiting, and error handling code.
@@ -46,10 +55,10 @@ func runSubprocess(
 	args []string,
 	cmdDir string,
 	payload io.Reader,
-) ([]byte, error) {
+) ([]byte, []byte, error) {
 	binPath, err := exec.LookPath(binaryName)
 	if err != nil {
-		return nil, fmt.Errorf("%s not found on PATH: %w", binaryName, err)
+		return nil, nil, fmt.Errorf("%s not found on PATH: %w", binaryName, err)
 	}
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
@@ -60,13 +69,13 @@ func runSubprocess(
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("creating stdout pipe for %s: %w", binaryName, err)
+		return nil, nil, fmt.Errorf("creating stdout pipe for %s: %w", binaryName, err)
 	}
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting %s: %w", binaryName, err)
+		return nil, nil, fmt.Errorf("starting %s: %w", binaryName, err)
 	}
 
 	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
@@ -77,13 +86,29 @@ func runSubprocess(
 		if len(stderrSnippet) > maxAdapterStderrBytes {
 			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
 		}
-		return nil, fmt.Errorf("%s exited with error: %w\nstderr: %s", binaryName, waitErr, stderrSnippet)
+		return nil, nil, fmt.Errorf("%s exited with error: %w\nstderr: %s", binaryName, waitErr, stderrSnippet)
 	}
 	if readErr != nil {
-		return nil, fmt.Errorf("reading %s output: %w", binaryName, readErr)
+		return nil, nil, fmt.Errorf("reading %s output: %w", binaryName, readErr)
 	}
 
-	return outBytes, nil
+	return outBytes, stderrBuf.Bytes(), nil
+}
+
+// formatStderrSuffix returns a "\nstderr: <snippet>" suffix for error
+// messages when stderrBytes contains non-whitespace content. Returns
+// an empty string when stderr is empty or whitespace-only. The snippet
+// is truncated at maxAdapterStderrBytes to limit the size of stderr
+// included in error messages.
+func formatStderrSuffix(stderrBytes []byte) string {
+	snippet := strings.TrimSpace(string(stderrBytes))
+	if snippet == "" {
+		return ""
+	}
+	if len(snippet) > maxAdapterStderrBytes {
+		snippet = snippet[:maxAdapterStderrBytes] + "... (truncated)"
+	}
+	return "\nstderr: " + snippet
 }
 
 // AdapterConfig holds the user-specified AI adapter configuration.

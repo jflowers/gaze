@@ -58,14 +58,14 @@ func (a *ClaudeAdapter) Format(ctx context.Context, systemPrompt string, payload
 		args = append(args, "--model", a.config.Model)
 	}
 
-	outBytes, err := runSubprocess(ctx, "claude", args, "", payload)
+	outBytes, stderrBytes, err := runSubprocess(ctx, "claude", args, "", payload)
 	if err != nil {
 		return "", err
 	}
 
 	result := string(outBytes)
 	if strings.TrimSpace(result) == "" {
-		return "", fmt.Errorf("claude returned empty output (FR-016): ensure the claude CLI is working correctly")
+		return "", fmt.Errorf("claude returned empty output (FR-016): ensure the claude CLI is working correctly%s", formatStderrSuffix(stderrBytes))
 	}
 	return result, nil
 }
