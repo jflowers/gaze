@@ -430,6 +430,22 @@ output. Violations produce misleading reports.
 5. **Quadrant counts**: Render from `summary.quadrant_counts`
    in the CRAP JSON. Do NOT recompute quadrant assignments.
 
+### Metric Definitions (read carefully)
+
+- **CRAPload**: Count of functions with CRAP score >=
+  `crap_threshold`. CRAP uses **line coverage**. Read from
+  `summary.crapload`.
+- **GazeCRAPload**: Count of functions with GazeCRAP score >=
+  `gaze_crap_threshold`. GazeCRAP uses **contract coverage**
+  (stronger signal). Read from `summary.gaze_crapload`. This is
+  NOT the Q4 count — Q3 functions (simple but underspecified)
+  with low contract coverage also contribute to GazeCRAPload.
+- **Quadrant counts**: Distribution of functions across Q1–Q4
+  based on complexity AND contract coverage. Read from
+  `summary.quadrant_counts`. The Q4 (Dangerous) count is one
+  component of the quadrant distribution, NOT a synonym for
+  GazeCRAPload.
+
 ## Reference Files
 
 Before producing your first report, read the formatting reference
