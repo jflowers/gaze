@@ -68,6 +68,7 @@ func TestRunCRAPStep_RealPackage(t *testing.T) {
 		modRoot,
 		"", // no pre-generated profile — use internal generation
 		io.Discard,
+		nil, // no contract coverage callback
 	)
 	if err != nil {
 		t.Fatalf("runCRAPStep: %v", err)
@@ -116,6 +117,7 @@ func TestRunCRAPStep_WithCoverProfile(t *testing.T) {
 		modRoot,
 		fixture,
 		io.Discard,
+		nil, // no contract coverage callback
 	)
 	if err != nil {
 		t.Fatalf("runCRAPStep with coverprofile: %v", err)

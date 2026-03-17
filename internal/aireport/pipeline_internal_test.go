@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/unbound-force/gaze/internal/crap"
 )
 
 // fakeSteps returns a pipelineStepFuncs with all four steps returning
 // synthetic success results. Individual steps can be overridden after.
 func fakeSteps() pipelineStepFuncs {
 	return pipelineStepFuncs{
-		crapStep: func(_ []string, _ string, _ string, _ io.Writer) (*crapStepResult, error) {
+		crapStep: func(_ []string, _ string, _ string, _ io.Writer, _ func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error) {
 			return &crapStepResult{
 				JSON:         json.RawMessage(`{"crap":"ok"}`),
 				CRAPload:     5,
@@ -99,7 +101,7 @@ func TestRunProductionPipeline_AllStepsSucceed(t *testing.T) {
 func TestRunProductionPipeline_CRAPStepFails(t *testing.T) {
 	var stderr bytes.Buffer
 	steps := fakeSteps()
-	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer) (*crapStepResult, error) {
+	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer, _ func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error) {
 		return nil, fmt.Errorf("crap analysis failed")
 	}
 
@@ -206,7 +208,7 @@ func TestRunProductionPipeline_DocscanStepFails(t *testing.T) {
 func TestRunProductionPipeline_MultipleStepsFail(t *testing.T) {
 	var stderr bytes.Buffer
 	steps := fakeSteps()
-	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer) (*crapStepResult, error) {
+	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer, _ func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error) {
 		return nil, fmt.Errorf("crap failed")
 	}
 	steps.qualityStep = func(_ []string, _ string, _ io.Writer) (*qualityStepResult, error) {
@@ -241,7 +243,7 @@ func TestRunProductionPipeline_EmptyPatterns(t *testing.T) {
 
 	// Track whether any step was called.
 	called := false
-	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer) (*crapStepResult, error) {
+	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer, _ func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error) {
 		called = true
 		return nil, nil
 	}
@@ -252,6 +254,34 @@ func TestRunProductionPipeline_EmptyPatterns(t *testing.T) {
 	}
 	if called {
 		t.Error("step functions should not be called when patterns are empty")
+	}
+}
+
+// TestRunProductionPipeline_GazeCRAPloadFlowsThroughPipeline verifies that
+// when the crapStep returns a non-zero GazeCRAPload, it propagates to
+// payload.Summary.GazeCRAPload. Callback wiring (non-nil callback passed
+// to crapStep) is verified by the integration test
+// TestSC002_GazeCRAPloadMatchBetweenCrapAndReport in cmd/gaze/main_test.go.
+func TestRunProductionPipeline_GazeCRAPloadFlowsThroughPipeline(t *testing.T) {
+	var stderr bytes.Buffer
+	steps := fakeSteps()
+
+	// Override crapStep to return a known GazeCRAPload value.
+	steps.crapStep = func(_ []string, _ string, _ string, _ io.Writer, _ func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error) {
+		return &crapStepResult{
+			JSON:         json.RawMessage(`{"crap":"ok"}`),
+			CRAPload:     2,
+			GazeCRAPload: 7,
+		}, nil
+	}
+
+	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", &stderr, steps)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	if payload.Summary.GazeCRAPload != 7 {
+		t.Errorf("expected GazeCRAPload 7, got %d", payload.Summary.GazeCRAPload)
 	}
 }
 

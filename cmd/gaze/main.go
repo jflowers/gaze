@@ -400,8 +400,8 @@ type crapParams struct {
 	// When nil, the production crap.Analyze is called.
 	analyzeFunc func([]string, string, crap.Options) (*crap.Report, error)
 
-	// coverageFunc overrides buildContractCoverageFunc for testing.
-	// When nil, the production buildContractCoverageFunc is called.
+	// coverageFunc overrides crap.BuildContractCoverageFunc for testing.
+	// When nil, the production crap.BuildContractCoverageFunc is called.
 	coverageFunc func([]string, string, io.Writer) (func(string, string) (crap.ContractCoverageInfo, bool), []string)
 }
 
@@ -432,7 +432,7 @@ func runCrap(p crapParams) error {
 	if p.opts.ContractCoverageFunc == nil {
 		buildCoverage := p.coverageFunc
 		if buildCoverage == nil {
-			buildCoverage = buildContractCoverageFunc
+			buildCoverage = crap.BuildContractCoverageFunc
 		}
 		ccFunc, degradedPkgs := buildCoverage(p.patterns, p.moduleDir, p.stderr)
 		if ccFunc != nil {
@@ -522,196 +522,6 @@ func checkCIThresholds(rpt *crap.Report, maxCrapload, maxGazeCrapload int) error
 			*rpt.Summary.GazeCRAPload, maxGazeCrapload)
 	}
 	return nil
-}
-
-// resolvePackagePaths resolves package patterns to individual
-// package paths, filtering out test-variant packages (those with
-// a "_test" suffix). Returns the deduplicated list of package paths
-// or an error if pattern resolution fails.
-func resolvePackagePaths(patterns []string, moduleDir string) ([]string, error) {
-	cfg := &packages.Config{
-		Mode: packages.NeedName,
-		Dir:  moduleDir,
-	}
-	pkgs, err := packages.Load(cfg, patterns...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving package patterns: %w", err)
-	}
-
-	pkgPaths := make([]string, 0, len(pkgs))
-	seen := make(map[string]bool)
-	for _, pkg := range pkgs {
-		if pkg.PkgPath == "" || seen[pkg.PkgPath] || strings.HasSuffix(pkg.PkgPath, "_test") {
-			continue
-		}
-		seen[pkg.PkgPath] = true
-		pkgPaths = append(pkgPaths, pkg.PkgPath)
-	}
-	return pkgPaths, nil
-}
-
-// analyzePackageCoverage runs the 4-step quality pipeline on a single
-// package (analysis -> classify -> test-load -> quality assess) and
-// returns the quality reports. The second return value is the degraded
-// package path (empty if SSA succeeded). Returns nil if any step fails.
-func analyzePackageCoverage(
-	pkgPath string,
-	gazeConfig *config.GazeConfig,
-	stderr io.Writer,
-) ([]taxonomy.QualityReport, string) {
-	analysisOpts := analysis.Options{
-		IncludeUnexported: false,
-		Version:           version,
-	}
-
-	// Step 1: Analyze (Spec 001).
-	results, err := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
-	if err != nil {
-		logger.Debug("quality pipeline: analysis failed", "pkg", pkgPath, "err", err)
-		return nil, ""
-	}
-	if len(results) == 0 {
-		logger.Debug("quality pipeline: no analysis results", "pkg", pkgPath)
-		return nil, ""
-	}
-
-	// Step 2: Classify (Spec 002).
-	classified, err := runClassify(results, pkgPath, gazeConfig, false)
-	if err != nil {
-		logger.Debug("quality pipeline: classification failed", "pkg", pkgPath, "err", err)
-		return nil, ""
-	}
-
-	// Step 3: Load test package.
-	testPkg, err := loadTestPackage(pkgPath)
-	if err != nil {
-		logger.Debug("quality pipeline: test package load failed", "pkg", pkgPath, "err", err)
-		return nil, ""
-	}
-
-	// Step 4: Assess quality (Spec 003).
-	qualOpts := quality.Options{
-		Version: version,
-		Stderr:  stderr,
-	}
-	reports, summary, err := quality.Assess(classified, testPkg, qualOpts)
-	if err != nil {
-		logger.Debug("quality pipeline: quality assessment failed", "pkg", pkgPath, "err", err)
-		return nil, ""
-	}
-	if summary != nil && summary.SSADegraded {
-		logger.Warn("quality pipeline: SSA degraded, contract coverage unavailable", "pkg", pkgPath)
-		return reports, pkgPath
-	}
-	return reports, ""
-}
-
-// buildContractCoverageFunc runs the quality pipeline across the
-// given package patterns and returns a ContractCoverageFunc callback
-// for GazeCRAP scoring. This is best-effort: if the quality pipeline
-// fails for any package (no tests, config errors, etc.), those
-// packages are silently skipped. Returns nil if no coverage data
-// could be collected.
-func buildContractCoverageFunc(
-	patterns []string,
-	moduleDir string,
-	stderr io.Writer,
-) (func(pkg, function string) (crap.ContractCoverageInfo, bool), []string) {
-	pkgPaths, err := resolvePackagePaths(patterns, moduleDir)
-	if err != nil {
-		logger.Debug("quality pipeline: failed to resolve packages", "err", err)
-		return nil, nil
-	}
-
-	if len(pkgPaths) == 0 {
-		return nil, nil
-	}
-
-	// Load config once for all packages.
-	gazeConfig, cfgErr := loadConfig("", -1, -1)
-	if cfgErr != nil {
-		logger.Debug("quality pipeline: config load failed", "err", cfgErr)
-		gazeConfig = config.DefaultConfig()
-	}
-
-	// Build coverage map: "shortPkg:qualifiedName" -> coverage info.
-	coverageMap := make(map[string]crap.ContractCoverageInfo)
-	var degradedPkgs []string
-
-	for _, pkgPath := range pkgPaths {
-		reports, degradedPkg := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
-		if degradedPkg != "" {
-			degradedPkgs = append(degradedPkgs, degradedPkg)
-		}
-		for _, report := range reports {
-			// Skip degraded reports — they have zero-valued
-			// TargetFunction and would create phantom entries
-			// with empty-string keys in the coverage map.
-			if report.TargetFunction.Function == "" {
-				continue
-			}
-			shortPkg := extractShortPkgName(report.TargetFunction.Package)
-			key := shortPkg + ":" + report.TargetFunction.QualifiedName()
-
-			info := crap.ContractCoverageInfo{
-				Percentage: report.ContractCoverage.Percentage,
-			}
-
-			// Compute coverage reason from classification data.
-			if report.ContractCoverage.TotalContractual == 0 {
-				allAmbiguous := true
-				minConf, maxConf := 100, 0
-				effectCount := 0
-				for _, e := range report.AmbiguousEffects {
-					if e.Classification != nil {
-						effectCount++
-						if e.Classification.Confidence < minConf {
-							minConf = e.Classification.Confidence
-						}
-						if e.Classification.Confidence > maxConf {
-							maxConf = e.Classification.Confidence
-						}
-					}
-				}
-				// Also check gaps and any other effects
-				// via the full quality report.
-				if effectCount > 0 && allAmbiguous {
-					info.Reason = "all_effects_ambiguous"
-					info.MinConfidence = minConf
-					info.MaxConfidence = maxConf
-				} else if effectCount == 0 {
-					info.Reason = "no_effects_detected"
-				}
-			}
-
-			if existing, ok := coverageMap[key]; !ok || info.Percentage > existing.Percentage {
-				coverageMap[key] = info
-			}
-		}
-	}
-
-	if len(coverageMap) == 0 {
-		return nil, degradedPkgs
-	}
-
-	logger.Info("quality pipeline complete",
-		"functions_with_coverage", len(coverageMap))
-
-	return func(pkg, function string) (crap.ContractCoverageInfo, bool) {
-		key := pkg + ":" + function
-		info, ok := coverageMap[key]
-		return info, ok
-	}, degradedPkgs
-}
-
-// extractShortPkgName returns the short package name from a full
-// import path. For "github.com/unbound-force/gaze/internal/crap", it
-// returns "crap".
-func extractShortPkgName(importPath string) string {
-	if idx := strings.LastIndex(importPath, "/"); idx >= 0 {
-		return importPath[idx+1:]
-	}
-	return importPath
 }
 
 func newCrapCmd() *cobra.Command {

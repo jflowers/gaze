@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/unbound-force/gaze/internal/crap"
 )
 
 // RunnerOptions configures the report pipeline runner.
@@ -198,7 +200,7 @@ func errString(err error) *string {
 // (partial failures, error capture, payload assembly) without running
 // real analysis.
 type pipelineStepFuncs struct {
-	crapStep     func([]string, string, string, io.Writer) (*crapStepResult, error)
+	crapStep     func([]string, string, string, io.Writer, func(string, string) (crap.ContractCoverageInfo, bool)) (*crapStepResult, error)
 	qualityStep  func([]string, string, io.Writer) (*qualityStepResult, error)
 	classifyStep func([]string, string) (*classifyStepResult, error)
 	docscanStep  func(string) (json.RawMessage, error)
@@ -235,9 +237,19 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 		return nil, fmt.Errorf("no package patterns specified")
 	}
 
+	// Build contract coverage callback for GazeCRAP scoring (spec 022).
+	// This runs the quality pipeline per-package to build a lookup
+	// closure. Best-effort: returns nil if all packages fail.
+	ccFunc, degradedPkgs := crap.BuildContractCoverageFunc(patterns, moduleDir, stderr)
+	if len(degradedPkgs) > 0 {
+		payload.Summary.SSADegraded = true
+		payload.Summary.SSADegradedPackages = append(
+			payload.Summary.SSADegradedPackages, degradedPkgs...)
+	}
+
 	// Step 1: CRAP analysis.
 	_, _ = fmt.Fprintln(stderr, "Analyzing packages... (CRAP)")
-	if crapRes, err := steps.crapStep(patterns, moduleDir, coverProfile, stderr); err != nil {
+	if crapRes, err := steps.crapStep(patterns, moduleDir, coverProfile, stderr, ccFunc); err != nil {
 		payload.Errors.CRAP = errString(err)
 	} else {
 		payload.CRAP = crapRes.JSON
@@ -252,8 +264,9 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 	} else {
 		payload.Quality = qualRes.JSON
 		payload.Summary.AvgContractCoverage = qualRes.AvgContractCoverage
-		payload.Summary.SSADegraded = qualRes.SSADegraded
-		payload.Summary.SSADegradedPackages = qualRes.SSADegradedPackages
+		payload.Summary.SSADegraded = payload.Summary.SSADegraded || qualRes.SSADegraded
+		payload.Summary.SSADegradedPackages = append(
+			payload.Summary.SSADegradedPackages, qualRes.SSADegradedPackages...)
 	}
 
 	// Step 3: Classification analysis.
