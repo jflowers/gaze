@@ -85,7 +85,7 @@ func Classify(results []taxonomy.AnalysisResult, opts Options) []taxonomy.Analys
 				namingName, ifaces, opts,
 			)
 
-			classification := ComputeScore(signals, opts.Config)
+			classification := ComputeScore(se.Type, signals, opts.Config)
 
 			// Strip detail fields if not verbose.
 			if !opts.Verbose {
