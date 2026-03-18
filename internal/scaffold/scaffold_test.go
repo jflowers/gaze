@@ -31,8 +31,8 @@ func TestRun_CreatesFiles(t *testing.T) {
 		t.Fatalf("Run() returned error: %v", err)
 	}
 
-	if len(result.Created) != 6 {
-		t.Errorf("expected 6 created files, got %d: %v", len(result.Created), result.Created)
+	if len(result.Created) != 8 {
+		t.Errorf("expected 8 created files, got %d: %v", len(result.Created), result.Created)
 	}
 	if len(result.Skipped) != 0 {
 		t.Errorf("expected 0 skipped files, got %d: %v", len(result.Skipped), result.Skipped)
@@ -107,8 +107,8 @@ func TestRun_SkipsExisting(t *testing.T) {
 	if len(result.Created) != 0 {
 		t.Errorf("expected 0 created, got %d: %v", len(result.Created), result.Created)
 	}
-	if len(result.Skipped) != 6 {
-		t.Errorf("expected 6 skipped, got %d: %v", len(result.Skipped), result.Skipped)
+	if len(result.Skipped) != 8 {
+		t.Errorf("expected 8 skipped, got %d: %v", len(result.Skipped), result.Skipped)
 	}
 	if len(result.Overwritten) != 0 {
 		t.Errorf("expected 0 overwritten, got %d: %v", len(result.Overwritten), result.Overwritten)
@@ -165,8 +165,8 @@ func TestRun_ForceOverwrites(t *testing.T) {
 	if len(result.Skipped) != 0 {
 		t.Errorf("expected 0 skipped, got %d: %v", len(result.Skipped), result.Skipped)
 	}
-	if len(result.Overwritten) != 6 {
-		t.Errorf("expected 6 overwritten, got %d: %v", len(result.Overwritten), result.Overwritten)
+	if len(result.Overwritten) != 8 {
+		t.Errorf("expected 8 overwritten, got %d: %v", len(result.Overwritten), result.Overwritten)
 	}
 	if len(result.Updated) != 0 {
 		t.Errorf("expected 0 updated, got %d: %v", len(result.Updated), result.Updated)
@@ -305,8 +305,8 @@ func TestRun_NoGoMod_PrintsWarning(t *testing.T) {
 	}
 
 	// Files should still be created.
-	if len(result.Created) != 6 {
-		t.Errorf("expected 6 created files, got %d", len(result.Created))
+	if len(result.Created) != 8 {
+		t.Errorf("expected 8 created files, got %d", len(result.Created))
 	}
 
 	// Warning should be printed.
@@ -333,8 +333,8 @@ func TestEmbeddedAssetsMatchSource(t *testing.T) {
 		t.Fatalf("assetPaths() returned error: %v", err)
 	}
 
-	if len(paths) != 6 {
-		t.Fatalf("expected 6 embedded assets, got %d: %v", len(paths), paths)
+	if len(paths) != 8 {
+		t.Fatalf("expected 8 embedded assets, got %d: %v", len(paths), paths)
 	}
 
 	for _, relPath := range paths {
@@ -357,9 +357,9 @@ func TestEmbeddedAssetsMatchSource(t *testing.T) {
 	}
 }
 
-// TestAssetPaths_Returns6Files verifies the embedded asset manifest
+// TestAssetPaths_Returns8Files verifies the embedded asset manifest
 // contains exactly 6 files.
-func TestAssetPaths_Returns6Files(t *testing.T) {
+func TestAssetPaths_Returns8Files(t *testing.T) {
 	paths, err := assetPaths()
 	if err != nil {
 		t.Fatalf("assetPaths() returned error: %v", err)
@@ -367,7 +367,9 @@ func TestAssetPaths_Returns6Files(t *testing.T) {
 
 	expected := map[string]bool{
 		"agents/gaze-reporter.md":         true,
+		"agents/gaze-test-generator.md":   true,
 		"agents/reviewer-testing.md":      true,
+		"command/gaze-fix.md":             true,
 		"command/gaze.md":                 true,
 		"command/speckit.testreview.md":   true,
 		"references/doc-scoring-model.md": true,
@@ -396,7 +398,7 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 		t.Fatalf("creating go.mod: %v", err)
 	}
 
-	// First run: create all 6 files.
+	// First run: create all 8 files.
 	var buf1 bytes.Buffer
 	result1, err := Run(Options{
 		TargetDir: dir,
@@ -406,8 +408,8 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Run() returned error: %v", err)
 	}
-	if len(result1.Created) != 6 {
-		t.Fatalf("expected 6 created files, got %d: %v", len(result1.Created), result1.Created)
+	if len(result1.Created) != 8 {
+		t.Fatalf("expected 8 created files, got %d: %v", len(result1.Created), result1.Created)
 	}
 
 	// Second run without --force: all files should be skipped
@@ -421,8 +423,8 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Run() returned error: %v", err)
 	}
-	if len(result2.Skipped) != 6 {
-		t.Errorf("expected 6 skipped, got %d: %v", len(result2.Skipped), result2.Skipped)
+	if len(result2.Skipped) != 8 {
+		t.Errorf("expected 8 skipped, got %d: %v", len(result2.Skipped), result2.Skipped)
 	}
 	if len(result2.Updated) != 0 {
 		t.Errorf("expected 0 updated, got %d: %v", len(result2.Updated), result2.Updated)
@@ -439,7 +441,7 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 	}
 
 	// Third run without --force: the 2 modified tool-owned files
-	// should be overwritten (Updated), the other 2 tool-owned files
+	// should be overwritten (Updated), the other 3 tool-owned files
 	// skipped (identical), and 3 user-owned files skipped.
 	var buf3 bytes.Buffer
 	result3, err := Run(Options{
@@ -454,9 +456,9 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 	if len(result3.Updated) != 2 {
 		t.Errorf("expected 2 updated, got %d: %v", len(result3.Updated), result3.Updated)
 	}
-	// 3 user-owned + 1 identical tool-owned = 4 skipped.
-	if len(result3.Skipped) != 4 {
-		t.Errorf("expected 4 skipped, got %d: %v", len(result3.Skipped), result3.Skipped)
+	// 3 user-owned + 3 identical tool-owned = 6 skipped.
+	if len(result3.Skipped) != 6 {
+		t.Errorf("expected 6 skipped, got %d: %v", len(result3.Skipped), result3.Skipped)
 	}
 	if len(result3.Created) != 0 {
 		t.Errorf("expected 0 created, got %d: %v", len(result3.Created), result3.Created)
@@ -543,8 +545,8 @@ func TestRun_OverwriteOnDiff_SkipsIdentical(t *testing.T) {
 	}
 
 	// All 7 files should be skipped.
-	if len(result.Skipped) != 6 {
-		t.Errorf("expected 6 skipped, got %d: %v", len(result.Skipped), result.Skipped)
+	if len(result.Skipped) != 8 {
+		t.Errorf("expected 8 skipped, got %d: %v", len(result.Skipped), result.Skipped)
 	}
 
 	// Verify tool-owned files are specifically in the skipped list.

@@ -75,7 +75,9 @@ func isToolOwned(relPath string) bool {
 		return true
 	}
 	switch relPath {
-	case "command/speckit.testreview.md":
+	case "command/speckit.testreview.md",
+		"agents/gaze-test-generator.md",
+		"command/gaze-fix.md":
 		return true
 	}
 	return false
