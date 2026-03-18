@@ -70,6 +70,17 @@ Implement tasks from an OpenSpec change.
    - Show which task is being worked on
    - Make the code changes required
    - Keep changes minimal and focused
+   - **Test generation step** (after code changes, before marking complete):
+     1. Check if `gaze` is available (`which gaze` or `go run ./cmd/gaze` in the gaze repo). If not available, silently skip this step (gaze is optional — composability).
+     2. Identify changed `.go` files: `git diff --name-only` (exclude `*_test.go` files)
+     3. For each changed `.go` file, determine its package path
+     4. Run `gaze quality --format=json ./path/to/package/...` to get contract coverage data
+     5. Check if any new/modified functions have `ContractCoverage.Gaps`
+     6. If gaps exist, invoke the `gaze-test-generator` agent (via Task tool with `subagent_type: general`) with the function source, gaps, hints, and fix strategy
+     7. Verify generated tests compile and pass
+     8. **Mode enforcement**: Read `.gaze.yaml` for `test_generation.mode` (default: `mandatory`)
+        - `mandatory`: block task completion until generated tests compile and pass. If tests fail, pause and ask for guidance.
+        - `advisory`: show results but proceed to mark `[x]` regardless
    - Mark task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task
 
@@ -77,6 +88,7 @@ Implement tasks from an OpenSpec change.
    - Task is unclear → ask for clarification
    - Implementation reveals a design issue → suggest updating artifacts
    - Error or blocker encountered → report and wait for guidance
+   - Test generation fails in mandatory mode → report and wait for guidance
    - User interrupts
 
 7. **On completion or pause, show status**
