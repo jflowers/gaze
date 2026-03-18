@@ -2216,3 +2216,71 @@ func TestReportCmd_CoverprofileInHelp(t *testing.T) {
 		t.Errorf("help output does not contain \"pre-generated\":\n%s", output)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// quality --include-unexported tests (issue #70)
+// ---------------------------------------------------------------------------
+
+// TestRunQuality_IncludeUnexported_PackageMain verifies that runQuality
+// auto-detects package main and includes unexported functions without
+// requiring --include-unexported. Both unexported functions (add, greet)
+// should appear in the quality output.
+func TestRunQuality_IncludeUnexported_PackageMain(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runQuality(qualityParams{
+		pkgPath:           "github.com/unbound-force/gaze/internal/quality/testdata/src/mainpkg",
+		format:            "json",
+		includeUnexported: false, // NOT set — auto-detect should kick in
+		contractualThresh: -1,
+		incidentalThresh:  -1,
+		stdout:            &stdout,
+		stderr:            &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runQuality returned error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if output == "" {
+		t.Fatal("expected non-empty quality output for package main (auto-detect should include unexported functions)")
+	}
+
+	// Both unexported functions must appear — verifies auto-detect
+	// fired and included unexported functions.
+	if !strings.Contains(output, "add") {
+		t.Errorf("expected 'add' in quality output (unexported function in mainpkg)")
+	}
+	if !strings.Contains(output, "greet") {
+		t.Errorf("expected 'greet' in quality output (unexported function in mainpkg)")
+	}
+}
+
+// TestRunQuality_IncludeUnexported_LibraryPackage verifies that a non-main
+// library package without --include-unexported only reports exported
+// functions. Uses the welltested fixture which has known exported
+// functions (Add, Greet) and unexported helpers.
+func TestRunQuality_IncludeUnexported_LibraryPackage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runQuality(qualityParams{
+		pkgPath:           "github.com/unbound-force/gaze/internal/quality/testdata/src/welltested",
+		format:            "json",
+		includeUnexported: false,
+		contractualThresh: -1,
+		incidentalThresh:  -1,
+		stdout:            &stdout,
+		stderr:            &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runQuality returned error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if output == "" {
+		t.Fatal("expected non-empty quality output for welltested fixture")
+	}
+
+	// Exported functions should appear in the output.
+	if !strings.Contains(output, "Add") {
+		t.Errorf("expected exported function 'Add' in quality output")
+	}
+}
