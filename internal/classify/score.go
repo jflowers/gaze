@@ -17,11 +17,30 @@ const baseConfidence = 50
 // signals (FR-007).
 const maxContradictionPenalty = 20
 
-// accumulateSignals sums signal weights from the base confidence,
-// skipping zero-weight/empty-source signals. Returns the accumulated
-// score and whether positive and negative signals were both present.
-func accumulateSignals(signals []taxonomy.Signal) (score int, hasPositive, hasNegative bool) {
-	score = baseConfidence
+// tierBoost returns the confidence boost for a side effect based on
+// its priority tier. P0 effects (ReturnValue, ErrorReturn, etc.) are
+// definitionally contractual — a function's direct observable outputs
+// — and receive +25. P1 effects get a moderate +10. P2-P4 effects
+// stay at the base (no boost) since their contractual nature
+// genuinely depends on context.
+func tierBoost(effectType taxonomy.SideEffectType) int {
+	switch taxonomy.TierOf(effectType) {
+	case taxonomy.TierP0:
+		return 25
+	case taxonomy.TierP1:
+		return 10
+	default:
+		return 0
+	}
+}
+
+// accumulateSignals sums signal weights starting from
+// baseConfidence + tierBoost(effectType), skipping zero-weight/
+// empty-source signals. The effective starting score is 75 for P0,
+// 60 for P1, and 50 for P2-P4. Returns the accumulated score and
+// whether positive and negative signals were both present.
+func accumulateSignals(effectType taxonomy.SideEffectType, signals []taxonomy.Signal) (score int, hasPositive, hasNegative bool) {
+	score = baseConfidence + tierBoost(effectType)
 	for _, s := range signals {
 		if s.Weight == 0 && s.Source == "" {
 			continue
@@ -60,14 +79,16 @@ func classifyLabel(score, contractualThreshold, incidentalThreshold int) (taxono
 }
 
 // ComputeScore computes the confidence score from a set of signals,
-// applies contradiction detection and penalty, clamps to 0-100,
-// and returns a Classification based on the configured thresholds.
-func ComputeScore(signals []taxonomy.Signal, cfg *config.GazeConfig) taxonomy.Classification {
+// applies a tier-based boost, contradiction detection and penalty,
+// clamps to 0-100, and returns a Classification based on the
+// configured thresholds. The effectType determines the tier boost:
+// P0 effects start at 75, P1 at 60, P2-P4 at 50.
+func ComputeScore(effectType taxonomy.SideEffectType, signals []taxonomy.Signal, cfg *config.GazeConfig) taxonomy.Classification {
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
 
-	score, hasPositive, hasNegative := accumulateSignals(signals)
+	score, hasPositive, hasNegative := accumulateSignals(effectType, signals)
 
 	// Apply contradiction penalty if both positive and negative
 	// signals exist.

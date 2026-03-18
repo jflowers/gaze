@@ -138,10 +138,53 @@ func TestNamingSignal_NoMatch(t *testing.T) {
 	}
 }
 
-// TestScoreComputation_BaseConfidence tests that zero signals
-// produce a score of 50 (the base confidence).
+// TestTierBoost verifies that the tier-based confidence boost
+// is correctly applied for P0, P1, and P2+ effect types.
+func TestTierBoost(t *testing.T) {
+	cases := []struct {
+		name       string
+		effectType taxonomy.SideEffectType
+		wantBoost  int
+	}{
+		// P0 types → +25
+		{"ReturnValue", taxonomy.ReturnValue, 25},
+		{"ErrorReturn", taxonomy.ErrorReturn, 25},
+		{"SentinelError", taxonomy.SentinelError, 25},
+		{"ReceiverMutation", taxonomy.ReceiverMutation, 25},
+		{"PointerArgMutation", taxonomy.PointerArgMutation, 25},
+		// P1 types → +10 (all 8 P1 types)
+		{"WriterOutput", taxonomy.WriterOutput, 10},
+		{"SliceMutation", taxonomy.SliceMutation, 10},
+		{"MapMutation", taxonomy.MapMutation, 10},
+		{"GlobalMutation", taxonomy.GlobalMutation, 10},
+		{"HTTPResponseWrite", taxonomy.HTTPResponseWrite, 10},
+		{"ChannelSend", taxonomy.ChannelSend, 10},
+		{"ChannelClose", taxonomy.ChannelClose, 10},
+		{"DeferredReturnMutation", taxonomy.DeferredReturnMutation, 10},
+		// P2+ types → 0
+		{"GoroutineSpawn", taxonomy.GoroutineSpawn, 0},
+		{"FileSystemWrite", taxonomy.FileSystemWrite, 0},
+		// Empty/unknown type → 0
+		{"empty", "", 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// ComputeScore with no signals: base (50) + tierBoost.
+			c := classify.ComputeScore(tc.effectType, nil, nil)
+			wantConfidence := 50 + tc.wantBoost
+			if c.Confidence != wantConfidence {
+				t.Errorf("ComputeScore(%q, nil) confidence = %d, want %d",
+					tc.effectType, c.Confidence, wantConfidence)
+			}
+		})
+	}
+}
+
+// TestScoreComputation_BaseConfidence tests that zero signals on a
+// P2+ effect produce a score of 50 (base confidence, no tier boost).
 func TestScoreComputation_BaseConfidence(t *testing.T) {
-	c := classify.ComputeScore(nil, nil)
+	c := classify.ComputeScore("", nil, nil)
 	if c.Confidence != 50 {
 		t.Errorf("zero signals: confidence = %d, want 50", c.Confidence)
 	}
@@ -158,7 +201,7 @@ func TestScoreComputation_Contractual(t *testing.T) {
 		{Source: "visibility", Weight: 10},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 	// 50 + 30 + 10 = 90 >= 80 = contractual.
 	if c.Label != taxonomy.Contractual {
 		t.Errorf("label = %q, want %q", c.Label, taxonomy.Contractual)
@@ -175,7 +218,7 @@ func TestScoreComputation_Incidental(t *testing.T) {
 		{Source: "naming", Weight: -10},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 	// 50 - 10 = 40 < 50 = incidental.
 	if c.Label != taxonomy.Incidental {
 		t.Errorf("label = %q, want %q", c.Label, taxonomy.Incidental)
@@ -193,7 +236,7 @@ func TestScoreComputation_Contradiction(t *testing.T) {
 		{Source: "naming", Weight: -10},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 	// 50 + 30 - 10 - 20 (contradiction) = 50.
 	if c.Confidence != 50 {
 		t.Errorf("contradiction: confidence = %d, want 50", c.Confidence)
@@ -212,7 +255,7 @@ func TestScoreComputation_ClampToZero(t *testing.T) {
 		{Source: "another", Weight: -30},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 	if c.Confidence != 0 {
 		t.Errorf("clamp: confidence = %d, want 0", c.Confidence)
 	}
@@ -229,7 +272,7 @@ func TestScoreComputation_ClampTo100(t *testing.T) {
 		{Source: "godoc", Weight: 15},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 	// 50 + 30 + 20 + 15 + 10 + 15 = 140, clamped to 100.
 	if c.Confidence != 100 {
 		t.Errorf("clamp: confidence = %d, want 100", c.Confidence)
@@ -248,7 +291,7 @@ func TestScoreComputation_CustomThresholds(t *testing.T) {
 		{Source: "visibility", Weight: 10},
 	}
 
-	c := classify.ComputeScore(signals, cfg)
+	c := classify.ComputeScore("", signals, cfg)
 	// 50 + 30 + 10 = 90 >= 90 = contractual with custom threshold.
 	if c.Label != taxonomy.Contractual {
 		t.Errorf("custom threshold: label = %q, want %q",
@@ -261,7 +304,7 @@ func TestScoreComputation_CustomThresholds(t *testing.T) {
 // threshold used (FR-014).
 func TestScoreComputation_ReasoningContainsThreshold(t *testing.T) {
 	// Contractual: score=90, threshold=80.
-	contractual := classify.ComputeScore([]taxonomy.Signal{
+	contractual := classify.ComputeScore("", []taxonomy.Signal{
 		{Source: "interface", Weight: 30},
 		{Source: "visibility", Weight: 10},
 	}, nil)
@@ -274,7 +317,7 @@ func TestScoreComputation_ReasoningContainsThreshold(t *testing.T) {
 	}
 
 	// Incidental: score=40, threshold=50.
-	incidental := classify.ComputeScore([]taxonomy.Signal{
+	incidental := classify.ComputeScore("", []taxonomy.Signal{
 		{Source: "naming", Weight: -10},
 	}, nil)
 	if incidental.Reasoning == "" {
@@ -286,7 +329,7 @@ func TestScoreComputation_ReasoningContainsThreshold(t *testing.T) {
 	}
 
 	// Ambiguous: score=60, between 50 and 80.
-	ambiguous := classify.ComputeScore([]taxonomy.Signal{
+	ambiguous := classify.ComputeScore("", []taxonomy.Signal{
 		{Source: "naming", Weight: 10},
 	}, nil)
 	if ambiguous.Reasoning == "" {
@@ -306,7 +349,7 @@ func TestScoreComputation_SignalsInResult(t *testing.T) {
 		{Source: "visibility", Weight: 10},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 
 	if len(c.Signals) == 0 {
 		t.Fatal("expected non-empty Signals in Classification")
@@ -335,7 +378,7 @@ func TestScoreComputation_ContradictionSignalAdded(t *testing.T) {
 		{Source: "naming", Weight: -10},
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 
 	// Contradiction penalty must appear as a signal in the result.
 	var contradictionFound bool
@@ -368,7 +411,7 @@ func TestScoreComputation_ZeroWeightSignalsFiltered(t *testing.T) {
 		{Source: "", Weight: 0}, // should be filtered
 	}
 
-	c := classify.ComputeScore(signals, nil)
+	c := classify.ComputeScore("", signals, nil)
 
 	for _, s := range c.Signals {
 		if s.Source == "" {
@@ -385,8 +428,8 @@ func TestScoreComputation_Determinism(t *testing.T) {
 		{Source: "naming", Weight: 10},
 	}
 
-	c1 := classify.ComputeScore(signals, nil)
-	c2 := classify.ComputeScore(signals, nil)
+	c1 := classify.ComputeScore("", signals, nil)
+	c2 := classify.ComputeScore("", signals, nil)
 
 	if c1.Label != c2.Label {
 		t.Errorf("determinism: labels differ: %q vs %q", c1.Label, c2.Label)
@@ -492,10 +535,20 @@ func TestClassify_IncidentalPackage(t *testing.T) {
 					result.Target.Function, se.Type)
 				continue
 			}
-			// Incidental functions should not be classified as
-			// contractual.
+			// P0 effects (ReturnValue, ErrorReturn, ReceiverMutation,
+			// etc.) receive a tier boost (+25, issue #71) that pushes
+			// them toward contractual. The final confidence may be
+			// below 75 if negative signals (naming, contradiction)
+			// apply, but P0 effects are exempt from the "must not be
+			// contractual" check because they are definitionally
+			// part of the function's contract.
+			if taxonomy.TierOf(se.Type) == taxonomy.TierP0 {
+				t.Logf("P0 effect %s on %s: confidence %d (exempt from incidental check)",
+					se.Type, result.Target.Function, se.Classification.Confidence)
+				continue
+			}
 			if se.Classification.Label == taxonomy.Contractual {
-				t.Errorf("incidental function %s, effect %s: "+
+				t.Errorf("incidental function %s, non-P0 effect %s: "+
 					"classified as contractual (confidence %d)",
 					result.Target.Function, se.Type,
 					se.Classification.Confidence)
@@ -649,8 +702,19 @@ func TestSC003_IncidentalNotContractual(t *testing.T) {
 			if se.Classification == nil {
 				continue
 			}
+			// P0 effects receive a tier boost (+25, issue #71) and
+			// are exempt from the incidental check — they are
+			// definitionally part of a function's contract regardless
+			// of the function's incidental nature. Negative signals
+			// (naming, contradiction) may still bring the final
+			// confidence below 75, so we do not assert on the value.
+			if taxonomy.TierOf(se.Type) == taxonomy.TierP0 {
+				t.Logf("SC-003: P0 effect %s on %s: confidence %d (exempt)",
+					se.Type, result.Target.Function, se.Classification.Confidence)
+				continue
+			}
 			if se.Classification.Label == taxonomy.Contractual {
-				t.Errorf("SC-003: incidental function %s, effect %s: "+
+				t.Errorf("SC-003: incidental function %s, non-P0 effect %s: "+
 					"labeled Contractual (confidence %d)",
 					result.Target.Function, se.Type,
 					se.Classification.Confidence)
@@ -672,14 +736,14 @@ func TestSC004_ConfigurableThresholds(t *testing.T) {
 	}
 
 	// 50 + 30 + 10 = 90. With threshold 95, should be Ambiguous.
-	c := classify.ComputeScore(signals, cfg)
+	c := classify.ComputeScore("", signals, cfg)
 	if c.Label == taxonomy.Contractual {
 		t.Errorf("SC-004: with threshold=95, confidence=90 should not be Contractual; got %q",
 			c.Label)
 	}
 
 	// Now with default threshold (80), same score = Contractual.
-	cDefault := classify.ComputeScore(signals, nil)
+	cDefault := classify.ComputeScore("", signals, nil)
 	if cDefault.Label != taxonomy.Contractual {
 		t.Errorf("SC-004: with default threshold=80, confidence=90 should be Contractual; got %q",
 			cDefault.Label)
