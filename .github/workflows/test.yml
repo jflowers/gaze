@@ -10,6 +10,7 @@ jobs:
   unit-and-integration:
     name: Unit + Integration Tests (Go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         go-version: ["1.24", "1.25"]
