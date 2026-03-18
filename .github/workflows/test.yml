@@ -28,16 +28,27 @@ jobs:
       - name: Test
         run: go test -race -count=1 -short -coverprofile=coverage.out ./...
 
-      - name: Install OpenCode
+      - name: Gaze threshold check
         if: matrix.go-version == '1.24'
+        run: |
+          go build -o gaze ./cmd/gaze
+          ./gaze report ./... \
+            --format=json \
+            --coverprofile=coverage.out \
+            --max-crapload=16 \
+            --max-gaze-crapload=5 \
+            --min-contract-coverage=8 \
+            > /dev/null
+
+      - name: Install OpenCode
+        if: matrix.go-version == '1.24' && github.event_name == 'push'
         run: npm install -g opencode-ai@1.2.26
 
       - name: Gaze quality report
-        if: matrix.go-version == '1.24'
+        if: matrix.go-version == '1.24' && github.event_name == 'push'
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: |
-          go build -o gaze ./cmd/gaze
           ./gaze report ./... \
             --ai=opencode \
             --model=opencode/claude-sonnet-4-6 \
