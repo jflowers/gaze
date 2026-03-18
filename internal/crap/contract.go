@@ -152,7 +152,7 @@ func analyzePackageCoverage(
 	stderr io.Writer,
 ) ([]taxonomy.QualityReport, string) {
 	analysisOpts := analysis.Options{
-		IncludeUnexported: false,
+		IncludeUnexported: isMainPkg(pkgPath),
 	}
 
 	// Step 1: Analyze (Spec 001).
@@ -302,4 +302,18 @@ func extractShortPkgName(importPath string) string {
 		return importPath[idx+1:]
 	}
 	return importPath
+}
+
+// isMainPkg checks if a package path resolves to package main.
+// Used to auto-detect main packages and include unexported functions.
+//
+// NOTE: keep in sync with internal/aireport/runner_steps.go:isMainPkg
+// and cmd/gaze/main.go:isMainPackage.
+func isMainPkg(pkgPath string) bool {
+	cfg := &packages.Config{Mode: packages.NeedName}
+	pkgs, err := packages.Load(cfg, pkgPath)
+	if err != nil || len(pkgs) == 0 {
+		return false
+	}
+	return pkgs[0].Name == "main"
 }

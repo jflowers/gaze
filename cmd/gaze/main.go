@@ -673,6 +673,7 @@ type qualityParams struct {
 	format               string
 	targetFunc           string
 	verbose              bool
+	includeUnexported    bool
 	configPath           string
 	contractualThresh    int
 	incidentalThresh     int
@@ -690,9 +691,19 @@ func runQuality(p qualityParams) error {
 
 	// Step 1: Load and analyze the package (Spec 001).
 	opts := analysis.Options{
-		IncludeUnexported: false,
+		IncludeUnexported: p.includeUnexported,
 		Version:           version,
 	}
+
+	// Auto-detect package main: include unexported functions
+	// automatically since main packages have no exported API.
+	if !opts.IncludeUnexported {
+		if isMainPackage(p.pkgPath) {
+			opts.IncludeUnexported = true
+			logger.Info("package main detected, including unexported functions")
+		}
+	}
+
 	logger.Info("analyzing package", "pkg", p.pkgPath)
 	results, err := analysis.LoadAndAnalyze(p.pkgPath, opts)
 	if err != nil {
@@ -893,11 +904,23 @@ func checkQualityThresholds(
 	return nil
 }
 
+// isMainPackage checks if the given package pattern resolves to a
+// package main. Uses a lightweight packages.Load with NeedName mode.
+func isMainPackage(pattern string) bool {
+	cfg := &packages.Config{Mode: packages.NeedName}
+	pkgs, err := packages.Load(cfg, pattern)
+	if err != nil || len(pkgs) == 0 {
+		return false
+	}
+	return pkgs[0].Name == "main"
+}
+
 func newQualityCmd() *cobra.Command {
 	var (
 		format               string
 		targetFunc           string
 		verbose              bool
+		includeUnexported    bool
 		configPath           string
 		contractualThresh    int
 		incidentalThresh     int
@@ -921,6 +944,7 @@ Requires the target package to have existing test files.`,
 				format:               format,
 				targetFunc:           targetFunc,
 				verbose:              verbose,
+				includeUnexported:    includeUnexported,
 				configPath:           configPath,
 				contractualThresh:    contractualThresh,
 				incidentalThresh:     incidentalThresh,
@@ -938,6 +962,8 @@ Requires the target package to have existing test files.`,
 		"restrict analysis to tests that exercise this function")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false,
 		"show detailed assertion and mapping information")
+	cmd.Flags().BoolVar(&includeUnexported, "include-unexported", false,
+		"include unexported functions")
 	cmd.Flags().StringVar(&configPath, "config", "",
 		"path to .gaze.yaml config file (default: search CWD)")
 	cmd.Flags().IntVar(&contractualThresh, "contractual-threshold", -1,

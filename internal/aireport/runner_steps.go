@@ -141,7 +141,11 @@ func runQualityForPackage(
 	modPkgs []*packages.Package,
 	stderr io.Writer,
 ) ([]taxonomy.QualityReport, string) {
-	analysisOpts := analysis.Options{IncludeUnexported: false}
+	includeUnexported := isMainPkg(pkgPath)
+	if includeUnexported {
+		_, _ = fmt.Fprintf(stderr, "package main detected for %s, including unexported functions\n", pkgPath)
+	}
+	analysisOpts := analysis.Options{IncludeUnexported: includeUnexported}
 	results, err := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
 	if err != nil || len(results) == 0 {
 		return nil, ""
@@ -196,7 +200,7 @@ func runClassifyStep(patterns []string, moduleDir string) (*classifyStepResult, 
 	var allResults []taxonomy.AnalysisResult
 
 	for _, pkgPath := range pkgPaths {
-		analysisOpts := analysis.Options{IncludeUnexported: false}
+		analysisOpts := analysis.Options{IncludeUnexported: isMainPkg(pkgPath)}
 		results, err := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
 		if err != nil || len(results) == 0 {
 			continue
@@ -345,4 +349,18 @@ func loadTestPackageForQuality(pkgPath string) (*packages.Package, error) {
 		}
 	}
 	return nil, fmt.Errorf("no test package found for %q", pkgPath)
+}
+
+// isMainPkg checks if a package path resolves to package main.
+// Used to auto-detect main packages and include unexported functions.
+//
+// NOTE: keep in sync with internal/crap/contract.go:isMainPkg
+// and cmd/gaze/main.go:isMainPackage.
+func isMainPkg(pkgPath string) bool {
+	cfg := &packages.Config{Mode: packages.NeedName}
+	pkgs, err := packages.Load(cfg, pkgPath)
+	if err != nil || len(pkgs) == 0 {
+		return false
+	}
+	return pkgs[0].Name == "main"
 }
