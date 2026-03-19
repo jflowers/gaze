@@ -426,3 +426,71 @@ func TestComputeScores_CoverageReason_Normal(t *testing.T) {
 		t.Errorf("expected nil EffectConfidenceRange for normal coverage")
 	}
 }
+
+func TestBuildSummary_RecommendedActions(t *testing.T) {
+	addTests := FixAddTests
+	addAssertions := FixAddAssertions
+	decomposeAndTest := FixDecomposeAndTest
+	decompose := FixDecompose
+
+	scores := []Score{
+		{Function: "LowCRAP", Complexity: 3, CRAP: 3.1},                                       // below threshold, no strategy
+		{Function: "DecomposeHigh", Complexity: 20, CRAP: 100, FixStrategy: &decompose},       // decompose, CRAP 100
+		{Function: "AddTestsLow", Complexity: 5, CRAP: 25, FixStrategy: &addTests},            // add_tests, CRAP 25
+		{Function: "AddTestsHigh", Complexity: 8, CRAP: 72, FixStrategy: &addTests},           // add_tests, CRAP 72
+		{Function: "AddAssertions", Complexity: 6, CRAP: 36, FixStrategy: &addAssertions},     // add_assertions, CRAP 36
+		{Function: "DecompAndTest", Complexity: 15, CRAP: 50, FixStrategy: &decomposeAndTest}, // decompose_and_test, CRAP 50
+	}
+
+	opts := DefaultOptions()
+	summary := buildSummary(scores, opts)
+
+	// (a) Only CRAPload functions (those with FixStrategy) appear.
+	if len(summary.RecommendedActions) != 5 {
+		t.Fatalf("expected 5 recommended actions, got %d", len(summary.RecommendedActions))
+	}
+
+	// (b) Sorted by strategy priority: add_tests(0), add_assertions(1), decompose_and_test(2), decompose(3).
+	// Within add_tests: CRAP 72 before CRAP 25.
+	expected := []struct {
+		function string
+		strategy FixStrategy
+	}{
+		{"AddTestsHigh", FixAddTests},
+		{"AddTestsLow", FixAddTests},
+		{"AddAssertions", FixAddAssertions},
+		{"DecompAndTest", FixDecomposeAndTest},
+		{"DecomposeHigh", FixDecompose},
+	}
+
+	for i, e := range expected {
+		if summary.RecommendedActions[i].Function != e.function {
+			t.Errorf("action[%d].Function = %q, want %q", i, summary.RecommendedActions[i].Function, e.function)
+		}
+		if summary.RecommendedActions[i].FixStrategy != e.strategy {
+			t.Errorf("action[%d].FixStrategy = %q, want %q", i, summary.RecommendedActions[i].FixStrategy, e.strategy)
+		}
+	}
+}
+
+func TestBuildSummary_RecommendedActions_Truncated(t *testing.T) {
+	addTests := FixAddTests
+	// Create 25 CRAPload functions.
+	var scores []Score
+	for i := 0; i < 25; i++ {
+		scores = append(scores, Score{
+			Function:    "Func" + string(rune('A'+i)),
+			Complexity:  10,
+			CRAP:        float64(30 + i),
+			FixStrategy: &addTests,
+		})
+	}
+
+	opts := DefaultOptions()
+	summary := buildSummary(scores, opts)
+
+	// (c) Truncated to 20.
+	if len(summary.RecommendedActions) != 20 {
+		t.Errorf("expected 20 recommended actions (truncated), got %d", len(summary.RecommendedActions))
+	}
+}

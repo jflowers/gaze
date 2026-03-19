@@ -148,6 +148,7 @@ func Assess(
 			report := taxonomy.QualityReport{
 				TestFunction:                 tf.Name,
 				TestLocation:                 tf.Location,
+				AssertionCount:               len(sites),
 				AssertionDetectionConfidence: detectionConf,
 				Metadata: taxonomy.Metadata{
 					GazeVersion: meta.GazeVersion,
@@ -235,6 +236,7 @@ func Assess(
 					OverSpecification:            overSpec,
 					AmbiguousEffects:             ambiguous,
 					UnmappedAssertions:           unmapped,
+					AssertionCount:               len(sites),
 					AssertionDetectionConfidence: detectionConf,
 					Metadata: taxonomy.Metadata{
 						GazeVersion: meta.GazeVersion,
