@@ -2800,3 +2800,24 @@ func TestAssess_SSASuccess_NotDegraded(t *testing.T) {
 		t.Error("expected at least one report with non-empty TargetFunction in non-degraded mode")
 	}
 }
+
+// TestAssertionCount_PopulatedInQualityReport verifies that AssertionCount
+// is populated from DetectAssertions in the quality pipeline.
+func TestAssertionCount_PopulatedInQualityReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: runs quality pipeline with real packages")
+	}
+
+	reports, _ := assessFixture(t, "welltested")
+
+	var foundNonZero bool
+	for _, r := range reports {
+		t.Logf("report %s → %s: assertion_count=%d", r.TestFunction, r.TargetFunction.Function, r.AssertionCount)
+		if r.AssertionCount > 0 {
+			foundNonZero = true
+		}
+	}
+	if !foundNonZero {
+		t.Error("expected at least one report with AssertionCount > 0 on welltested fixture")
+	}
+}

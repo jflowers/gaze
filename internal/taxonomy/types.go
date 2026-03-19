@@ -362,6 +362,11 @@ type QualityReport struct {
 	// to any detected side effect.
 	UnmappedAssertions []AssertionMapping `json:"unmapped_assertions"`
 
+	// AssertionCount is the total number of detected assertion sites
+	// in the test function. Helps agents distinguish "no tests"
+	// (count absent) from "tests without assertions" (count 0).
+	AssertionCount int `json:"assertion_count"`
+
 	// AssertionDetectionConfidence indicates the fraction of test
 	// assertions that were successfully pattern-matched (0-100).
 	AssertionDetectionConfidence int `json:"assertion_detection_confidence"`

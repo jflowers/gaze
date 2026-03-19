@@ -448,6 +448,40 @@ func buildSummary(scores []Score, opts Options) Summary {
 		summary.FixStrategyCounts = fixStrategyCounts
 	}
 
+	// Build recommended_actions: sorted by fix strategy priority,
+	// then CRAP descending. Only includes CRAPload functions
+	// (those with a FixStrategy).
+	var actions []RecommendedAction
+	for _, s := range scores {
+		if s.FixStrategy == nil {
+			continue
+		}
+		actions = append(actions, RecommendedAction{
+			Function:    s.Function,
+			Package:     s.Package,
+			File:        s.File,
+			Line:        s.Line,
+			FixStrategy: *s.FixStrategy,
+			CRAP:        s.CRAP,
+			GazeCRAP:    s.GazeCRAP,
+			Complexity:  s.Complexity,
+			Quadrant:    s.Quadrant,
+		})
+	}
+	sort.Slice(actions, func(i, j int) bool {
+		pi, pj := fixStrategyPriority(actions[i].FixStrategy), fixStrategyPriority(actions[j].FixStrategy)
+		if pi != pj {
+			return pi < pj
+		}
+		return actions[i].CRAP > actions[j].CRAP
+	})
+	if len(actions) > 20 {
+		actions = actions[:20]
+	}
+	if len(actions) > 0 {
+		summary.RecommendedActions = actions
+	}
+
 	if len(opts.SSADegradedPackages) > 0 {
 		summary.SSADegradedPackages = opts.SSADegradedPackages
 	}
@@ -481,4 +515,21 @@ func buildSummary(scores []Score, opts Options) Summary {
 	}
 
 	return summary
+}
+
+// fixStrategyPriority maps a FixStrategy to a sort priority.
+// Lower priority = processed first by agents (easiest wins first).
+func fixStrategyPriority(s FixStrategy) int {
+	switch s {
+	case FixAddTests:
+		return 0
+	case FixAddAssertions:
+		return 1
+	case FixDecomposeAndTest:
+		return 2
+	case FixDecompose:
+		return 3
+	default:
+		return 4
+	}
 }

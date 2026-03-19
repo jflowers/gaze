@@ -103,6 +103,21 @@ const (
 	FixDecomposeAndTest FixStrategy = "decompose_and_test"
 )
 
+// RecommendedAction is a prioritized remediation entry for agents
+// consuming gaze JSON output. Sorted by fix strategy priority
+// (add_tests first, decompose last), then by CRAP score descending.
+type RecommendedAction struct {
+	Function    string      `json:"function"`
+	Package     string      `json:"package"`
+	File        string      `json:"file"`
+	Line        int         `json:"line"`
+	FixStrategy FixStrategy `json:"fix_strategy"`
+	CRAP        float64     `json:"crap"`
+	GazeCRAP    *float64    `json:"gaze_crap,omitempty"`
+	Complexity  int         `json:"complexity"`
+	Quadrant    *Quadrant   `json:"quadrant,omitempty"`
+}
+
 // Summary holds aggregate statistics for a CRAP report.
 type Summary struct {
 	TotalFunctions      int                 `json:"total_functions"`
@@ -119,6 +134,7 @@ type Summary struct {
 	FixStrategyCounts   map[FixStrategy]int `json:"fix_strategy_counts,omitempty"`
 	WorstCRAP           []Score             `json:"worst_crap"`
 	WorstGazeCRAP       []Score             `json:"worst_gaze_crap,omitempty"`
+	RecommendedActions  []RecommendedAction `json:"recommended_actions,omitempty"`
 
 	// SSADegradedPackages lists package paths where SSA construction
 	// failed. When non-empty, contract coverage and GazeCRAP metrics

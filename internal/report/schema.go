@@ -241,6 +241,11 @@ const QualitySchema = `{
           ],
           "description": "Assertions that could not be linked to any side effect"
         },
+        "assertion_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of detected assertion sites in the test function"
+        },
         "assertion_detection_confidence": {
           "type": "integer",
           "minimum": 0,
