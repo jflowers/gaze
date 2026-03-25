@@ -8,10 +8,6 @@
 // a given threshold (default 15).
 package crap
 
-import (
-	"math"
-)
-
 // Score holds the CRAP score for a single function.
 type Score struct {
 	// Package is the Go package name.
@@ -156,7 +152,7 @@ type Report struct {
 func Formula(complexity int, coveragePct float64) float64 {
 	comp := float64(complexity)
 	uncov := 1.0 - coveragePct/100.0
-	return comp*comp*math.Pow(uncov, 3) + comp
+	return comp*comp*uncov*uncov*uncov + comp
 }
 
 // ClassifyQuadrant determines the quadrant for a function based on

@@ -40,6 +40,7 @@ Gaze is a static analysis tool for Go that detects observable side effects in fu
 Before submitting a pull request, agents **must** run `/review-council` and resolve all REQUEST CHANGES findings until all four reviewers return APPROVE. There must be **minimal to no code changes** between the council's APPROVE verdict and the PR submission — the council reviews the final code, not a draft that changes afterward.
 
 Workflow:
+
 1. Complete all implementation tasks
 2. Run CI checks locally (build, test, vet)
 3. Run `/review-council` — fix any findings, re-run until APPROVE
@@ -47,6 +48,7 @@ Workflow:
 5. Do NOT make further code changes between APPROVE and PR submission
 
 Exempt from council review:
+
 - Constitution amendments (governance documents, not code)
 - Documentation-only changes (README, AGENTS.md, spec artifacts)
 - Emergency hotfixes (must be retroactively reviewed)
@@ -63,6 +65,7 @@ Two spec workflows are available:
 | **OpenSpec** | `openspec/changes/name/` | Targeted changes with lightweight artifacts (proposal → design → specs → tasks) via `/opsx-propose` and `/opsx-apply` |
 
 **What requires a spec** (no exceptions without explicit user override):
+
 - New features or capabilities
 - Refactoring that changes function signatures, extracts helpers, or moves code between packages
 - Test additions or assertion strengthening across multiple functions
@@ -71,6 +74,7 @@ Two spec workflows are available:
 - Data model changes (new struct fields, JSON schema updates)
 
 **What is exempt** (may be done directly):
+
 - Constitution amendments (governed by the constitution's own Governance section)
 - Typo corrections, comment-only changes, single-line formatting fixes
 - Emergency hotfixes for critical production bugs (must be retroactively documented)
@@ -301,6 +305,7 @@ golangci-lint v2 is configured in `.golangci.yml` with these linters enabled:
 Formatters: gofmt, goimports.
 
 ## Active Technologies
+
 - Go 1.24+ (no Go code changes; prompt is markdown) + OpenCode agent runtime (renders markdown prompt), embed.FS (scaffolds prompt copy) (011-output-voice-style)
 - Filesystem only (markdown files) (011-output-voice-style)
 - Go 1.24+ (scaffold Go code); Markdown (agent/command prompts) + `embed.FS` (Go standard library), OpenCode agent runtime (012-consolidate-classify-docs)
