@@ -113,6 +113,12 @@ func mapAssertionsToEffectsImpl(
 			// an inline call to the target function (e.g., if f() != x).
 			mapping = matchInlineCall(site, targetFunc, returnEffectID, effectMap, testPkg)
 		}
+		if mapping == nil && returnEffectID != "" {
+			// Container unwrap: trace data flow forward from the
+			// return value through field access and transformation
+			// calls to the assertion expression (confidence 55).
+			mapping = matchContainerUnwrap(site, objToEffectID, effectMap, testPkg, returnEffectID)
+		}
 		if mapping == nil && aiMapperFn != nil {
 			// AI fallback: for structurally disconnected assertions,
 			// ask the AI to evaluate the semantic relationship.
@@ -705,6 +711,442 @@ func resolveExprRoot(expr ast.Expr, info *types.Info) *ast.Ident {
 		}
 	default:
 		return nil
+	}
+}
+
+// containerUnwrapConfidence is the confidence level for assertions
+// mapped via the container unwrap pass. It slots between inline call
+// matching (60) and AI-assisted mapping (50), reflecting the additional
+// indirection through field access and transformation calls.
+const containerUnwrapConfidence = 55
+
+// maxContainerChainDepth is the maximum number of forward-tracing
+// iterations for the container unwrap pass. This covers the full MCP
+// test pattern (result → field → type assert → field → unmarshal →
+// assert) with margin for more complex chains.
+const maxContainerChainDepth = 6
+
+// isTransformationCall checks whether a call expression matches the
+// structural signature pattern of a transformation function: a function
+// that accepts a byte-like input ([]byte, string, or io.Reader) AND a
+// pointer destination argument. Returns the positional indices of the
+// byte-like and pointer parameters, or ok=false if both are not found.
+//
+// This enables structural detection of unmarshal-like functions without
+// hardcoding specific function names (FR-001, FR-008).
+func isTransformationCall(call *ast.CallExpr, info *types.Info) (byteArgIdx int, ptrDestIdx int, ok bool) {
+	if call == nil || info == nil {
+		return 0, 0, false
+	}
+
+	tv, exists := info.Types[call.Fun]
+	if !exists {
+		return 0, 0, false
+	}
+
+	sig, isSig := tv.Type.(*types.Signature)
+	if !isSig {
+		return 0, 0, false
+	}
+
+	params := sig.Params()
+	if params == nil || params.Len() == 0 {
+		return 0, 0, false
+	}
+
+	byteArgIdx = -1
+	ptrDestIdx = -1
+
+	for i := 0; i < params.Len(); i++ {
+		paramType := params.At(i).Type()
+
+		// Check for []byte: *types.Slice with byte element.
+		if sl, isSl := paramType.(*types.Slice); isSl {
+			if basic, isBasic := sl.Elem().(*types.Basic); isBasic && basic.Kind() == types.Byte {
+				if byteArgIdx == -1 {
+					byteArgIdx = i
+				}
+				continue
+			}
+		}
+
+		// Check for string: *types.Basic with Kind() == types.String.
+		if basic, isBasic := paramType.(*types.Basic); isBasic && basic.Kind() == types.String {
+			if byteArgIdx == -1 {
+				byteArgIdx = i
+			}
+			continue
+		}
+
+		// Check for pointer type: *types.Pointer.
+		if _, isPtr := paramType.(*types.Pointer); isPtr {
+			if ptrDestIdx == -1 {
+				ptrDestIdx = i
+			}
+			continue
+		}
+
+		// Check for interface types: io.Reader (byte-like input) or
+		// interface{}/any (pointer destination for unmarshal functions).
+		if iface, isIface := paramType.Underlying().(*types.Interface); isIface {
+			// io.Reader: interface with Read method → byte-like input.
+			hasRead := false
+			ms := types.NewMethodSet(iface)
+			for j := 0; j < ms.Len(); j++ {
+				if ms.At(j).Obj().Name() == "Read" {
+					hasRead = true
+					break
+				}
+			}
+			if hasRead {
+				if byteArgIdx == -1 {
+					byteArgIdx = i
+				}
+				continue
+			}
+			// Empty interface (any/interface{}) — commonly used as
+			// pointer destination in unmarshal functions (e.g.,
+			// json.Unmarshal takes any as second param, callers pass &data).
+			if iface.NumMethods() == 0 {
+				if ptrDestIdx == -1 {
+					ptrDestIdx = i
+				}
+			}
+		}
+	}
+
+	if byteArgIdx >= 0 && ptrDestIdx >= 0 {
+		return byteArgIdx, ptrDestIdx, true
+	}
+	return 0, 0, false
+}
+
+// containsObject checks whether an AST expression tree contains any
+// identifier that resolves to the given types.Object via pointer
+// identity. It walks the expression with ast.Inspect and short-circuits
+// on the first match.
+func containsObject(expr ast.Expr, target types.Object, info *types.Info) bool {
+	if expr == nil || target == nil || info == nil {
+		return false
+	}
+
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		obj := info.Uses[ident]
+		if obj == nil {
+			obj = info.Defs[ident]
+		}
+		if obj == target {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// extractPointerDest extracts the base variable from the pointer
+// argument of a transformation call. Given a call like
+// json.Unmarshal(body, &data), it unwraps the &data UnaryExpr to
+// find the underlying identifier and returns its types.Object.
+// Returns nil if the argument is not an addressable identifier.
+func extractPointerDest(call *ast.CallExpr, ptrIdx int, info *types.Info) types.Object {
+	if call == nil || info == nil || ptrIdx < 0 || ptrIdx >= len(call.Args) {
+		return nil
+	}
+
+	arg := call.Args[ptrIdx]
+
+	// Unwrap &data -> data.
+	if unary, ok := arg.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		if ident, ok := unary.X.(*ast.Ident); ok {
+			obj := info.Uses[ident]
+			if obj == nil {
+				obj = info.Defs[ident]
+			}
+			return obj
+		}
+	}
+
+	// Handle bare identifier (already a pointer variable).
+	if ident, ok := arg.(*ast.Ident); ok {
+		obj := info.Uses[ident]
+		if obj == nil {
+			obj = info.Defs[ident]
+		}
+		return obj
+	}
+
+	return nil
+}
+
+// isDataExtraction checks whether an expression is a data-extraction
+// pattern: field access (x.Field), index access (x[i]), type assertion
+// (x.(T)), or type conversion (T(x)). These are the patterns that
+// extract data from a container without side effects. Method calls
+// and function calls are excluded to prevent false positives from
+// patterns like s.Get("key").
+func isDataExtraction(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		// x.Field — field access (not a method call; method calls
+		// appear as CallExpr with SelectorExpr as Fun).
+		return true
+	case *ast.IndexExpr:
+		// x[i] — index access.
+		return true
+	case *ast.TypeAssertExpr:
+		// x.(T) — type assertion.
+		return true
+	case *ast.CallExpr:
+		// Type conversions look like function calls in the AST:
+		// []byte(x), string(x), int(x). They have exactly one
+		// argument and the function is a type expression.
+		// Exclude method calls (SelectorExpr as Fun) and
+		// multi-argument function calls.
+		if len(e.Args) == 1 {
+			switch e.Fun.(type) {
+			case *ast.Ident:
+				// Could be a type conversion like string(x) or
+				// int(x). SelectorExpr is excluded because it
+				// could be a method call like s.Get(x).
+				return true
+			case *ast.ArrayType:
+				// []byte(x) — slice type conversion.
+				return true
+			}
+		}
+		return false
+	case *ast.ParenExpr:
+		return isDataExtraction(e.X)
+	default:
+		return false
+	}
+}
+
+// matchContainerUnwrap traces data flow forward from the return value
+// variable through intermediate assignments and transformation calls
+// to the assertion expression. This handles the container-unwrap-assert
+// pattern where a test assigns a function's return value, accesses a
+// field, passes it through a transformation (like JSON unmarshal), and
+// asserts on the result.
+//
+// The algorithm:
+//  1. Collect all types.Object keys from objToEffectID that map to a
+//     ReturnValue effect as the initial tracked variable set.
+//  2. For up to maxContainerChainDepth iterations, walk the test
+//     package AST looking for assignment statements where the RHS
+//     references a tracked variable. For transformation calls, extract
+//     the pointer destination as the new tracked variable.
+//  3. Check if the assertion site's expression contains any tracked
+//     variable.
+//  4. If matched, return an AssertionMapping with confidence 55.
+func matchContainerUnwrap(
+	site AssertionSite,
+	objToEffectID map[types.Object]string,
+	effectMap map[string]*taxonomy.SideEffect,
+	testPkg *packages.Package,
+	returnEffectID string,
+) *taxonomy.AssertionMapping {
+	if site.Expr == nil || testPkg == nil || testPkg.TypesInfo == nil || returnEffectID == "" {
+		return nil
+	}
+
+	info := testPkg.TypesInfo
+
+	// Step 1: Collect initial tracked variables — those mapped to
+	// the ReturnValue effect.
+	tracked := make(map[types.Object]bool)
+	for obj, effectID := range objToEffectID {
+		if effectID == returnEffectID {
+			tracked[obj] = true
+		}
+	}
+	if len(tracked) == 0 {
+		return nil
+	}
+
+	// Step 2: Forward-trace through assignments for up to
+	// maxContainerChainDepth iterations. Each iteration may
+	// discover new tracked variables derived from existing ones.
+	for iter := 0; iter < maxContainerChainDepth; iter++ {
+		newTracked := make(map[types.Object]bool)
+
+		for _, file := range testPkg.Syntax {
+			ast.Inspect(file, func(n ast.Node) bool {
+				assign, ok := n.(*ast.AssignStmt)
+				if !ok {
+					return true
+				}
+
+				for rhsIdx, rhs := range assign.Rhs {
+					// Check if any tracked variable appears in this RHS.
+					rhsReferencesTracked := false
+					for obj := range tracked {
+						if containsObject(rhs, obj, info) {
+							rhsReferencesTracked = true
+							break
+						}
+					}
+					// Also check via resolveExprRoot for compound
+					// expressions like result.Content[0].Text.
+					if !rhsReferencesTracked {
+						root := resolveExprRoot(rhs, info)
+						if root != nil {
+							rootObj := info.Uses[root]
+							if rootObj == nil {
+								rootObj = info.Defs[root]
+							}
+							if rootObj != nil && tracked[rootObj] {
+								rhsReferencesTracked = true
+							}
+						}
+					}
+
+					if !rhsReferencesTracked {
+						continue
+					}
+
+					// Check if the RHS contains a transformation call.
+					// If so, extract the pointer destination as the
+					// new tracked variable (bridging across the transform).
+					transformHandled := false
+					ast.Inspect(rhs, func(cn ast.Node) bool {
+						if transformHandled {
+							return false
+						}
+						call, ok := cn.(*ast.CallExpr)
+						if !ok {
+							return true
+						}
+						_, ptrIdx, isTransform := isTransformationCall(call, info)
+						if !isTransform {
+							return true
+						}
+						// Verify a tracked variable flows into this call.
+						callHasTracked := false
+						for _, arg := range call.Args {
+							for obj := range tracked {
+								if containsObject(arg, obj, info) {
+									callHasTracked = true
+									break
+								}
+							}
+							if callHasTracked {
+								break
+							}
+						}
+						if !callHasTracked {
+							return true
+						}
+						dest := extractPointerDest(call, ptrIdx, info)
+						if dest != nil {
+							newTracked[dest] = true
+							transformHandled = true
+						}
+						return false
+					})
+
+					if transformHandled {
+						continue
+					}
+
+					// Non-transformation assignment: only track LHS
+					// when the RHS is a data-extraction expression
+					// (field access, index, type assertion, or type
+					// conversion). Method calls and function calls
+					// are excluded to prevent false positives from
+					// patterns like got := s.Get("key") where s is
+					// tracked from a NewStore() return value.
+					if !isDataExtraction(rhs) {
+						continue
+					}
+					if rhsIdx < len(assign.Lhs) {
+						lhsExpr := assign.Lhs[rhsIdx]
+						if ident, ok := lhsExpr.(*ast.Ident); ok && ident.Name != "_" {
+							obj := info.Defs[ident]
+							if obj == nil {
+								obj = info.Uses[ident]
+							}
+							if obj != nil {
+								newTracked[obj] = true
+							}
+						}
+					}
+				}
+				return true
+			})
+		}
+
+		if len(newTracked) == 0 {
+			break
+		}
+
+		// Merge new tracked variables into the tracked set.
+		for obj := range newTracked {
+			tracked[obj] = true
+		}
+	}
+
+	// Step 3: Check if the assertion expression contains any
+	// tracked variable.
+	effect := effectMap[returnEffectID]
+	if effect == nil {
+		return nil
+	}
+
+	// Direct identity check via ast.Inspect.
+	var matched bool
+	ast.Inspect(site.Expr, func(n ast.Node) bool {
+		if matched {
+			return false
+		}
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		obj := info.Uses[ident]
+		if obj == nil {
+			obj = info.Defs[ident]
+		}
+		if obj != nil && tracked[obj] {
+			matched = true
+			return false
+		}
+		return true
+	})
+
+	// Also check via resolveExprRoot for compound expressions
+	// like data["key"] where the root ident is "data".
+	if !matched {
+		root := resolveExprRoot(site.Expr, info)
+		if root != nil {
+			rootObj := info.Uses[root]
+			if rootObj == nil {
+				rootObj = info.Defs[root]
+			}
+			if rootObj != nil && tracked[rootObj] {
+				matched = true
+			}
+		}
+	}
+
+	if !matched {
+		return nil
+	}
+
+	return &taxonomy.AssertionMapping{
+		AssertionLocation: site.Location,
+		AssertionType:     mapKindToType(site.Kind),
+		SideEffectID:      returnEffectID,
+		Confidence:        containerUnwrapConfidence,
 	}
 }
 
