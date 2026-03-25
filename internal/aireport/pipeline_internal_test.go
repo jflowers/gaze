@@ -304,3 +304,27 @@ func TestRunProductionPipeline_SummaryFields(t *testing.T) {
 		t.Errorf("expected AvgContractCoverage 85, got %d", payload.Summary.AvgContractCoverage)
 	}
 }
+
+// TestResolveModulePackages_EmptyDir verifies that resolveModulePackages
+// with an empty moduleDir uses the current working directory and
+// successfully loads module packages (when run from a Go module root).
+func TestResolveModulePackages_EmptyDir(t *testing.T) {
+	pkgs := resolveModulePackages("")
+	// When run from the gaze module root, this should return packages.
+	// In CI, the working directory is the repo root.
+	if pkgs == nil {
+		t.Skip("not running from a Go module root — skipping")
+	}
+	if len(pkgs) == 0 {
+		t.Error("expected non-empty package list from module root")
+	}
+}
+
+// TestResolveModulePackages_InvalidDir verifies that resolveModulePackages
+// returns nil for a directory that is not a Go module.
+func TestResolveModulePackages_InvalidDir(t *testing.T) {
+	pkgs := resolveModulePackages(t.TempDir())
+	if pkgs != nil {
+		t.Errorf("expected nil for non-module directory, got %d packages", len(pkgs))
+	}
+}
