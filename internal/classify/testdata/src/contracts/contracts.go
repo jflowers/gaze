@@ -225,6 +225,15 @@ func ApplyTransform(data []byte, key string) (ExportedResult, error) {
 	return ExportedResult{Value: string(data) + key, OK: true}, nil
 }
 
+// ---- Constructor functions (contractual by New* naming) -------------------
+
+// NewClient returns a configured Client instance.
+// The return value is contractual because the function follows the
+// New* constructor naming convention.
+func NewClient(baseURL string) *FileStore {
+	return &FileStore{Path: baseURL}
+}
+
 // ---- Sentinel errors (contractual by naming + type) ----------------------
 
 // ErrNotFound is a sentinel error. Its existence as a named error

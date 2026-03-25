@@ -90,6 +90,11 @@ func TestNamingSignal_ContractualPrefixes(t *testing.T) {
 		{"FetchConfig returns", "FetchConfig", taxonomy.ReturnValue, 10},
 		{"DeleteItem error", "DeleteItem", taxonomy.ErrorReturn, 10},
 		{"HandleRequest any", "HandleRequest", taxonomy.ReceiverMutation, 10},
+		// New/NewXxx constructor prefix — implies ReturnValue and ErrorReturn.
+		{"New_ReturnValue", "NewClient", taxonomy.ReturnValue, 10},
+		{"New_ExactMatch", "New", taxonomy.ReturnValue, 10},
+		{"New_ErrorReturn", "NewStore", taxonomy.ErrorReturn, 10},
+		{"New_NoMatchMutation", "NewClient", taxonomy.ReceiverMutation, 0},
 	}
 
 	for _, tt := range tests {
@@ -837,6 +842,62 @@ func TestSC006_NonVerboseStripsDetails(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestSC007_NewPrefixContractual verifies that a function named
+// NewClient with a ReturnValue (P0) effect is classified as
+// "contractual" with confidence >= 80 after adding the "New" prefix
+// to the naming convention list (SC-001 from spec 035).
+func TestSC007_NewPrefixContractual(t *testing.T) {
+	allPkgs := loadTestPackages(t)
+	contractsPkg := findPackage(allPkgs, "contracts")
+	if contractsPkg == nil {
+		t.Fatal("contracts package not found")
+	}
+
+	opts := analysis.Options{IncludeUnexported: false}
+	results, err := analysis.Analyze(contractsPkg, opts)
+	if err != nil {
+		t.Fatalf("analysis failed: %v", err)
+	}
+
+	classifyOpts := classify.Options{
+		Config:         config.DefaultConfig(),
+		ModulePackages: allPkgs,
+		TargetPkg:      contractsPkg,
+		Verbose:        true,
+	}
+
+	classified := classify.Classify(results, classifyOpts)
+
+	// Find NewClient and verify its ReturnValue effect is contractual.
+	found := false
+	for _, result := range classified {
+		if result.Target.Function != "NewClient" {
+			continue
+		}
+		found = true
+		for _, se := range result.SideEffects {
+			if se.Type != taxonomy.ReturnValue {
+				continue
+			}
+			if se.Classification == nil {
+				t.Fatal("SC-007: NewClient ReturnValue has no classification")
+			}
+			if se.Classification.Label != taxonomy.Contractual {
+				t.Errorf("SC-007: NewClient ReturnValue label = %q, want %q",
+					se.Classification.Label, taxonomy.Contractual)
+			}
+			if se.Classification.Confidence < 80 {
+				t.Errorf("SC-007: NewClient ReturnValue confidence = %d, want >= 80",
+					se.Classification.Confidence)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("SC-007: NewClient function not found in classified results")
 	}
 }
 
