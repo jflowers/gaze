@@ -8,6 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/unbound-force/gaze/internal/taxonomy"
@@ -663,5 +664,41 @@ func TestQualitySchema_ValidatesWithoutSSADegradedField(t *testing.T) {
 	}
 	if err := compiled.Validate(inst); err != nil {
 		t.Errorf("legacy quality JSON (without ssa_degraded) does not conform to QualitySchema:\n%v", err)
+	}
+}
+
+// TestTierStyle_AllTiers verifies that TierStyle returns the correct
+// style for each tier string and the default for unknown tiers.
+// Lipgloss degrades to no-color in non-TTY mode, so we compare style
+// identity via the GetForeground() color value rather than rendered
+// output.
+func TestTierStyle_AllTiers(t *testing.T) {
+	s := DefaultStyles()
+
+	tests := []struct {
+		tier string
+		want lipgloss.Style
+		desc string
+	}{
+		{"P0", s.TierP0, "TierP0"},
+		{"P1", s.TierP1, "TierP1"},
+		{"P2", s.TierP2, "TierP2"},
+		{"P3", s.TierP3, "TierP3"},
+		{"P4", s.TierP4, "TierP4"},
+		{"unknown", s.Muted, "Muted (default)"},
+		{"", s.Muted, "Muted (empty)"},
+	}
+
+	for _, tt := range tests {
+		got := s.TierStyle(tt.tier)
+		// Compare via foreground color — this works even in
+		// no-color mode because the style struct retains the
+		// configured color value.
+		gotFg := got.GetForeground()
+		wantFg := tt.want.GetForeground()
+		if gotFg != wantFg {
+			t.Errorf("TierStyle(%q) foreground = %v, want %v (%s)",
+				tt.tier, gotFg, wantFg, tt.desc)
+		}
 	}
 }
