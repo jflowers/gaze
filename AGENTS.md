@@ -319,6 +319,7 @@ Formatters: gofmt, goimports.
 - Go 1.25+ + `golang.org/x/tools` (SSA builder), Cobra (CLI) (022-report-gazecrap-pipeline)
 - Go 1.25+ (module minimum per go.mod directive) + `go/ast`, `go/types`, `golang.org/x/tools/go/ssa`, `golang.org/x/tools/go/packages` (all existing; no new dependencies) (034-container-assertion-mapping)
 - N/A — no persistence changes (034-container-assertion-mapping)
+- Go 1.25+ (module minimum per go.mod directive) + `go/ast`, `go/types`, `golang.org/x/tools/go/packages` (all existing; no new dependencies) (035-fix-ambiguous-classification)
 
 - Go 1.24+ + `golang.org/x/tools` (go/packages, go/ssa), Cobra (CLI), Bubble Tea/Lipgloss (TUI)
 - Filesystem only (embedded assets via `embed.FS`)

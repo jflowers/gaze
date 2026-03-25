@@ -32,6 +32,7 @@ var contractualPrefixes = []struct {
 	{"Classify", []taxonomy.SideEffectType{taxonomy.ReturnValue, taxonomy.ErrorReturn}},
 	{"Parse", []taxonomy.SideEffectType{taxonomy.ReturnValue, taxonomy.ErrorReturn}},
 	{"Build", []taxonomy.SideEffectType{taxonomy.ReturnValue, taxonomy.ErrorReturn}},
+	{"New", []taxonomy.SideEffectType{taxonomy.ReturnValue, taxonomy.ErrorReturn}},
 }
 
 // incidentalPrefixes are function name prefixes that signal

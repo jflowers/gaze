@@ -34,6 +34,12 @@ var incidentalKeywords = []string{
 // maxGodocWeight is the maximum weight for godoc comment signals.
 const maxGodocWeight = 15
 
+// reducedGodocWeight is the signal weight when a contractual keyword is
+// found but the effect type does not match the keyword's impliesFor list.
+// This provides a positive signal for well-documented functions without
+// inflating scores as much as a direct type match.
+const reducedGodocWeight = 5
+
 // AnalyzeGodocSignal parses the function's doc comment for
 // behavioral declarations and returns a signal indicating whether
 // the side effect is likely contractual or incidental.
@@ -55,7 +61,10 @@ func AnalyzeGodocSignal(funcDecl *ast.FuncDecl, effectType taxonomy.SideEffectTy
 		}
 	}
 
-	// Check contractual keywords.
+	// Check contractual keywords. Track whether any contractual keyword
+	// was found, even if the effect type doesn't match the keyword's
+	// impliesFor list — a reduced signal is returned in that case.
+	foundContractualKeyword := false
 	for _, ck := range contractualKeywords {
 		if !strings.Contains(docText, ck.keyword) {
 			continue
@@ -68,6 +77,19 @@ func AnalyzeGodocSignal(funcDecl *ast.FuncDecl, effectType taxonomy.SideEffectTy
 					Reasoning: "godoc contains \"" + ck.keyword + "\" declaring " + string(effectType),
 				}
 			}
+		}
+		// Keyword found but effect type doesn't match impliesFor.
+		foundContractualKeyword = true
+	}
+
+	// A contractual keyword was found but the effect type didn't match
+	// any keyword's impliesFor list. Return a reduced positive signal
+	// to reflect the function's documented contractual intent.
+	if foundContractualKeyword {
+		return taxonomy.Signal{
+			Source:    "godoc_keyword_indirect",
+			Weight:    reducedGodocWeight,
+			Reasoning: "godoc contains contractual keyword but effect type " + string(effectType) + " is not directly implied",
 		}
 	}
 

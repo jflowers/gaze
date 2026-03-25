@@ -49,11 +49,11 @@ func TestAnalyzeGodocSignal_ContractualKeywords(t *testing.T) {
 			wantNonZero: true,
 		},
 		{
-			name:        "returns + ReceiverMutation (no match)",
+			name:        "returns + ReceiverMutation (indirect match)",
 			doc:         "GetVersion returns the current version.",
 			effectType:  taxonomy.ReceiverMutation,
-			wantWeight:  0,
-			wantNonZero: false,
+			wantWeight:  5,
+			wantNonZero: true,
 		},
 		// "sets" matches ReceiverMutation and PointerArgMutation.
 		{
@@ -71,11 +71,11 @@ func TestAnalyzeGodocSignal_ContractualKeywords(t *testing.T) {
 			wantNonZero: true,
 		},
 		{
-			name:        "sets + ReturnValue (no match)",
+			name:        "sets + ReturnValue (indirect match)",
 			doc:         "SetPrimary sets the primary data source.",
 			effectType:  taxonomy.ReturnValue,
-			wantWeight:  0,
-			wantNonZero: false,
+			wantWeight:  5,
+			wantNonZero: true,
 		},
 		// "writes" matches ReceiverMutation and PointerArgMutation.
 		{
@@ -125,11 +125,11 @@ func TestAnalyzeGodocSignal_ContractualKeywords(t *testing.T) {
 			wantNonZero: true,
 		},
 		{
-			name:        "deletes + PointerArgMutation (no match)",
+			name:        "deletes + PointerArgMutation (indirect match)",
 			doc:         "Remove deletes the entry from the store.",
 			effectType:  taxonomy.PointerArgMutation,
-			wantWeight:  0,
-			wantNonZero: false,
+			wantWeight:  5,
+			wantNonZero: true,
 		},
 		// "persists" matches ReceiverMutation and PointerArgMutation.
 		{
@@ -146,6 +146,30 @@ func TestAnalyzeGodocSignal_ContractualKeywords(t *testing.T) {
 			effectType:  taxonomy.ReceiverMutation,
 			wantWeight:  15,
 			wantNonZero: true,
+		},
+		// Reduced signal: keyword found but effect type doesn't match.
+		{
+			name:        "returns + PointerArgMutation (reduced signal)",
+			doc:         "Returns a new value configured with defaults.",
+			effectType:  taxonomy.PointerArgMutation,
+			wantWeight:  5,
+			wantNonZero: true,
+		},
+		// Full-weight signal unchanged: keyword matches effect type.
+		{
+			name:        "returns + ReturnValue (full weight unchanged)",
+			doc:         "Returns a value to the caller.",
+			effectType:  taxonomy.ReturnValue,
+			wantWeight:  15,
+			wantNonZero: true,
+		},
+		// No contractual keyword at all: zero signal, no spurious reduced signal.
+		{
+			name:        "no keyword + PointerArgMutation (zero signal)",
+			doc:         "Processes the data efficiently.",
+			effectType:  taxonomy.PointerArgMutation,
+			wantWeight:  0,
+			wantNonZero: false,
 		},
 		// "creates" is NOT in the contractual keywords list.
 		{
@@ -173,8 +197,8 @@ func TestAnalyzeGodocSignal_ContractualKeywords(t *testing.T) {
 			if sig.Weight != tt.wantWeight {
 				t.Errorf("weight = %d, want %d", sig.Weight, tt.wantWeight)
 			}
-			if tt.wantNonZero && sig.Source != "godoc" {
-				t.Errorf("source = %q, want %q", sig.Source, "godoc")
+			if tt.wantNonZero && sig.Source == "" {
+				t.Errorf("source is empty, want non-empty for non-zero signal")
 			}
 			if !tt.wantNonZero && sig.Source != "" {
 				t.Errorf("source = %q, want empty for zero signal", sig.Source)
