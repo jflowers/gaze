@@ -27,14 +27,17 @@ Add a `verify` action to the gaze-test-generator agent that reruns `gaze quality
 ## Capabilities
 
 ### New Capabilities
+
 - `--ai-mapper=claude|gemini|ollama|opencode`: Opt-in AI-assisted assertion mapping on `gaze quality` and `gaze crap` commands. When enabled, unmapped assertions are evaluated by an AI model using the existing `BuildAIMapperPrompt` prompt. Mapped at confidence 50.
 - `verify` action on gaze-test-generator: After generating tests, reruns quality analysis and reports contract coverage improvement.
 
 ### Modified Capabilities
+
 - `resolveExprRoot`: Now handles `*ast.TypeAssertExpr` by recursing into the expression being asserted. Fixes container unwrap tracing for patterns using type assertions on interface slices.
 - `gaze quality --json`: When `--ai-mapper` is set, the JSON output includes AI-mapped assertions at confidence 50 alongside mechanical mappings.
 
 ### Removed Capabilities
+
 (none)
 
 ## Impact

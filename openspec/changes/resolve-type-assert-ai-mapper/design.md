@@ -7,12 +7,14 @@ The `AIMapperFunc` infrastructure (`ai_mapper.go`) is fully implemented with `Bu
 ## Goals / Non-Goals
 
 ### Goals
+
 - Fix `resolveExprRoot` to handle `*ast.TypeAssertExpr` (complete the container unwrap chain)
 - Wire `AIMapperFunc` to `gaze quality` and `gaze crap` via an opt-in `--ai-mapper` flag
 - Reuse the existing `internal/aireport` adapter infrastructure for AI backend communication
 - Add a `verify` action to the gaze-test-generator agent for coverage feedback loops
 
 ### Non-Goals
+
 - Adding AI to classification (determinism is critical for CRAP ratchets)
 - Adding AI to effect detection (non-deterministic detection breaks accuracy guarantees)
 - Creating new AI adapters — reusing existing Claude/Gemini/Ollama/OpenCode adapters
@@ -37,6 +39,7 @@ Create a thin `AIMapperAdapter` function that bridges `AIMapperFunc` to the exis
 5. Returns the effect ID (or empty string for "NONE")
 
 The adapter selection uses the same pattern as `gaze report --ai=<backend>`:
+
 - `claude` → `ClaudeAdapter`
 - `gemini` → `GeminiAdapter`
 - `ollama` → `OllamaAdapter`
@@ -83,6 +86,7 @@ func WrapWithInterface(key, value string) *ResultWithInterface { ... }
 ```
 
 Test:
+
 ```go
 result := WrapWithInterface("key", "value")
 text := result.Content[0].(TextContent).Text
