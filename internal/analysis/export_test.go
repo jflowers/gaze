@@ -32,3 +32,8 @@ func BaseTypeName(expr ast.Expr) string {
 func SafeSSABuild(buildFn func()) any {
 	return safeSSABuild(buildFn)
 }
+
+// ExprRootIdent is exported for testing. See exprRootIdent.
+func ExprRootIdent(expr ast.Expr) *ast.Ident {
+	return exprRootIdent(expr)
+}

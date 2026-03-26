@@ -1126,12 +1126,12 @@ func TestAnalyze_WithPrebuiltProfile(t *testing.T) {
 	modRoot := moduleRoot(t)
 
 	// Build a minimal coverage profile that references crap.go.
-	// Formula (lines 156-160) and ClassifyQuadrant (lines 166-180)
+	// Formula (lines 152-156) and ClassifyQuadrant (lines 162-176)
 	// are marked as covered (Count=1); everything else is absent
 	// and defaults to 0% coverage.
 	profileContent := "mode: set\n" +
-		"github.com/unbound-force/gaze/internal/crap/crap.go:156.39,160.2 2 1\n" +
-		"github.com/unbound-force/gaze/internal/crap/crap.go:166.57,180.2 3 1\n"
+		"github.com/unbound-force/gaze/internal/crap/crap.go:152.55,156.2 2 1\n" +
+		"github.com/unbound-force/gaze/internal/crap/crap.go:162.86,176.2 3 1\n"
 
 	profileFile := filepath.Join(t.TempDir(), "cover.out")
 	if err := os.WriteFile(profileFile, []byte(profileContent), 0o644); err != nil {

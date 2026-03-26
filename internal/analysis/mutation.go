@@ -72,7 +72,7 @@ func AnalyzeMutations(
 	funcName string,
 ) []taxonomy.SideEffect {
 	if ssaPkg == nil {
-		return nil
+		return analyzeASTMutations(fset, fd, pkgPath, funcName)
 	}
 
 	// Find the SSA function matching our target.
@@ -400,4 +400,239 @@ func instrLocation(fset *token.FileSet, instr ssa.Instruction) string {
 		return "<unknown>"
 	}
 	return fset.Position(pos).String()
+}
+
+// exprRootIdent recursively unwraps composite AST expressions to
+// find the base *ast.Ident. It handles SelectorExpr (x.Field),
+// IndexExpr (x[i]), StarExpr (*x), and ParenExpr ((x)). Returns
+// nil if the expression chain does not resolve to an identifier.
+func exprRootIdent(expr ast.Expr) *ast.Ident {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e
+	case *ast.SelectorExpr:
+		return exprRootIdent(e.X)
+	case *ast.IndexExpr:
+		return exprRootIdent(e.X)
+	case *ast.StarExpr:
+		return exprRootIdent(e.X)
+	case *ast.ParenExpr:
+		return exprRootIdent(e.X)
+	default:
+		return nil
+	}
+}
+
+// analyzeASTMutations detects receiver and pointer argument mutations
+// using AST walking when SSA is unavailable. This is a lower-fidelity
+// fallback that covers the most common mutation patterns: direct
+// field assignments and method calls on receiver/parameter fields.
+// Effects detected by this fallback include " (AST fallback)" in
+// their Description to distinguish them from SSA-detected mutations.
+//
+// Design decision: AST fallback chosen over unconditional effect
+// emission per SOLID Single Responsibility — the fallback does one
+// thing (AST-based mutation detection) and does it conservatively.
+// See research.md R1 for alternatives considered.
+func analyzeASTMutations(
+	fset *token.FileSet,
+	fd *ast.FuncDecl,
+	pkgPath string,
+	funcName string,
+) []taxonomy.SideEffect {
+	var effects []taxonomy.SideEffect
+
+	// Detect receiver mutations for methods.
+	effects = append(effects, detectASTReceiverMutations(fset, fd, pkgPath, funcName)...)
+
+	// Detect pointer argument mutations.
+	effects = append(effects, detectASTPointerArgMutations(fset, fd, pkgPath, funcName)...)
+
+	return effects
+}
+
+// detectASTReceiverMutations checks if a method mutates its pointer
+// receiver via field assignments or method calls on receiver fields.
+// Returns nil for non-methods, value receivers, or unnamed receivers
+// (FR-004: value receiver mutations are not observable by the caller).
+func detectASTReceiverMutations(
+	fset *token.FileSet,
+	fd *ast.FuncDecl,
+	pkgPath string,
+	funcName string,
+) []taxonomy.SideEffect {
+	// Must be a method.
+	if fd.Recv == nil || len(fd.Recv.List) == 0 {
+		return nil
+	}
+
+	recv := fd.Recv.List[0]
+
+	// Must be a pointer receiver (FR-004).
+	if _, ok := recv.Type.(*ast.StarExpr); !ok {
+		return nil
+	}
+
+	// Must have a name to trace assignments.
+	if len(recv.Names) == 0 {
+		return nil
+	}
+	receiverName := recv.Names[0].Name
+
+	if fd.Body == nil {
+		return nil
+	}
+
+	// Walk the function body looking for mutations.
+	found := false
+	var foundPos token.Pos
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		if found {
+			return false // short-circuit after first find
+		}
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			// Check if any LHS expression has a root ident
+			// matching the receiver name (FR-003: only receiver
+			// field assignments, not local variables).
+			for _, lhs := range node.Lhs {
+				if ident := exprRootIdent(lhs); ident != nil && ident.Name == receiverName {
+					// Ensure this is a field access, not a bare
+					// receiver assignment (e.g., `recv = something`).
+					if _, ok := lhs.(*ast.Ident); !ok {
+						found = true
+						foundPos = node.Pos()
+						return false
+					}
+				}
+			}
+		case *ast.IncDecStmt:
+			// Handle c.count++ / c.count--
+			if ident := exprRootIdent(node.X); ident != nil && ident.Name == receiverName {
+				if _, ok := node.X.(*ast.Ident); !ok {
+					found = true
+					foundPos = node.Pos()
+					return false
+				}
+			}
+		case *ast.CallExpr:
+			// Check for method calls on receiver fields
+			// (FR-008: e.g., si.index.Delete(key)).
+			if sel, ok := node.Fun.(*ast.SelectorExpr); ok {
+				if ident := exprRootIdent(sel.X); ident != nil && ident.Name == receiverName {
+					// Must be a method call on a field, not a
+					// direct method call on the receiver itself
+					// (e.g., si.Method() vs si.field.Method()).
+					if innerSel, ok := sel.X.(*ast.SelectorExpr); ok {
+						if root := exprRootIdent(innerSel.X); root != nil && root.Name == receiverName {
+							found = true
+							foundPos = node.Pos()
+							return false
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	if !found {
+		return nil
+	}
+
+	// Deduplicate to one effect per receiver (consistent with SSA
+	// detector behavior for the fallback scope).
+	return []taxonomy.SideEffect{{
+		ID:          taxonomy.GenerateID(pkgPath, funcName, string(taxonomy.ReceiverMutation), receiverName),
+		Type:        taxonomy.ReceiverMutation,
+		Tier:        taxonomy.TierP0,
+		Description: fmt.Sprintf("mutates receiver %s (AST fallback)", receiverName),
+		Target:      funcName,
+		Location:    fset.Position(foundPos).String(),
+	}}
+}
+
+// detectASTPointerArgMutations checks if a function mutates any of
+// its pointer-typed parameters via field assignments. Returns nil
+// if no pointer parameters are mutated.
+func detectASTPointerArgMutations(
+	fset *token.FileSet,
+	fd *ast.FuncDecl,
+	pkgPath string,
+	funcName string,
+) []taxonomy.SideEffect {
+	if fd.Type.Params == nil || fd.Body == nil {
+		return nil
+	}
+
+	// Collect pointer parameter names.
+	var ptrParams []string
+	for _, field := range fd.Type.Params.List {
+		if _, ok := field.Type.(*ast.StarExpr); !ok {
+			continue
+		}
+		for _, name := range field.Names {
+			ptrParams = append(ptrParams, name.Name)
+		}
+	}
+
+	if len(ptrParams) == 0 {
+		return nil
+	}
+
+	// Build a set for fast lookup.
+	ptrParamSet := make(map[string]bool, len(ptrParams))
+	for _, name := range ptrParams {
+		ptrParamSet[name] = true
+	}
+
+	// Walk the function body looking for mutations to pointer params.
+	// Track position of first mutation per param for Location field.
+	mutatedParams := make(map[string]token.Pos)
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range node.Lhs {
+				// exprRootIdent unwraps SelectorExpr, IndexExpr,
+				// StarExpr, and ParenExpr to find the base ident.
+				// This handles param.field, param[i], *param, and
+				// (param).field patterns in a single check.
+				if ident := exprRootIdent(lhs); ident != nil && ptrParamSet[ident.Name] {
+					// Must be a field/index/deref access, not a
+					// bare reassignment of the parameter variable.
+					if _, ok := lhs.(*ast.Ident); !ok {
+						if _, exists := mutatedParams[ident.Name]; !exists {
+							mutatedParams[ident.Name] = node.Pos()
+						}
+					}
+				}
+			}
+		case *ast.IncDecStmt:
+			// Handle param.field++ / param.field--
+			if ident := exprRootIdent(node.X); ident != nil && ptrParamSet[ident.Name] {
+				if _, ok := node.X.(*ast.Ident); !ok {
+					if _, exists := mutatedParams[ident.Name]; !exists {
+						mutatedParams[ident.Name] = node.Pos()
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	var effects []taxonomy.SideEffect
+	for _, name := range ptrParams {
+		if pos, ok := mutatedParams[name]; ok {
+			effects = append(effects, taxonomy.SideEffect{
+				ID:          taxonomy.GenerateID(pkgPath, funcName, string(taxonomy.PointerArgMutation), name),
+				Type:        taxonomy.PointerArgMutation,
+				Tier:        taxonomy.TierP0,
+				Description: fmt.Sprintf("mutates pointer argument '%s' (AST fallback)", name),
+				Target:      name,
+				Location:    fset.Position(pos).String(),
+			})
+		}
+	}
+
+	return effects
 }

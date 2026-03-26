@@ -62,6 +62,7 @@ type ContractCoverageInfo struct {
 	// for normal coverage. Values:
 	//   "all_effects_ambiguous" — all effects classified ambiguous
 	//   "no_effects_detected"  — function has no side effects
+	//   "no_test_coverage"     — effects were detected but no test targets this function
 	//   "no_assertions_mapped" — effects exist but none mapped
 	Reason string
 

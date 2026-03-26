@@ -49,9 +49,31 @@ func BuildContractCoverageFunc(
 
 	// Build coverage map: "shortPkg:qualifiedName" -> coverage info.
 	coverageMap := make(map[string]ContractCoverageInfo)
+	// effectsSet tracks functions that have >0 detected side effects,
+	// regardless of whether they have test coverage. Used to
+	// distinguish "no_test_coverage" from "no_effects_detected" when
+	// a function is absent from the coverage map.
+	effectsSet := make(map[string]bool)
 	var degradedPkgs []string
 
 	for _, pkgPath := range pkgPaths {
+		// Build the effects set from analysis results before the
+		// quality pipeline runs. This captures functions with
+		// effects even when loadTestPackage fails (no tests).
+		analysisOpts := analysis.Options{
+			IncludeUnexported: isMainPkg(pkgPath),
+		}
+		analysisResults, analysisErr := analysis.LoadAndAnalyze(pkgPath, analysisOpts)
+		if analysisErr == nil {
+			for _, result := range analysisResults {
+				if len(result.SideEffects) > 0 {
+					shortPkg := extractShortPkgName(result.Target.Package)
+					key := shortPkg + ":" + result.Target.QualifiedName()
+					effectsSet[key] = true
+				}
+			}
+		}
+
 		reports, degradedPkg := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
 		if degradedPkg != "" {
 			degradedPkgs = append(degradedPkgs, degradedPkg)
@@ -100,7 +122,7 @@ func BuildContractCoverageFunc(
 		}
 	}
 
-	if len(coverageMap) == 0 {
+	if len(coverageMap) == 0 && len(effectsSet) == 0 {
 		return nil, degradedPkgs
 	}
 
@@ -109,7 +131,18 @@ func BuildContractCoverageFunc(
 	return func(pkg, function string) (ContractCoverageInfo, bool) {
 		key := pkg + ":" + function
 		info, ok := coverageMap[key]
-		return info, ok
+		if ok {
+			return info, true
+		}
+		// Function not in coverage map — distinguish between
+		// "has effects but no test" and "no effects detected".
+		// Return ok=false so the CRAP pipeline excludes these from
+		// GazeCRAP calculations (no test = no coverage data, not
+		// 0% coverage). The Reason is informational for display.
+		if effectsSet[key] {
+			return ContractCoverageInfo{Reason: "no_test_coverage"}, false
+		}
+		return ContractCoverageInfo{Reason: "no_effects_detected"}, false
 	}, degradedPkgs
 }
 
