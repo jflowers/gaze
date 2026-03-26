@@ -2284,3 +2284,47 @@ func TestRunQuality_IncludeUnexported_LibraryPackage(t *testing.T) {
 		t.Errorf("expected exported function 'Add' in quality output")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// buildAIMapperFunc tests
+// ---------------------------------------------------------------------------
+
+func TestBuildAIMapperFunc_InvalidBackend(t *testing.T) {
+	_, err := buildAIMapperFunc("invalid", "")
+	if err == nil {
+		t.Fatal("expected error for invalid backend name")
+	}
+	if !strings.Contains(err.Error(), "invalid --ai-mapper value") {
+		t.Errorf("unexpected error message: %s", err)
+	}
+}
+
+func TestBuildAIMapperFunc_ValidBackend(t *testing.T) {
+	fn, err := buildAIMapperFunc("claude", "")
+	if err != nil {
+		t.Fatalf("unexpected error for valid backend: %v", err)
+	}
+	if fn == nil {
+		t.Fatal("expected non-nil AIMapperFunc for valid backend")
+	}
+}
+
+func TestBuildAIMapperFunc_OllamaRequiresModel(t *testing.T) {
+	_, err := buildAIMapperFunc("ollama", "")
+	if err == nil {
+		t.Fatal("expected error for ollama without model")
+	}
+	if !strings.Contains(err.Error(), "--ai-mapper-model") {
+		t.Errorf("expected error to mention --ai-mapper-model, got: %s", err)
+	}
+}
+
+func TestBuildAIMapperFunc_OllamaWithModel(t *testing.T) {
+	fn, err := buildAIMapperFunc("ollama", "llama3")
+	if err != nil {
+		t.Fatalf("unexpected error for ollama with model: %v", err)
+	}
+	if fn == nil {
+		t.Fatal("expected non-nil AIMapperFunc for ollama with model")
+	}
+}

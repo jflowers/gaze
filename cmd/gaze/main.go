@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -393,6 +394,8 @@ type crapParams struct {
 	maxCrapload     int
 	maxGazeCrapload int
 	moduleDir       string
+	aiMapper        string
+	aiMapperModel   string
 	stdout          io.Writer
 	stderr          io.Writer
 
@@ -430,11 +433,27 @@ func runCrap(p crapParams) error {
 	// GazeCRAP scoring. This is best-effort: if quality analysis
 	// fails for any package, GazeCRAP falls back to unavailable.
 	if p.opts.ContractCoverageFunc == nil {
-		buildCoverage := p.coverageFunc
-		if buildCoverage == nil {
-			buildCoverage = crap.BuildContractCoverageFunc
+		var ccFunc func(string, string) (crap.ContractCoverageInfo, bool)
+		var degradedPkgs []string
+
+		if p.coverageFunc != nil {
+			// Test override — use the injected coverage function.
+			ccFunc, degradedPkgs = p.coverageFunc(p.patterns, p.moduleDir, p.stderr)
+		} else {
+			// Production path — build AI mapper if requested.
+			var aiMapperFn quality.AIMapperFunc
+			if p.aiMapper != "" {
+				var aiErr error
+				aiMapperFn, aiErr = buildAIMapperFunc(p.aiMapper, p.aiMapperModel)
+				if aiErr != nil {
+					return aiErr
+				}
+			}
+			ccFunc, degradedPkgs = crap.BuildContractCoverageFunc(
+				p.patterns, p.moduleDir, p.stderr, aiMapperFn,
+			)
 		}
-		ccFunc, degradedPkgs := buildCoverage(p.patterns, p.moduleDir, p.stderr)
+
 		if ccFunc != nil {
 			p.opts.ContractCoverageFunc = ccFunc
 		}
@@ -532,6 +551,8 @@ func newCrapCmd() *cobra.Command {
 		gazeCrapThreshold float64
 		maxCrapload       int
 		maxGazeCrapload   int
+		aiMapper          string
+		aiMapperModel     string
 	)
 
 	cmd := &cobra.Command{
@@ -562,6 +583,8 @@ automatically.`,
 				maxCrapload:     maxCrapload,
 				maxGazeCrapload: maxGazeCrapload,
 				moduleDir:       moduleDir,
+				aiMapper:        aiMapper,
+				aiMapperModel:   aiMapperModel,
 				stdout:          os.Stdout,
 				stderr:          os.Stderr,
 			})
@@ -580,6 +603,10 @@ automatically.`,
 		"fail if CRAPload exceeds this (0 = no limit)")
 	cmd.Flags().IntVar(&maxGazeCrapload, "max-gaze-crapload", 0,
 		"fail if GazeCRAPload exceeds this (0 = no limit)")
+	cmd.Flags().StringVar(&aiMapper, "ai-mapper", "",
+		"AI backend for assertion mapping fallback: claude, gemini, ollama, or opencode")
+	cmd.Flags().StringVar(&aiMapperModel, "ai-mapper-model", "",
+		"model name for AI mapper (required for ollama)")
 
 	return cmd
 }
@@ -679,6 +706,8 @@ type qualityParams struct {
 	incidentalThresh     int
 	minContractCoverage  int
 	maxOverSpecification int
+	aiMapper             string
+	aiMapperModel        string
 	stdout               io.Writer
 	stderr               io.Writer
 }
@@ -745,6 +774,16 @@ func runQuality(p qualityParams) error {
 		Version:    version,
 		Stderr:     p.stderr,
 	}
+
+	// Wire AI-assisted assertion mapping when --ai-mapper is set.
+	if p.aiMapper != "" {
+		aiMapperFn, aiErr := buildAIMapperFunc(p.aiMapper, p.aiMapperModel)
+		if aiErr != nil {
+			return aiErr
+		}
+		qualOpts.AIMapperFunc = aiMapperFn
+	}
+
 	reports, summary, err := quality.Assess(results, testPkg, qualOpts)
 	if err != nil {
 		return fmt.Errorf("quality assessment: %w", err)
@@ -926,6 +965,8 @@ func newQualityCmd() *cobra.Command {
 		incidentalThresh     int
 		minContractCoverage  int
 		maxOverSpecification int
+		aiMapper             string
+		aiMapperModel        string
 	)
 
 	cmd := &cobra.Command{
@@ -950,6 +991,8 @@ Requires the target package to have existing test files.`,
 				incidentalThresh:     incidentalThresh,
 				minContractCoverage:  minContractCoverage,
 				maxOverSpecification: maxOverSpecification,
+				aiMapper:             aiMapper,
+				aiMapperModel:        aiMapperModel,
 				stdout:               os.Stdout,
 				stderr:               os.Stderr,
 			})
@@ -974,6 +1017,10 @@ Requires the target package to have existing test files.`,
 		"fail if contract coverage is below this percentage (0 = no limit)")
 	cmd.Flags().IntVar(&maxOverSpecification, "max-over-specification", 0,
 		"fail if over-specification count exceeds this (0 = no limit)")
+	cmd.Flags().StringVar(&aiMapper, "ai-mapper", "",
+		"AI backend for assertion mapping fallback: claude, gemini, ollama, or opencode")
+	cmd.Flags().StringVar(&aiMapperModel, "ai-mapper-model", "",
+		"model name for AI mapper (required for ollama)")
 
 	return cmd
 }
@@ -1294,4 +1341,62 @@ Examples:
 	cmd.Flags().StringVar(&coverProfile, "coverprofile", "", "path to a pre-generated coverage profile (skips internal go test run)")
 
 	return cmd
+}
+
+// buildAIMapperFunc creates a quality.AIMapperFunc that delegates to
+// the specified AI adapter backend. The returned function calls
+// BuildAIMapperPrompt to construct the prompt, passes it to the
+// adapter's Format method, and parses the response with
+// ParseAIMapperResponse.
+//
+// Valid backend names are "claude", "gemini", "ollama", and "opencode".
+// The model parameter is required for ollama and optional for other
+// backends. Returns an error if the backend name is not in the
+// allowlist or if ollama is specified without a model.
+// Binary availability is validated at call time (not at construction
+// time), so the returned function may fail when invoked if the
+// backend binary is not on PATH.
+func buildAIMapperFunc(backend, model string) (quality.AIMapperFunc, error) {
+	if backend == "ollama" && model == "" {
+		return nil, fmt.Errorf("--ai-mapper=ollama requires --ai-mapper-model to be set")
+	}
+
+	cfg := aireport.AdapterConfig{
+		Name:    backend,
+		Model:   model,
+		Timeout: 2 * time.Minute,
+	}
+	adapter, err := aireport.NewAdapter(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --ai-mapper value: %w", err)
+	}
+
+	// System prompt provides static instructions; the per-assertion
+	// context goes as the payload. This matches the adapter convention
+	// where system prompt = agent persona and payload = data.
+	const systemPrompt = "You are an assertion-to-side-effect mapper. " +
+		"Given a test assertion and a list of side effects, determine " +
+		"which side effect (if any) the assertion verifies. " +
+		"Respond with ONLY the effect ID, or NONE if no match."
+
+	return func(ctx quality.AIMapperContext) (string, error) {
+		prompt := quality.BuildAIMapperPrompt(ctx)
+
+		result, formatErr := adapter.Format(
+			context.Background(),
+			systemPrompt,
+			strings.NewReader(prompt),
+		)
+		if formatErr != nil {
+			return "", fmt.Errorf("AI mapper %s: %w", backend, formatErr)
+		}
+
+		// Build valid IDs map from the context's side effects.
+		validIDs := make(map[string]bool, len(ctx.SideEffects))
+		for _, se := range ctx.SideEffects {
+			validIDs[se.ID] = true
+		}
+
+		return quality.ParseAIMapperResponse(result, validIDs), nil
+	}, nil
 }

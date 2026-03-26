@@ -672,6 +672,7 @@ func hasReceiverMutation(effects []taxonomy.SideEffect) bool {
 //   - *ast.Ident: return directly (base case)
 //   - *ast.SelectorExpr: recurse on .X (e.g., result.Field -> result)
 //   - *ast.IndexExpr: recurse on .X (e.g., results[0] -> results)
+//   - *ast.TypeAssertExpr: recurse on .X (e.g., x.(T) -> x)
 //   - *ast.CallExpr: if Fun is a *types.Builtin with name "len" or
 //     "cap" and exactly 1 argument, recurse on Args[0]
 //   - All other types: return nil
@@ -684,6 +685,8 @@ func resolveExprRoot(expr ast.Expr, info *types.Info) *ast.Ident {
 	case *ast.SelectorExpr:
 		return resolveExprRoot(e.X, info)
 	case *ast.IndexExpr:
+		return resolveExprRoot(e.X, info)
+	case *ast.TypeAssertExpr:
 		return resolveExprRoot(e.X, info)
 	case *ast.CallExpr:
 		// Only unwind value-inspecting built-in calls: len, cap.

@@ -143,6 +143,39 @@ func TestWrapMCPStyle_DeepChain(t *testing.T) {
 	}
 }
 
+// TestWrapWithInterface_TypeAssertChain exercises the type assertion
+// container unwrap pattern: result.Content[0].(TextContent).Text ->
+// []byte() -> json.Unmarshal -> data["key"]. This mirrors the real
+// MCP SDK pattern where Content is an interface slice and tests must
+// type-assert before accessing fields.
+func TestWrapWithInterface_TypeAssertChain(t *testing.T) {
+	result := WrapWithInterface("key", "value")
+
+	// Direct nil check — maps via existing direct pass.
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// Direct field length check — maps via existing indirect pass.
+	if len(result.Content) == 0 {
+		t.Fatal("expected non-empty Content")
+	}
+
+	// Type assertion + field access — exercises TypeAssertExpr in resolveExprRoot.
+	tc := result.Content[0].(TextContent)
+	text := tc.Text
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(text), &data); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	// Container unwrap assertion — maps via container unwrap pass.
+	if data["key"] != "value" {
+		t.Errorf("data[\"key\"] = %v, want \"value\"", data["key"])
+	}
+}
+
 // TestWrapMCPStyle_ErrorExclusion validates FR-009: the error assertion
 // from json.Unmarshal should NOT be mapped to ReturnValue, but the
 // data field assertions SHOULD be.

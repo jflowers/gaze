@@ -29,10 +29,15 @@ import (
 //
 // The returned degradedPkgs list contains package paths where SSA
 // construction failed during quality analysis.
+//
+// The optional aiMapperFn parameter enables AI-assisted assertion
+// mapping when non-nil. It is propagated to each per-package
+// quality.Assess call via analyzePackageCoverage.
 func BuildContractCoverageFunc(
 	patterns []string,
 	moduleDir string,
 	stderr io.Writer,
+	aiMapperFn ...quality.AIMapperFunc,
 ) (func(pkg, function string) (ContractCoverageInfo, bool), []string) {
 	pkgPaths, err := resolvePackagePaths(patterns, moduleDir)
 	if err != nil {
@@ -74,7 +79,7 @@ func BuildContractCoverageFunc(
 			}
 		}
 
-		reports, degradedPkg := analyzePackageCoverage(pkgPath, gazeConfig, stderr)
+		reports, degradedPkg := analyzePackageCoverage(pkgPath, gazeConfig, stderr, aiMapperFn...)
 		if degradedPkg != "" {
 			degradedPkgs = append(degradedPkgs, degradedPkg)
 		}
@@ -179,10 +184,14 @@ func resolvePackagePaths(patterns []string, moduleDir string) ([]string, error) 
 // package (analysis -> classify -> test-load -> quality assess) and
 // returns the quality reports. The second return value is the degraded
 // package path (empty if SSA succeeded). Returns nil if any step fails.
+//
+// The optional aiMapperFn parameter enables AI-assisted assertion
+// mapping when non-nil. It is passed through to quality.Options.AIMapperFunc.
 func analyzePackageCoverage(
 	pkgPath string,
 	gazeConfig *config.GazeConfig,
 	stderr io.Writer,
+	aiMapperFn ...quality.AIMapperFunc,
 ) ([]taxonomy.QualityReport, string) {
 	analysisOpts := analysis.Options{
 		IncludeUnexported: isMainPkg(pkgPath),
@@ -212,6 +221,9 @@ func analyzePackageCoverage(
 	// Step 4: Assess quality (Spec 003).
 	qualOpts := quality.Options{
 		Stderr: stderr,
+	}
+	if len(aiMapperFn) > 0 && aiMapperFn[0] != nil {
+		qualOpts.AIMapperFunc = aiMapperFn[0]
 	}
 	reports, summary, err := quality.Assess(classified, testPkg, qualOpts)
 	if err != nil {

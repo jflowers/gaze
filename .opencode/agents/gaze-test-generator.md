@@ -32,7 +32,7 @@ function, the caller provides:
 
 1. **Source code** — the function's implementation (read from file)
 2. **Fix strategy** — one of: `add_tests`, `add_assertions`,
-   `decompose_and_test`, `decompose`
+   `decompose_and_test`, `decompose`, `verify`
 3. **Contract coverage data** (from `gaze quality --format=json`):
    - `Gaps []SideEffect` — contractual effects not asserted
    - `GapHints []string` — Go code snippets for each gap (parallel)
@@ -143,6 +143,30 @@ for tests to help).
 
 Report: "Skipped FunctionName — fix strategy is `decompose`
 (complexity N). Reduce complexity first, then generate tests."
+
+### 6. `verify` — Measure Coverage Improvement
+
+**When**: After generating tests via any of the above actions, or
+when explicitly requested to verify coverage impact.
+
+Steps:
+1. Record the baseline contract coverage from the input quality data
+   (the `ContractCoverage.Percentage` field from the quality JSON).
+2. After test generation, run:
+   ```bash
+   gaze quality --format=json <package>
+   ```
+3. Parse the JSON output and extract the new contract coverage
+   percentage for the target function.
+4. Compare before/after and report the delta:
+   - Improvement: "Contract coverage: 25% → 67% (+42%)"
+   - No change: "Contract coverage unchanged at 25% — review
+     generated assertions for mapping to the function's side effects"
+   - No baseline: "Contract coverage: 67% (no prior baseline)"
+
+The verify action does NOT modify any files — it is a read-only
+measurement step. Use it after `add_tests`, `add_assertions`, or
+`add_docs` to confirm the generated code actually improved coverage.
 
 ---
 

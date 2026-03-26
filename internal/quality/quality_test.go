@@ -1072,10 +1072,21 @@ func TestSC003_MappingAccuracy(t *testing.T) {
 	// Accuracy: 85.1% (80/94) with containerunwrap fixture added.
 	// Container unwrap maps assertions through field access +
 	// transformation (json.Unmarshal) chains at confidence 55.
-	const baselineFloor = 85.0 // ratchet: current baseline is ~85.1%
+	// After TypeAssertExpr fix in resolveExprRoot:
+	// Accuracy: 84.7% (83/98) with interface-slice type assertion
+	// fixture added. The new fixture adds 4 assertion sites (3
+	// mapped, 1 unmapped json.Unmarshal error check). Floor
+	// adjusted to 84.0% to accommodate the inherently-unmappable
+	// error assertion from the type assertion fixture.
+	const baselineFloor = 84.0     // ratchet: current baseline is ~84.7%
+	const baselineMappedCount = 83 // ratchet: absolute count of mapped assertions
 	if accuracy < baselineFloor {
 		t.Errorf("SC-003: mapping accuracy %.1f%% regressed below baseline floor %.0f%% (%d/%d mapped)",
 			accuracy, baselineFloor, mappedAssertions, totalAssertions)
+	}
+	if mappedAssertions < baselineMappedCount {
+		t.Errorf("SC-003: mapped assertion count %d regressed below baseline %d",
+			mappedAssertions, baselineMappedCount)
 	}
 	if accuracy >= 90.0 {
 		t.Logf("SC-003 PASSED: mapping accuracy %.1f%% meets 90%% target", accuracy)
@@ -2079,6 +2090,21 @@ func TestResolveExprRoot(t *testing.T) {
 			},
 			info: nil,
 			want: "",
+		},
+		{
+			name: "type_assert_returns_inner",
+			expr: &ast.TypeAssertExpr{X: mkIdent("x"), Type: mkIdent("int")},
+			info: info,
+			want: "x",
+		},
+		{
+			name: "nested_type_assert_selector",
+			expr: mkSelector(&ast.TypeAssertExpr{
+				X:    mkIndex(mkSelector(mkIdent("result"), "Content")),
+				Type: mkIdent("TextContent"),
+			}, "Text"),
+			info: info,
+			want: "result",
 		},
 	}
 
