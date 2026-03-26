@@ -56,14 +56,12 @@ function, the caller provides:
 **When**: Function has `fix_strategy: add_tests` (0% line coverage).
 
 Generate a complete test function that:
-
 - Calls the target function with realistic inputs
 - Asserts on each `Gap` using the corresponding `GapHint` as a template
 - Handles `DiscardedReturns` by capturing and asserting the return value
 - Uses table-driven tests if the function has multiple meaningful input variations
 
 **Template**:
-
 ```go
 func TestFunctionName_Description(t *testing.T) {
     // Setup
@@ -92,7 +90,6 @@ assertions near the existing call site for the target function.
 
 **b) Restructure for mapper visibility**: For each `UnmappedAssertion`
 with reason `helper_param` or `inline_call`:
-
 - Read the helper function to understand the wrapping
 - Restructure so the assertion is directly on the target function's
   return value, not through the helper
@@ -153,15 +150,12 @@ Report: "Skipped FunctionName — fix strategy is `decompose`
 when explicitly requested to verify coverage impact.
 
 Steps:
-
 1. Record the baseline contract coverage from the input quality data
    (the `ContractCoverage.Percentage` field from the quality JSON).
 2. After test generation, run:
-
    ```bash
    gaze quality --format=json <package>
    ```
-
 3. Parse the JSON output and extract the new contract coverage
    percentage for the target function.
 4. Compare before/after and report the delta:
@@ -198,7 +192,6 @@ files to detect and match conventions:
    naming (`testXxx`, `newTestXxx`, `setupXxx`).
 
 If no existing tests exist, use these defaults:
-
 - `package foo_test` for exported, `package foo` for unexported
 - `TestXxx_Description` naming
 - `t.Fatalf` for fatal errors, `t.Errorf` for non-fatal
@@ -212,26 +205,22 @@ Generated tests MUST satisfy these criteria (derived from the
 reviewer-testing agent rubric):
 
 ### Assertion Depth
-
 - Assert specific expected values, not just "no error"
 - Check return values, struct fields, slice contents — not just
   length or nil/non-nil
 - Validate error messages when error behavior is part of the contract
 
 ### Test Isolation
-
 - No shared mutable state between test cases
 - No external network or filesystem access outside the repo
 - No timing-dependent assertions
 
 ### Contract Focus
-
 - Assert on contractual side effects (returns, mutations, I/O)
 - Do NOT assert on incidental effects (internal state, log output)
 - Each assertion should map to a specific `Gap` from the quality data
 
 ### Convention Compliance
-
 - Use only `testing` package — no testify, gomega, or external libs
 - Use `t.Errorf` / `t.Fatalf` directly
 - Compatible with `-race -count=1`
@@ -251,7 +240,6 @@ For each target function, output:
 4. **Verification**: Whether the code compiles and tests pass
 
 After generating all code, run:
-
 ```bash
 go build ./path/to/package/...
 go test -race -count=1 -run "TestGeneratedFunctionName" ./path/to/package/...
