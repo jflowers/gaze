@@ -1,8 +1,10 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
 ---
-<!-- scaffolded by unbound vdev -->
-<!-- scaffolded by unbound vdev -->
+<!-- scaffolded by uf vdev -->
+<!-- scaffolded by uf vdev -->
+<!-- scaffolded by uf vv0.6.1 -->
+<!-- scaffolded by uf vdev -->
 
 ## User Input
 
@@ -119,20 +121,13 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Integration work**: Database connections, middleware, logging, external services
    - **Polish and validation**: Unit tests, performance optimization, documentation
 
-8. Progress tracking, error handling, and test generation:
+8. Progress tracking and error handling:
    - Report progress after each completed task
    - Halt execution if any non-parallel task fails
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
    - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
-   - **Test generation step** (after each task's code changes, before marking [X]):
-     1. Check if `gaze` is available (`which gaze` or `go run ./cmd/gaze` in the gaze repo). If not available, silently skip (gaze is optional).
-     2. Identify changed `.go` files: `git diff --name-only` (exclude `*_test.go`)
-     3. For each changed `.go` file, run `gaze quality --format=json ./path/to/package/...`
-     4. If `ContractCoverage.Gaps` exist for new/modified functions, invoke the `gaze-test-generator` agent (via Task tool with `subagent_type: general`) with function source, gaps, hints, and fix strategy
-     5. Verify generated tests compile and pass
-     6. **Mode**: Read `.gaze.yaml` `test_generation.mode` (default: `mandatory`). In mandatory mode, block task completion until tests pass. In advisory mode, show results but proceed.
 
 9. Completion validation:
    - Verify all required tasks are completed
@@ -140,5 +135,21 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
+
+10. **Commit and push gate**:
+   - **CRITICAL**: When all tasks are complete, all changes MUST
+     be committed and pushed on the current feature branch
+     BEFORE suggesting any next steps (PR creation, merging,
+     or branch switching).
+   - Run `git status --short` to check for uncommitted changes.
+   - If uncommitted changes exist, prompt the user to commit
+     and push before proceeding.
+   - Do NOT suggest switching to `main` or any other branch
+     until the working tree is clean and changes are pushed.
+   - The recommended completion flow is:
+     1. Commit all changes on the feature branch
+     2. Push to remote
+     3. Create PR (if desired)
+     4. Then merge and switch branches
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
