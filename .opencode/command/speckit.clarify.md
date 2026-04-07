@@ -5,8 +5,10 @@ handoffs:
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
 ---
-<!-- scaffolded by unbound vdev -->
-<!-- scaffolded by unbound vdev -->
+<!-- scaffolded by uf vdev -->
+<!-- scaffolded by uf vdev -->
+<!-- scaffolded by uf vv0.6.1 -->
+<!-- scaffolded by uf vdev -->
 
 ## User Input
 
