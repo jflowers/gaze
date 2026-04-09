@@ -305,6 +305,8 @@ golangci-lint v2 is configured in `.golangci.yml` with these linters enabled:
 Formatters: gofmt, goimports.
 
 ## Active Technologies
+- N/A — Markdown files only (no Go code changes) + None — plain Markdown, no static site generator, no build step (037-project-documentation)
+- Filesystem only — `docs/` directory at repository root (037-project-documentation)
 
 - Go 1.24+ (no Go code changes; prompt is markdown) + OpenCode agent runtime (renders markdown prompt), embed.FS (scaffolds prompt copy) (011-output-voice-style)
 - Filesystem only (markdown files) (011-output-voice-style)
