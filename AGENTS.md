@@ -21,6 +21,59 @@ Gaze is a static analysis tool for Go that detects observable side effects in fu
 - **Intent Drift Detection**: Evaluation must detect when the implementation drifts away from the original human-written "Statement of Intent."
 - **Automated Governance**: Primary feedback is provided via automated constraints, reserving human energy for high-level security and logic.
 
+### Gatekeeping Value Protection
+
+Agents MUST NOT modify values that serve as quality or
+governance gates to make an implementation pass. The
+following categories are protected:
+
+1. **Coverage thresholds and CRAP scores** — minimum
+   coverage percentages, CRAP score limits, coverage
+   ratchets
+2. **Severity definitions and auto-fix policies** —
+   CRITICAL/HIGH/MEDIUM/LOW boundaries, auto-fix
+   eligibility rules
+3. **Convention pack rule classifications** —
+   MUST/SHOULD/MAY designations on convention pack rules
+   (downgrading MUST to SHOULD is prohibited)
+4. **CI flags and linter configuration** — `-race`,
+   `-count=1`, `govulncheck`, `golangci-lint` rules,
+   pinned action SHAs
+5. **Agent temperature and tool-access settings** —
+   frontmatter `temperature`, `tools.write`, `tools.edit`,
+   `tools.bash` restrictions
+6. **Constitution MUST rules** — any MUST rule in
+   `.specify/memory/constitution.md` or hero constitutions
+7. **Review iteration limits and worker concurrency** —
+   max review iterations, max concurrent Swarm workers,
+   retry limits
+8. **Workflow gate markers** — `<!-- spec-review: passed
+   -->`, task completion checkboxes used as gates, phase
+   checkpoint requirements
+
+**What to do instead**: When an implementation cannot
+meet a gate, the agent MUST stop, report which gate is
+blocking and why, and let the human decide whether to
+adjust the gate or rework the implementation. Modifying
+a gate without explicit human authorization is a
+constitution violation (CRITICAL severity).
+
+### Workflow Phase Boundaries
+
+Agents MUST NOT cross workflow phase boundaries:
+
+- **Specify/Clarify/Plan/Tasks/Analyze/Checklist** phases:
+  spec artifacts ONLY (`specs/NNN-*/` directory). No
+  source code, test, agent, command, or config changes.
+- **Implement** phase: source code changes allowed,
+  guided by spec artifacts.
+- **Review** phase: findings and minor fixes only. No new
+  features.
+
+A phase boundary violation is treated as a process error.
+The agent MUST stop and report the violation rather than
+proceeding with out-of-phase changes.
+
 ## Technical Guardrails
 
 - **WORM Persistence**: Use Write-Once-Read-Many patterns where data integrity is paramount.
@@ -188,6 +241,36 @@ All spec artifacts (`spec.md`, `plan.md`, `tasks.md`, and any other files under 
 
 A mandatory gate at the planning phase. The constitution's four core principles — Accuracy, Minimal Assumptions, Actionable Output, and Testability — must each receive a PASS before proceeding. Constitution violations are automatically CRITICAL severity and non-negotiable.
 
+### Website Documentation Gate
+
+When a change affects user-facing behavior, hero
+capabilities, CLI commands, or workflows, a GitHub issue
+**MUST** be created in the `unbound-force/website`
+repository to track required documentation or website
+updates. The issue must be created before the
+implementing PR is merged.
+
+```bash
+gh issue create --repo unbound-force/website \
+  --title "docs: <brief description of what changed>" \
+  --body "<what changed, why it matters, which pages
+          need updating>"
+```
+
+**Exempt changes** (no website issue needed):
+- Internal refactoring with no user-facing behavior
+  change
+- Test-only changes
+- CI/CD pipeline changes
+- Spec artifacts (specs are internal planning documents)
+
+**Examples requiring a website issue**:
+- New CLI command or flag added
+- Hero capabilities changed (new agent, removed feature)
+- Installation steps changed (`uf setup` flow)
+- New convention pack added
+- Breaking changes to any user-facing workflow
+
 ## Build & Test Commands
 
 ```bash
@@ -259,6 +342,65 @@ All business logic lives under `internal/` and cannot be imported externally.
 - **No global state**: The logger is the only package-level variable. Prefer functional style.
 - **Constants**: Use string-typed constants for enumerations (`SideEffectType`, `Tier`, `Quadrant`).
 - **JSON tags**: Required on all struct fields intended for serialization.
+
+## Knowledge Retrieval
+
+Agents SHOULD prefer Dewey MCP tools over grep/glob/read
+for cross-repo context, design decisions, and
+architectural patterns. Dewey provides semantic search
+across all indexed Markdown files, specs, and web
+documentation — returning ranked results with provenance
+metadata that grep cannot match.
+
+### Tool Selection Matrix
+
+| Query Intent | Dewey Tool | When to Use |
+|-------------|-----------|-------------|
+| Conceptual understanding | `dewey_semantic_search` | "How does X work?" |
+| Keyword lookup | `dewey_search` | Known terms, FR numbers |
+| Read specific page | `dewey_get_page` | Known document path |
+| Relationship discovery | `dewey_find_connections` | "How are X and Y related?" |
+| Similar documents | `dewey_similar` | "Find specs like this one" |
+| Tag-based discovery | `dewey_find_by_tag` | "All pages tagged #decision" |
+| Property queries | `dewey_query_properties` | "All specs with status: draft" |
+| Filtered semantic | `dewey_semantic_search_filtered` | Semantic search within source type |
+| Graph navigation | `dewey_traverse` | Dependency chain walking |
+
+### When to Fall Back to grep/glob/read
+
+Use direct file operations instead of Dewey when:
+- **Dewey is unavailable** — MCP tools return errors or
+  are not configured
+- **Exact string matching is needed** — searching for a
+  specific error message, variable name, or code pattern
+- **Specific file path is known** — reading a file you
+  already know the path to (use Read directly)
+- **Binary/non-Markdown content** — Dewey indexes
+  Markdown; use grep for Go source, JSON, YAML, etc.
+
+### Graceful Degradation (3-Tier Pattern)
+
+**Tier 3 (Full Dewey)** — semantic + structured search:
+- `dewey_semantic_search` — natural language queries
+- `dewey_search` — keyword queries
+- `dewey_get_page`, `dewey_find_connections`,
+  `dewey_traverse` — structured navigation
+- `dewey_find_by_tag`, `dewey_query_properties` —
+  metadata queries
+
+**Tier 2 (Graph-only, no embedding model)** — structured
+search only:
+- `dewey_search` — keyword queries (no embeddings needed)
+- `dewey_get_page`, `dewey_traverse`,
+  `dewey_find_connections` — graph navigation
+- `dewey_find_by_tag`, `dewey_query_properties` —
+  metadata queries
+- Semantic search unavailable — use exact keyword matches
+
+**Tier 1 (No Dewey)** — direct file access:
+- Use Read tool for direct file access
+- Use Grep for keyword search across the codebase
+- Use Glob for file pattern matching
 
 ## Testing Conventions
 
