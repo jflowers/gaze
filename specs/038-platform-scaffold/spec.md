@@ -1,8 +1,8 @@
 # Feature Specification: Multi-Platform Scaffold Deployment
 
-**Feature Branch**: `038-platform-scaffold`
-**Created**: 2026-04-30
-**Status**: Draft
+**Feature Branch**: `038-platform-scaffold`  
+**Created**: 2026-04-30  
+**Status**: Draft  
 **Input**: User description: "Create an analogous spec from unbound-force/unbound-force PR #144 for gaze to support platforms other than OpenCode"
 
 ## User Scenarios & Testing *(mandatory)*
@@ -59,6 +59,12 @@ schemas, and file extensions.
    `.cursor/commands/` as plain Markdown with no content
    transformation.
 
+5. **Given** an empty directory with a `go.mod` file,
+   **When** a user runs `gaze init --platform cursor`,
+   **Then** the scaffold summary output includes the
+   platform name "cursor" confirming which platform was
+   deployed to.
+
 ---
 
 ### User Story 2 - Dual-Platform Project Scaffolding (Priority: P2)
@@ -104,6 +110,13 @@ platform-appropriate content.
    directories are updated if content has changed, and
    user-owned files in both directories are preserved.
 
+4. **Given** an empty directory with a `go.mod` file,
+   **When** a user runs `gaze init --platform opencode
+   --platform cursor`, **Then** the scaffold summary
+   output shows per-platform results with created,
+   skipped, updated, and overwritten counts for each
+   platform.
+
 ---
 
 ### User Story 3 - Backward-Compatible Default Behavior (Priority: P1)
@@ -120,7 +133,7 @@ guaranteed alongside the new platform support.
 
 **Independent Test**: Can be tested by running
 `gaze init` (no `--platform` flag) and verifying the
-output is byte-identical to the current behavior.
+output is functionally identical to the current behavior.
 
 **Acceptance Scenarios**:
 
@@ -132,8 +145,11 @@ output is byte-identical to the current behavior.
 
 2. **Given** an empty directory with a `go.mod` file,
    **When** a user runs `gaze init --platform opencode`,
-   **Then** the result is identical to running
-   `gaze init` with no `--platform` flag.
+   **Then** the files deployed to `.opencode/` are
+   functionally identical to those produced by
+   `gaze init` with no `--platform` flag, with the same
+   Created/Skipped/Updated/Overwritten results, and no
+   `.cursor/` directory is created.
 
 ---
 
@@ -194,6 +210,10 @@ agent file, then running `gaze init --platform cursor
   run in a directory with no `go.mod`? Same warning
   as today ("no go.mod found") but initialization
   proceeds.
+- What happens when `--platform cursor --force` is
+  run but no `.cursor/` directory exists yet? Same as
+  a fresh init -- all files are created. `--force` is
+  a no-op for non-existent files.
 
 ## Requirements *(mandatory)*
 
@@ -221,6 +241,11 @@ agent file, then running `gaze init --platform cursor
   `description`, and dropping OpenCode-specific fields
   (`mode`, `temperature`, `tools`, `maxSteps`,
   `disabled`).
+  [NEEDS CLARIFICATION: The `model` field present in
+  some agents and the `agent` field present in some
+  commands are not addressed -- should these be dropped
+  for Cursor, preserved, or transformed? See HIGH
+  finding #1 in review council advisories.]
 - **FR-008**: System MUST deploy command files to
   `.cursor/commands/` as plain Markdown with no content
   transformation beyond the version marker insertion.
@@ -233,8 +258,8 @@ agent file, then running `gaze init --platform cursor
   overwritten unless `--force` is specified.
 - **FR-011**: System MUST classify Cursor files using
   the same ownership rules as OpenCode files: the
-  existing `isToolOwned()` logic determines ownership
-  regardless of target platform.
+  existing ownership classification logic determines
+  ownership regardless of target platform.
 - **FR-012**: System MUST insert the standard version
   marker (`<!-- scaffolded by gaze vX.Y.Z -->`) into
   all files regardless of target platform.
@@ -271,9 +296,9 @@ agent file, then running `gaze init --platform cursor
   relative path to a platform-specific output directory
   and how to transform content (e.g., frontmatter
   adaptation).
-- **Asset**: An embedded file from
-  `internal/scaffold/assets/` that is deployed to one
-  or more platform target directories.
+- **Asset**: An embedded file from the scaffold's
+  embedded asset store that is deployed to one or more
+  platform target directories.
 - **File Ownership**: A classification (tool-owned or
   user-owned) that determines whether a file is auto-
   updated on re-init or preserved for user
@@ -301,14 +326,38 @@ agent file, then running `gaze init --platform cursor
 - `--divisor` mode (gaze does not have a DivisorOnly
   mode)
 
+## Documentation Impact
+
+The following documentation MUST be updated when this
+feature is implemented:
+
+- **README.md** — Update `gaze init` command description
+  and OpenCode Integration section to mention Cursor
+  and multi-platform support.
+- **AGENTS.md** — Update Architecture scaffold
+  description, Active Technologies, and Recent Changes
+  sections.
+- **GoDoc comments** — New exported types (platform
+  abstraction) and modified function signatures.
+
+A website documentation issue MUST be filed in
+`unbound-force/website` per the Website Documentation
+Gate before the implementing PR is merged, covering:
+- Gaze project page update for Cursor support
+- `gaze init` workflow description update for
+  `--platform` flag
+
 ## Dependencies
 
 - **Spec 005** (gaze-opencode-integration): Defines
-  `gaze init` subcommand and the `internal/scaffold`
-  package that this spec extends.
+  the original `gaze init` subcommand and the scaffold
+  package architecture. Note: the scaffold has evolved
+  through specs 012 (consolidation), 016 (context
+  reduction), and 017 (testing persona) since spec 005.
 - **Spec 016** (agent-context-reduction): Defines the
   tool-owned `references/` directory pattern and the
-  `isToolOwned()` function that this spec preserves.
+  file ownership classification logic that this spec
+  preserves.
 
 ### Research References
 
@@ -326,9 +375,6 @@ agent file, then running `gaze init --platform cursor
   Markdown command files.
 - The `--platform` flag follows established CLI
   conventions for repeatable string slices.
-- Future platforms can be added by implementing the
-  platform abstraction without modifying the scaffold
-  engine's core asset-walking logic.
 - The `references/` directory pattern (externalized
   context loaded on demand by agents) works the same
   way in Cursor as in OpenCode (agents read files via
