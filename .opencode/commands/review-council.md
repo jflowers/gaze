@@ -127,28 +127,34 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
    MUST execute in order. Both phases apply only to
    Code Review Mode -- Spec Review Mode skips them.
 
-   #### Phase 1a -- CI Checks (mandatory, hard gate)
+   #### Phase 1a -- Pre-flight Checks (mandatory, hard gate)
 
-   a. Read all files in `.github/workflows/` to
-      identify the exact commands CI runs. Do not
-      rely on a memorized list -- the workflow files
-      are the source of truth.
+   Load the `pre-flight` skill and run in `hard-gate`
+   mode:
 
-   b. Execute each CI command locally in the order
-      they appear in the workflow (typically:
-      `go build ./...`, `go vet ./...`,
-      `go test -race -count=1 ./...`, plus any
-      coverage ratchet steps).
+   a. Invoke the `skill` tool with name `pre-flight` to
+      load the shared pre-flight check instructions.
 
-   c. **If any command fails**: **STOP immediately.**
-      Report each failure as a CRITICAL finding with
-      the full error output. Do NOT proceed to Phase
-      1b or to step 2 (Divisor agent delegation).
-      The rationale: reviewing code that doesn't
-      compile or pass tests is wasted work.
+   b. Execute the pre-flight skill's phases in order:
+      1. CI Workflow Parsing — discover commands from
+         `.github/workflows/`
+      2. Local Tool Detection — check for config files
+         and verify binary availability
+      3. CI Coverage Matrix — display the matrix (in
+         hard-gate mode, all tools are marked "Run
+         locally = Yes")
+      4. Execution — run all detected and available
+         tools in hard-gate mode
 
-   d. **If all commands pass**: report success and
-      proceed to Phase 1b.
+   c. **If the pre-flight verdict is FAIL**: **STOP
+      immediately.** Report each failure as a CRITICAL
+      finding with the full error output. Do NOT
+      proceed to Phase 1b or to step 2 (Divisor agent
+      delegation). The rationale: reviewing code that
+      doesn't compile or pass tests is wasted work.
+
+   d. **If the pre-flight verdict is PASS**: report
+      success and proceed to Phase 1b.
 
    #### Phase 1b -- Gaze Quality Analysis (conditional)
 
@@ -167,9 +173,11 @@ Review the current codebase for compliance with the Behavioral Constraints in `A
 
    c. **If `gaze` is NOT available**: skip with an
       informational note:
-      > "Gaze not installed -- skipping quality
-      > analysis. Install with
-      > `brew install unbound-force/tap/gaze`."
+       > "Gaze not installed -- skipping quality
+       > analysis. Install with
+       > `brew install unbound-force/tap/gaze`
+       > (or on Fedora/RHEL:
+       > `go install github.com/unbound-force/gaze/cmd/gaze@latest`)."
 
       Proceed to step 2 without Gaze data.
 

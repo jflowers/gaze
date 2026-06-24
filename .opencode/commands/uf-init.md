@@ -101,27 +101,19 @@ completes to review all changes before committing.
 ### Step 2: Apply Branch Enforcement
 
 For each target file listed below, apply the branch enforcement
-customization. Each enforcement category has **independent**
-idempotency checks -- presence of one variant MUST NOT cause
-other variants to be skipped. For each file:
+customization. For each file:
 
 1. **Read** the file content
-2. **Check** each applicable variant independently:
-   - **Basic branch check**: Look for `opsx/<name>`,
-     `opsx/<change-name>`, or `git checkout -b opsx/`
-   - **Dirty tree check** (propose only): Look for
-     `git status --short` in a pre-branch-creation
-     context
-   - **Commit-before-archive** (archive-change only):
-     Look for `git add` and `git commit` appearing
-     before the archive move step
-   - **Branch-switch confirmation** (explore only): Look
-     for `uncommitted changes` or `switch branches` in
-     the guardrails section
-3. **For each variant**: If present, report
-   `⊘ <filename>: [variant] already present (skipped)`.
-   If not present, insert it and report
-   `✅ <filename>: [variant] inserted`
+2. **Check** if branch enforcement is already present. Look for
+   the concept semantically -- does the file already describe
+   creating, validating, or cleaning up an `opsx/<name>` branch?
+   Check for phrases like `git checkout -b opsx/`, `opsx/<name>`,
+   `opsx/<change-name>`, or equivalent branch management
+   instructions.
+3. **If already present**: Report `⊘ <filename>: already present (skipped)`
+4. **If not present**: Read the file structure, find the correct
+   insertion point, and insert the customization. Report
+   `✅ <filename>: inserted`
 
 #### Branch Enforcement: Propose (Skills + Commands)
 
@@ -129,13 +121,8 @@ other variants to be skipped. For each file:
 - `.opencode/skills/openspec-propose/SKILL.md`
 - `.opencode/commands/opsx-propose.md`
 
-**Two independent checks**:
-
-**A. Basic branch check** -- idempotency marker:
-`opsx/<name>` or `git checkout -b opsx/`
-
-If not present, insert after the step that creates the
-change directory (`openspec new change "<name>"`):
+**What to insert**: After the step that creates the change
+directory (`openspec new change "<name>"`), insert a new step:
 
 > **Create and checkout a branch**
 >
@@ -151,32 +138,6 @@ change directory (`openspec new change "<name>"`):
 **Where**: After the change directory creation step, before the
 artifact creation steps. Insert as a new numbered step; do NOT
 renumber existing steps (to avoid accidental content loss).
-
-**B. Dirty tree check** -- idempotency marker:
-`git status --short` in a pre-branch-creation context
-
-If not present, insert before the branch creation guard
-(part A above), or immediately before the existing branch
-check if part A is already present:
-
-> **Check for uncommitted changes**
->
-> Before creating or switching branches, run
-> `git status --short`. If there are uncommitted changes
-> (staged, unstaged, or untracked files that appear
-> related to work):
-> - **STOP** and ask the user for confirmation before
->   switching branches. Show what uncommitted changes
->   exist and warn that switching branches with a dirty
->   working tree may cause changes to be applied to the
->   wrong branch.
-> - If the user confirms, proceed. If not, abort.
-> - Exception: if the user explicitly requested a new
->   change, this still requires confirmation -- never
->   silently switch branches with uncommitted work.
-
-**Where**: Before the branch creation guard. Insert as a
-sub-step or preceding step.
 
 #### Branch Enforcement: Apply (Skills + Commands)
 
@@ -206,12 +167,8 @@ existing steps.
 - `.opencode/skills/openspec-archive-change/SKILL.md`
 - `.opencode/commands/opsx-archive.md`
 
-**Two independent checks**:
-
-**A. Return to main branch** -- idempotency marker:
-`git checkout main` after the archive move
-
-If not present, insert after the archive move completes:
+**What to insert**: After the archive move completes, insert a
+branch cleanup step:
 
 > **Return to main branch**
 >
@@ -228,66 +185,10 @@ If not present, insert after the archive move completes:
 the archive, before the display summary step. Insert as a new
 numbered step; do NOT renumber existing steps.
 
-**B. Commit-before-archive** -- idempotency markers:
-`git add` and `git commit` appearing before the archive
-move step
-
-If not present, insert before the archive move step
-(the step that moves the change directory to the archive):
-
-> **Commit and push all changes**
->
-> Before archiving, ensure all work is committed:
->
-> 1. Run `git status --short` to check for uncommitted
->    changes.
-> 2. If uncommitted changes exist:
->    - Stage the change directory and implementation
->      files explicitly:
->      `git add openspec/changes/<name>/ .opencode/`
->      and any other modified files shown by
->      `git status --short`
->    - Commit with a descriptive message:
->      `git commit -m "feat(<name>): complete implementation"`
->    - Push to remote: `git push`
-> 3. Verify the working tree is clean after push.
->
-> **CRITICAL**: Do NOT move to the archive step with
-> uncommitted changes. All work must be committed and
-> pushed before the change directory is moved to the
-> archive.
-
-**Where**: Before the step that moves the change directory
-to the archive. Insert as a new numbered step; do NOT
-renumber existing steps.
-
-#### Branch Enforcement: Explore (Guardrail Only)
-
-**Target file**:
-- `.opencode/skills/openspec-explore/SKILL.md`
-
-**Note**: Explore mode does not create or modify changes, so
-full branch management does not apply. However, explore may
-lead to creating a proposal, which requires a branch switch.
-
-**Single check** -- idempotency marker: `uncommitted changes`
-or `switch branches` in the guardrails section
-
-If not present, append this bullet to the explore SKILL.md
-guardrails section:
-
-> - Don't switch branches without confirmation -- If
->   exploration leads to creating a proposal (which
->   requires a new `opsx/` branch), check for uncommitted
->   changes first and ask the user before switching.
->   Never silently leave uncommitted work behind.
-
-**Where**: Append to the existing guardrails bullet list
-at the end of the file.
-
-Report: `✅ openspec-explore/SKILL.md: branch-switch
-confirmation inserted` or `⊘ openspec-explore/SKILL.md:
-branch-switch confirmation already present (skipped)`
+**Note**: `openspec-explore` and `opsx-explore.md` are
+intentionally excluded from branch enforcement -- explore mode
+does not create or modify changes, so branch management does
+not apply.
 
 ### Step 3: Apply Dewey Context
 
@@ -546,83 +447,46 @@ step: run `.specify/scripts/bash/check-prerequisites.sh
 ### Step 6: Speckit Command Guardrails
 
 Inject a `## Guardrails` section into ALL 9
-`.opencode/commands/speckit.*.md` files. Use two
-variants depending on the command type.
+`.opencode/commands/speckit.*.md` files. For each file:
 
-**Spec-phase commands** (get Guardrails WITH
-review-rationale sentence):
+1. **Read** the file content
+2. **Check** if a `## Guardrails` section already exists
+   (search for the heading text `## Guardrails`)
+3. **If already present**: Report
+   `⊘ <filename>: guardrails already present (skipped)`
+4. **If not present**: Append the following block at the
+   very end of the file. Report
+   `✅ <filename>: guardrails injected`
+
+The guardrails block to append:
+
+```markdown
+
+## Guardrails
+
+- **NEVER modify source code** — this command updates
+  spec artifacts ONLY. Implementation changes belong in
+  `/speckit.implement`, `/unleash`, or `/cobalt-crush`.
+- **NEVER modify test files, Go source, Markdown agents,
+  convention packs, or config files** outside the
+  `specs/NNN-*/` feature directory.
+- The ONLY files this command may write are:
+  - `FEATURE_SPEC` (the spec.md file)
+  - Files within `FEATURE_DIR` (spec artifacts:
+    plan.md, tasks.md, research.md, data-model.md,
+    quickstart.md, contracts/, checklists/)
+```
+
+The 9 target files are:
 - `speckit.specify.md`
 - `speckit.clarify.md`
 - `speckit.plan.md`
 - `speckit.tasks.md`
 - `speckit.analyze.md`
 - `speckit.checklist.md`
-
-**Execution/utility commands** (get Guardrails WITHOUT
-review-rationale sentence):
 - `speckit.implement.md`
 - `speckit.constitution.md`
 - `speckit.taskstoissues.md`
-
-For each file:
-
-1. **Read** the file content
-2. **Check** if a `## Guardrails` section already exists
-   (search for the heading text `## Guardrails`)
-3. **If NOT present**: Append the appropriate guardrails
-   variant at the very end of the file. Report
-   `✅ <filename>: guardrails injected`
-4. **If already present**: Perform a secondary check
-   for spec-phase commands only -- search for the phrase
-   "review defeats the purpose". If the Guardrails
-   heading exists but the review-rationale sentence is
-   missing, append the sentence to the existing
-   Guardrails section. Report
-   `✅ <filename>: review-rationale added`.
-   If the sentence is already present, report
-   `⊘ <filename>: guardrails already present (skipped)`
-
-**Spec-phase guardrails block** (with review-rationale):
-
-```markdown
-
-## Guardrails
-
-- **NEVER modify source code** — this command updates
-  spec artifacts ONLY. Implementation changes belong in
-  `/speckit.implement`, `/unleash`, or `/cobalt-crush`.
-- **NEVER modify test files, Go source, Markdown agents,
-  convention packs, or config files** outside the
-  `specs/NNN-*/` feature directory.
-- The ONLY files this command may write are:
-  - `FEATURE_SPEC` (the spec.md file)
-  - Files within `FEATURE_DIR` (spec artifacts:
-    plan.md, tasks.md, research.md, data-model.md,
-    quickstart.md, contracts/, checklists/)
-- The user needs to review the plan before
-  implementation begins. Implementing without review
-  defeats the purpose of the spec-first workflow.
-```
-
-**Execution/utility guardrails block** (no
-review-rationale):
-
-```markdown
-
-## Guardrails
-
-- **NEVER modify source code** — this command updates
-  spec artifacts ONLY. Implementation changes belong in
-  `/speckit.implement`, `/unleash`, or `/cobalt-crush`.
-- **NEVER modify test files, Go source, Markdown agents,
-  convention packs, or config files** outside the
-  `specs/NNN-*/` feature directory.
-- The ONLY files this command may write are:
-  - `FEATURE_SPEC` (the spec.md file)
-  - Files within `FEATURE_DIR` (spec artifacts:
-    plan.md, tasks.md, research.md, data-model.md,
-    quickstart.md, contracts/, checklists/)
-```
 
 **Note**: `speckit.implement.md` is an exception — it IS
 allowed to modify source code. However, the guardrails
@@ -731,18 +595,6 @@ After processing all customizations, display a summary:
   [status] [filename]: [action]
   ...
 
-### STOP HERE Blocks
-  [status] [filename]: [action]
-  ...
-
-### Scaffold Comment Deduplication
-  [status] [filename]: [action]
-  ...
-
-### Legacy Directory Cleanup
-  [status] [item]: [action]
-  ...
-
 ### Summary
 Applied: N | Already present: N | Errors: N
 ```
@@ -751,121 +603,6 @@ Use these status indicators:
 - `✅` -- customization was inserted
 - `⊘` -- customization already present (skipped)
 - `❌` -- file not found or error (with fix suggestion)
-
-### Step 10: STOP HERE Blocks
-
-Inject a STOP HERE block into each spec-phase speckit
-command file. The block prevents premature advancement
-to implementation by instructing the LLM to stop and
-prompt the user.
-
-**Target files** (spec-phase commands only):
-- `speckit.specify.md`
-- `speckit.plan.md`
-- `speckit.tasks.md`
-- `speckit.analyze.md`
-- `speckit.checklist.md`
-- `speckit.clarify.md`
-
-**Excluded** (execution/utility commands -- no STOP HERE):
-- `speckit.implement.md`
-- `speckit.constitution.md`
-- `speckit.taskstoissues.md`
-
-For each target file:
-
-1. **Read** the file content
-2. **Check** if "STOP HERE" (case-sensitive) is already
-   present in the file
-3. **If already present**: Report
-   `⊘ <filename>: STOP HERE already present (skipped)`
-4. **If not present**: Insert the STOP HERE block. Report
-   `✅ <filename>: STOP HERE inserted`
-
-**What to insert**:
-
-```markdown
-
-**STOP HERE. Do NOT proceed to implementation.**
-
-Your job is done. Report the results and prompt the
-user. The user will invoke a separate command
-(`/speckit.implement`, `/unleash`, or `/cobalt-crush`)
-when they are ready to implement.
-```
-
-**Where**: After the main workflow instructions, before
-the `## Guardrails` section. If no `## Guardrails`
-section exists, insert at the end of the file.
-
-### Step 11: Scaffold Comment Deduplication
-
-Deduplicate scaffold comments in all files processed by
-`/uf-init`. Repeated runs of `uf init` across versions
-can accumulate multiple `<!-- scaffolded by uf ... -->`
-comments in the same file.
-
-**Target scope**: All files processed by `/uf-init`:
-- The 4 OpenSpec skill files (Step 2-4 targets)
-- The 3 OpenSpec command files (Step 2-3 targets)
-- The 9 speckit command files (Step 5-6 targets)
-
-For each file:
-
-1. **Read** the file content
-2. **Count** lines matching the pattern
-   `<!-- scaffolded by uf` (any version string after "uf")
-3. **If 0 or 1 matches**: No action needed. Report
-   `⊘ <filename>: scaffold comments clean`
-4. **If 2+ matches**: Keep only the LAST occurrence,
-   remove all earlier occurrences. Report
-   `✅ <filename>: deduplicated scaffold comments
-   (N removed)`
-
-**Important**: This step runs AFTER all other insertion
-steps to catch any duplicates introduced by earlier steps.
-
-### Step 12: Legacy Directory Cleanup
-
-Clean up legacy directory artifacts from older versions
-of `uf init`.
-
-Set `LEGACY_PACKS = .opencode/` + `unbound/packs/`
-(the pre-Spec-025 convention pack location).
-
-#### Sub-task A: Legacy Packs Removal
-
-1. Check if `LEGACY_PACKS` exists
-2. **If it does NOT exist**: Report
-   `⊘ legacy packs: not present`
-3. **If it exists**: Verify pre-conditions:
-   - `.opencode/uf/packs/default.md` MUST exist
-   - `.opencode/uf/packs/severity.md` MUST exist
-4. **If pre-conditions met**: Remove `LEGACY_PACKS`
-   recursively (NOT its parent directory). Then check
-   if the parent directory is empty -- if so, remove it
-   too. If the parent still contains other files or
-   directories, leave it and report a warning:
-   `⚠️ legacy parent dir: packs/ removed but directory
-   contains other content -- leaving in place`.
-   Report `✅ legacy packs: removed (migrated to
-   uf/packs/)`
-5. **If pre-conditions NOT met**: Report
-   `❌ legacy packs: uf/packs/ missing core files,
-   skipped`
-
-#### Sub-task B: `command/` Migration Hardening
-
-After Step 0 runs (command directory migration), verify
-the migration was effective:
-
-1. Check if any `speckit.*.md` files remain in
-   `.opencode/command/` (singular)
-2. **If found**: Report
-   `⚠️ command/: speckit commands still in singular
-   directory after migration -- check Step 0 output`
-3. **If not found**: Report
-   `⊘ command/: migration verified (or not needed)`
 
 ### Post-Write Verification
 
@@ -927,6 +664,7 @@ Re-run `/uf-init` after:
 - Running `uf init` or `uf setup` (new tool versions
   may reset third-party files)
 - Updating the OpenSpec CLI (`npm update`)
-- Upgrading the `uf` binary (`brew upgrade unbound-force`
-  — new versions may add scaffold files that need
-  customization)
+- Upgrading the `uf` binary (`brew upgrade unbound-force`,
+   or on Fedora/RHEL: `sudo dnf upgrade unbound-force`
+   — new versions may add scaffold files that need
+   customization)

@@ -108,7 +108,10 @@ Categorize each check as:
 - **PENDING**: Check still running
 - **SKIPPED**: Check was skipped
 
-If checks are still PENDING, inform the user and ask whether to wait or proceed with the available results.
+If checks are still PENDING, inform the user and use
+the **AskUserQuestion tool** with options
+`["Wait for checks to complete", "Proceed with
+available results"]`.
 
 **If all checks pass**: Record this and move to Step 4. No CI triage needed.
 
@@ -142,61 +145,36 @@ Record the classification for each failing check. This feeds into Step 8 (AI rev
 
 ### 4. Run Local Deterministic Tools (Pre-flight)
 
-Run the project's own tools as a rapid pre-flight check.
+Load the `pre-flight` skill and run in `ci-aware` mode:
 
-**Detection**: Check which tools are available by looking
-for their configuration files:
+1. Invoke the `skill` tool with name `pre-flight` to
+   load the shared pre-flight check instructions.
 
-```bash
-test -f Makefile && echo "MAKEFILE=yes"
-test -f .golangci.yml && echo "GO_LINT=yes"
-test -f ruff.toml -o -f pyproject.toml && echo "PYTHON_LINT=yes"
-test -f .yamllint.yml && echo "YAML_LINT=yes"
-test -f .pre-commit-config.yaml && echo "PRECOMMIT=yes"
-```
+2. Execute the pre-flight skill's phases in order:
+   a. CI Workflow Parsing — discover commands from
+      `.github/workflows/`
+   b. Local Tool Detection — check for config files
+      and verify binary availability
+   c. CI Coverage Matrix — build the matrix using the
+      CI check results from Step 3. Apply ci-aware
+      decision rules:
+      - CI PASS → skip locally (CI already verified)
+      - CI FAIL → skip locally (failure already
+        captured in Step 3a)
+      - CI NONE → MUST run locally
+      - No CI checks at all → MUST run ALL detected
+        local tools
+   d. Execution — run only tools marked "Yes" in the
+      coverage matrix
 
-**CI coverage check** (mandatory before running any
-tool): Build and display a coverage matrix that maps
-each detected local tool to the CI check from Step 3
-that covers the same verification. Display this matrix
-to make the skip/run decision visible:
+3. **Record results**: Use the pre-flight result format
+   (CI Coverage Matrix, Execution Results, Verdict).
+   If tools pass, skip those categories in the AI
+   review entirely. If tools fail, include the failure
+   output as context for Step 8 (AI review).
 
-| Local tool | CI check that covers it | CI status | Run locally? |
-|------------|------------------------|-----------|--------------|
-| `go test` | e.g., "Local CI / test" | PASS/FAIL/NONE | Yes/No |
-| `golangci-lint` | e.g., "CI Checks / lint" | PASS/FAIL/NONE | Yes/No |
-| ... | ... | ... | ... |
-
-Decision rules:
-- CI status PASS → skip locally ("No" — CI already
-  verified)
-- CI status FAIL → skip locally ("No" — failure already
-  captured in Step 3a, will be analyzed in Step 8d)
-- CI status NONE (no matching check) → MUST run
-  locally ("Yes")
-- No CI checks reported at all → MUST run ALL detected
-  local tools ("Yes" for every row)
-
-**Execution**: Run only the tools marked "Yes" in the
-matrix above:
-
-| Tool detected | Command to run | What it checks |
-|---------------|----------------|----------------|
-| Makefile | `make lint` (or `make check`) | Project-defined lint/format/vet |
-| `.golangci.yml` | `golangci-lint run ./...` | Go lint rules |
-| `ruff.toml` / `pyproject.toml` | `ruff check .` | Python lint rules |
-| `.yamllint.yml` | `yamllint .` | YAML lint rules |
-| `.pre-commit-config.yaml` | `pre-commit run --all-files` | Pre-commit hooks |
-| `go.mod` | `go test ./...` | Go tests |
-| `pyproject.toml` / `setup.py` | `pytest` or `python -m pytest` | Python tests |
-
-**Record results**: Capture tool exit codes and output.
-If tools pass, skip those categories in the AI review
-entirely. If tools fail, include the failure output as
-context.
-
-**If no tools are detected**: Note this and proceed to
-AI-based review for all categories.
+4. **If no tools are detected**: Note this and proceed
+   to AI-based review for all categories.
 
 ### 5. Fetch Diff (Scoped)
 
@@ -235,8 +213,13 @@ navigate it with targeted reads:
    - CRAP baselines: `.gaze/baseline.json`
 
 4. For very large PRs (2000+ lines or 50+ files),
-   warn the user and ask whether to review all files
-   or focus on specific ones.
+   warn the user and use the **AskUserQuestion tool**
+   with options `["Review all files", "Focus on
+   specific files"]`. If the user selects "Focus on
+   specific files", follow up with the
+   **AskUserQuestion tool** (open-ended, no preset
+   options) to ask which files or directories to
+   focus on.
 
 **Do NOT attempt**:
 - `gh pr diff <N> -- <path>` (unsupported, will fail)
@@ -710,12 +693,12 @@ I identified <N> pre-existing CI failure(s) that are NOT caused by this PR:
 - <check name>: <brief description of failure>
 
 These failures also occur on the base branch (<BASE_BRANCH>).
-
-Would you like me to create a fix branch with a proposed resolution?
-I will create the branch and commit locally — you can review the changes and file a PR when ready.
 ```
 
-**If the user agrees**:
+Use the **AskUserQuestion tool** with options
+`["Yes -- create fix branch", "No -- skip"]`.
+
+**If the user selects "Yes -- create fix branch"**:
 
 1. **Verify clean working tree**:
    ```bash
@@ -765,8 +748,27 @@ I will create the branch and commit locally — you can review the changes and f
 
    This failure was pre-existing on <BASE_BRANCH> and unrelated to PR #<PR_NUMBER>.
 
-   Assisted-by: OpenCode (<model>)
+   Assisted-by: <model>
    ```
+
+   Where `<model>` is the model family name you are
+   currently running as. To resolve the model name:
+   (1) read your model identifier from the system
+   prompt or runtime environment; (2) remove everything
+   before and including the last `/`; (3) remove
+   everything after and including the first `@`;
+   (4) remove any trailing date suffix matching
+   `-YYYYMMDD` (a hyphen followed by exactly 8 digits);
+   (5) repeatedly remove any trailing version segment
+   matching `-N` (a hyphen followed by a single digit
+   at the end) until no more remain; (6) validate the
+   result contains only
+   `[a-zA-Z0-9._-]` characters. If the result is
+   empty, contains invalid characters, or cannot be
+   determined, use the literal string `unknown-model`
+   and warn the user (e.g., "Could not determine AI
+   model name — using 'unknown-model' in
+   attribution").
    Remove the temp file after committing.
 
 7. **Report to the user**:
@@ -805,15 +807,13 @@ GitHub review on the PR:
 ```
 I found <N> findings (X CRITICAL, Y HIGH).
 Verdict: <APPROVE / REQUEST CHANGES / COMMENT>
-
-Would you like me to post this as a GitHub review so the
-author can see the findings in context?
-
-I will prepare the review and show it to you for approval
-before posting anything.
 ```
 
-**If the user agrees**:
+Use the **AskUserQuestion tool** with options
+`["Yes -- post as GitHub review", "No -- terminal
+summary is sufficient"]`.
+
+**If the user selects "Yes -- post as GitHub review"**:
 
 #### 11a. Pre-posting Checks
 
@@ -825,19 +825,18 @@ the current user (Step 7.5c) already exists in the
 review list (Step 7.5a):
 
 - If a prior review with the **same verdict** exists:
-  ```
-  You already have an <APPROVE/REQUEST_CHANGES> review
-  on this PR. Post a new one? (The latest review takes
-  precedence.)
-  (yes/no)
-  ```
+  Inform the user that a prior review exists and the
+  latest review takes precedence. Use the
+  **AskUserQuestion tool** with options
+  `["Yes -- post new review", "No -- skip posting"]`.
+
 - If a prior review with a **different verdict** exists:
-  ```
-  You have a prior <old_verdict> review. Post a new
-  <new_verdict>? This will override the previous
-  verdict.
-  (yes/no)
-  ```
+  Inform the user of the prior verdict and that the new
+  review will override it. Use the
+  **AskUserQuestion tool** with options
+  `["Yes -- override with <new_verdict>",
+  "No -- keep existing <old_verdict>"]`.
+
 - If no prior review exists: proceed silently.
 
 **Stale review + CODEOWNER checks** (APPROVE verdicts
@@ -929,27 +928,23 @@ If any API call fails: skip silently.
    - REQUEST CHANGES → `"event": "REQUEST_CHANGES"`
    - COMMENT → `"event": "COMMENT"`
 
-   Display the confirmation prompt with the verdict type:
+   Display the verdict context, then use the
+   **AskUserQuestion tool** for confirmation:
 
-   For APPROVE verdicts:
-   ```
-   Post review as APPROVE with N comments?
-   ⚠ This may unblock merge in repos with branch
-     protection. This review will be labeled as
-     AI-generated.
-   Type "approve" to confirm:
-   (approve/no/edit/change-verdict)
-   ```
+   For APPROVE verdicts: inform the user that this may
+   unblock merge in repos with branch protection and
+   that the review will be labeled as AI-generated.
+   Use the **AskUserQuestion tool** with options
+   `["Approve -- post review", "No -- skip posting",
+   "Edit comments first", "Change verdict"]`.
 
-   For REQUEST CHANGES or COMMENT verdicts:
-   ```
-   Post review as REQUEST CHANGES with N comments?
-   ⚠ This will block merge in repos with branch
-     protection.
-   (yes/no/edit/change-verdict)
-   ```
+   For REQUEST CHANGES or COMMENT verdicts: inform the
+   user that this will block merge in repos with branch
+   protection. Use the **AskUserQuestion tool** with
+   options `["Yes -- post review", "No -- skip posting",
+   "Edit comments first", "Change verdict"]`.
 
-   The `change-verdict` option lets the user override the
+   The "Change verdict" option lets the user override the
    computed verdict (e.g., downgrade REQUEST CHANGES to
    COMMENT).
 
@@ -985,13 +980,14 @@ If any API call fails: skip silently.
    token lacks write permissions for PR reviews and
    suggest re-authenticating with `gh auth login`.
 
-   - **no**: Skip posting, the terminal summary is sufficient
-   - **edit**: Let the user modify comments before posting, then re-confirm
+   - **"No -- skip posting"**: Skip posting, the terminal summary is sufficient
+   - **"Edit comments first"**: Let the user modify comments before posting, then re-confirm with the **AskUserQuestion tool**
 
 5. **CRITICAL RULE**: NEVER post reviews without explicit
-   human confirmation. Always show the exact content
-   (verdict type + all comments) that will be posted and
-   wait for approval. For APPROVE verdicts, require the
-   user to type "approve" explicitly — not just "yes" —
-   to prevent reflexive confirmation of merge-unblocking
-   reviews.
+   human confirmation via the **AskUserQuestion tool**.
+   Always show the exact content (verdict type + all
+   comments) that will be posted and wait for the user
+   to select a confirming option. For APPROVE verdicts,
+   the user MUST select the "Approve -- post review"
+   option — a clearly-labeled action that conveys the
+   merge-unblocking consequence.
