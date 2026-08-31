@@ -2,8 +2,6 @@ package adapter
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"sort"
 
 	"github.com/unbound-force/gaze/internal/protocol"
@@ -207,13 +205,12 @@ func buildQualitySummary(reports []taxonomy.QualityReport) *taxonomy.PackageSumm
 // standalone function used by the quality CLI path (which doesn't
 // go through ExternalContractCoverageProvider).
 //
-// Returns nil mappings and nil error on graceful degradation (protocol
-// errors are logged to stderr but not propagated).
+// Returns the error on failure. The caller is responsible for
+// graceful degradation (e.g., producing a zero-coverage report).
 func FetchTestMappings(
 	client *protocol.Client,
 	patterns []string,
 	rootDir string,
-	stderr io.Writer,
 ) ([]protocol.AssertionMappingData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), protocol.AnalysisTimeout)
 	defer cancel()
@@ -226,9 +223,6 @@ func FetchTestMappings(
 		},
 	)
 	if err != nil {
-		if stderr != nil {
-			_, _ = fmt.Fprintf(stderr, "warning: test_mapping failed: %v\n", err)
-		}
 		return nil, err
 	}
 	return result.Mappings, nil

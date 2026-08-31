@@ -1215,7 +1215,7 @@ func runQualityWithExternalAnalyzer(p qualityParams) error {
 
 	// Fetch test mapping data.
 	mappings, fetchErr := adapter.FetchTestMappings(
-		session.Client(), p.patterns, moduleDir, p.stderr)
+		session.Client(), p.patterns, moduleDir)
 	if fetchErr != nil {
 		// Graceful degradation on test_mapping method failure:
 		// produce a zero-coverage report with reason.

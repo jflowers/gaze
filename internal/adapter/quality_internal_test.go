@@ -343,6 +343,79 @@ func TestBuildQualityFromMappings(t *testing.T) {
 		}
 	})
 
+	t.Run("worst coverage truncated to 5 with 6+ test functions", func(t *testing.T) {
+		results := []taxonomy.AnalysisResult{
+			{
+				Target: taxonomy.FunctionTarget{Package: "pkg", Function: "fn"},
+				SideEffects: []taxonomy.SideEffect{
+					contractual("se-001", "ReturnValue"),
+					contractual("se-002", "ErrorReturn"),
+					contractual("se-003", "PointerArgMutation"),
+				},
+			},
+		}
+		// 6 test functions with varying coverage:
+		// test_a covers 0/3, test_b covers 1/3, test_c covers 2/3,
+		// test_d covers 3/3, test_e covers 0/3, test_f covers 1/3
+		types := []string{"ReturnValue", "ErrorReturn", "PointerArgMutation"}
+		testCoverages := []struct {
+			name   string
+			covers []string // which effect types this test covers
+		}{
+			{"test_a", nil},
+			{"test_b", types[:1]},
+			{"test_c", types[:2]},
+			{"test_d", types[:3]},
+			{"test_e", nil},
+			{"test_f", types[:1]},
+		}
+		var mappings []protocol.AssertionMappingData
+		for _, tc := range testCoverages {
+			if len(tc.covers) == 0 {
+				// Need at least one mapping to create a report for this test.
+				mappings = append(mappings, protocol.AssertionMappingData{
+					TestFunction:   tc.name,
+					TestFile:       "test.py",
+					TargetFunction: "fn",
+					TargetPackage:  "pkg",
+					SideEffectType: "UnknownType", // won't match
+					Confidence:     50,
+				})
+			}
+			for _, typ := range tc.covers {
+				mappings = append(mappings, protocol.AssertionMappingData{
+					TestFunction:   tc.name,
+					TestFile:       "test.py",
+					TargetFunction: "fn",
+					TargetPackage:  "pkg",
+					SideEffectType: typ,
+					Confidence:     80,
+				})
+			}
+		}
+
+		_, summary := BuildQualityFromMappings(mappings, results)
+
+		if len(summary.WorstCoverageTests) != 5 {
+			t.Fatalf("WorstCoverageTests = %d, want 5 (truncated from 6)",
+				len(summary.WorstCoverageTests))
+		}
+		// Worst coverage first (ascending order by percentage)
+		if summary.WorstCoverageTests[0].ContractCoverage.Percentage != 0 {
+			t.Errorf("worst[0].Percentage = %v, want 0",
+				summary.WorstCoverageTests[0].ContractCoverage.Percentage)
+		}
+		// Best coverage last (100% should not appear — it's the 6th)
+		last := summary.WorstCoverageTests[4]
+		if last.ContractCoverage.Percentage >= 100 {
+			t.Errorf("worst[4].Percentage = %v, should be < 100 (100%% test should be truncated)",
+				last.ContractCoverage.Percentage)
+		}
+		if summary.TotalTests != 6 {
+			t.Errorf("TotalTests = %d, want 6", summary.TotalTests)
+		}
+	})
+
 	t.Run("nil results with mappings still produces reports", func(t *testing.T) {
 		mappings := []protocol.AssertionMappingData{
 			{
@@ -436,6 +509,32 @@ func TestComputeOverSpecification(t *testing.T) {
 		}
 		if os.Ratio != 0 {
 			t.Errorf("Ratio = %v, want 0", os.Ratio)
+		}
+	})
+
+	t.Run("unmapped assertions not counted as over-specification", func(t *testing.T) {
+		effects := []taxonomy.SideEffect{
+			{
+				ID:   "se-001",
+				Type: "LogOutput",
+				Classification: &taxonomy.Classification{
+					Label:      taxonomy.Incidental,
+					Confidence: 90,
+				},
+			},
+		}
+		// Mapping with empty SideEffectID (unmapped — findSideEffectID
+		// returned "" because the type didn't match any effect).
+		mappings := []taxonomy.AssertionMapping{
+			{SideEffectID: "", Confidence: 80},
+		}
+
+		os := computeOverSpecification(effects, mappings)
+
+		// Empty SideEffectID should be skipped — not counted as
+		// over-specification even though an incidental effect exists.
+		if os.Count != 0 {
+			t.Errorf("Count = %d, want 0 (empty SideEffectID should be skipped)", os.Count)
 		}
 	})
 }
