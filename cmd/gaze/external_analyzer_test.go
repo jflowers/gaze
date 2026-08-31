@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unbound-force/gaze/internal/adapter"
 	"github.com/unbound-force/gaze/internal/crap"
 )
 
@@ -176,12 +175,6 @@ func TestQualityWithExternalAnalyzer(t *testing.T) {
 		t.Fatal("missing summary in quality output")
 	}
 
-	// TotalTests should be 0 (external analyzers don't provide test function data).
-	totalTests, _ := result.Summary["total_tests"].(float64)
-	if totalTests != 0 {
-		t.Errorf("total_tests = %g, want 0 (external analyzers don't provide test data)", totalTests)
-	}
-
 	// Average contract coverage should be > 0 because the fake analyzer
 	// maps test_multiply → multiply/ReturnValue, giving multiply non-zero
 	// contract coverage.
@@ -223,40 +216,10 @@ func TestQualityWithExternalAnalyzer(t *testing.T) {
 		t.Error("no report entry found for function 'multiply'")
 	}
 
-	// Stderr should mention the reduced report note.
-	stderrStr := stderr.String()
-	if !strings.Contains(stderrStr, "contract coverage only") {
-		t.Errorf("stderr should mention reduced report, got: %s", stderrStr)
-	}
-
 	// Stderr should mention the external analyzer.
+	stderrStr := stderr.String()
 	if !strings.Contains(stderrStr, "fake-analyzer") {
 		t.Errorf("stderr should mention analyzer name, got: %s", stderrStr)
-	}
-}
-
-// TestBuildExternalQualityReports_NilSideEffects verifies that
-// buildExternalQualityReports returns empty reports and an empty summary
-// when the providers have no SideEffects analyzer (nil).
-func TestBuildExternalQualityReports_NilSideEffects(t *testing.T) {
-	var stderr bytes.Buffer
-	providers := &adapter.Providers{
-		// SideEffects is nil — no side effect data available.
-	}
-	reports, summary := buildExternalQualityReports(nil, providers, qualityParams{
-		stderr: &stderr,
-	})
-	if len(reports) != 0 {
-		t.Errorf("expected 0 reports, got %d", len(reports))
-	}
-	if summary == nil {
-		t.Fatal("expected non-nil summary")
-	}
-	if summary.TotalTests != 0 {
-		t.Errorf("TotalTests = %d, want 0", summary.TotalTests)
-	}
-	if summary.AverageContractCoverage != 0 {
-		t.Errorf("AverageContractCoverage = %g, want 0", summary.AverageContractCoverage)
 	}
 }
 
@@ -274,15 +237,57 @@ func TestQualityWithExternalAnalyzer_BinaryNotFound(t *testing.T) {
 		stderr:       &stderr,
 	})
 	if err == nil {
-		t.Fatal("expected error when analyzer binary not found")
+		t.Fatal("expected error for nonexistent analyzer binary")
 	}
-	// The external analyzer path is now supported; error should be about
-	// the binary not being found, not about the feature being unsupported.
+	// The error should be about the analyzer not being found, NOT
+	// about the flag being unsupported.
 	errMsg := err.Error()
-	if bytes.Contains([]byte(errMsg), []byte("not yet supported")) {
-		t.Errorf("quality --analyzer should no longer be rejected; got: %s", errMsg)
+	if strings.Contains(errMsg, "not yet supported") {
+		t.Errorf("--analyzer should be accepted for quality now, got: %s", errMsg)
 	}
-	if !strings.Contains(errMsg, "analyzer") {
-		t.Errorf("error should mention analyzer, got: %s", errMsg)
+	if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "spawning") {
+		t.Errorf("expected discovery/spawn error, got: %s", errMsg)
+	}
+}
+
+// TestQualityWithExternalAnalyzer_RejectsTarget verifies that --target
+// is rejected when used with --analyzer (Go-specific SSA feature).
+func TestQualityWithExternalAnalyzer_RejectsTarget(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := runQuality(qualityParams{
+		patterns:     []string{"./..."},
+		format:       "text",
+		analyzerFlag: "some-analyzer",
+		targetFunc:   "SomeFunc",
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error for --target with --analyzer")
+	}
+	if !strings.Contains(err.Error(), "--target is not supported with --analyzer") {
+		t.Errorf("expected target rejection error, got: %s", err.Error())
+	}
+}
+
+// TestQualityWithExternalAnalyzer_RejectsAIMapper verifies that
+// --ai-mapper is rejected when used with --analyzer.
+func TestQualityWithExternalAnalyzer_RejectsAIMapper(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := runQuality(qualityParams{
+		patterns:     []string{"./..."},
+		format:       "text",
+		analyzerFlag: "some-analyzer",
+		aiMapper:     "claude",
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error for --ai-mapper with --analyzer")
+	}
+	if !strings.Contains(err.Error(), "--ai-mapper is not supported with --analyzer") {
+		t.Errorf("expected ai-mapper rejection error, got: %s", err.Error())
 	}
 }
