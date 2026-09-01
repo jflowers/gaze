@@ -1241,7 +1241,9 @@ func handleQualityNoTestMapping(p qualityParams, providers *adapter.Providers) e
 			"contract coverage and over-specification metrics are unavailable\n",
 		providers.AnalyzerName)
 
-	summary := &taxonomy.PackageSummary{}
+	summary := &taxonomy.PackageSummary{
+		Reason: "test_mapping unavailable",
+	}
 	if err := writeQualityEmptyOutput(p, summary); err != nil {
 		return err
 	}
@@ -1261,7 +1263,9 @@ func handleQualityTestMappingError(p qualityParams, providers *adapter.Providers
 		"warning: test_mapping failed for analyzer %q: %v\n",
 		providers.AnalyzerName, fetchErr)
 
-	summary := &taxonomy.PackageSummary{}
+	summary := &taxonomy.PackageSummary{
+		Reason: fmt.Sprintf("test_mapping error: %v", fetchErr),
+	}
 	if err := writeQualityEmptyOutput(p, summary); err != nil {
 		return err
 	}
