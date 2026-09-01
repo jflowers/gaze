@@ -442,6 +442,85 @@ func TestBuildQualityFromMappings(t *testing.T) {
 		}
 	})
 
+	t.Run("multi-target deduplicates shared effects across targets", func(t *testing.T) {
+		// Both targets share an ErrorReturn effect with the same ID.
+		// The union must count it only once.
+		results := []taxonomy.AnalysisResult{
+			{
+				Target: taxonomy.FunctionTarget{
+					Package:  "db",
+					Function: "Save",
+					Location: "db.go:10",
+				},
+				SideEffects: []taxonomy.SideEffect{
+					contractual("se-001", "DatabaseWrite"),
+					contractual("se-shared", "ErrorReturn"),
+				},
+			},
+			{
+				Target: taxonomy.FunctionTarget{
+					Package:  "cache",
+					Function: "Invalidate",
+					Location: "cache.go:20",
+				},
+				SideEffects: []taxonomy.SideEffect{
+					contractual("se-shared", "ErrorReturn"), // same ID as db.Save
+					contractual("se-003", "MapMutation"),
+				},
+			},
+		}
+
+		mappings := []protocol.AssertionMappingData{
+			{
+				TestFunction:   "test_save_and_invalidate",
+				TestFile:       "integration_test.py",
+				TargetFunction: "Save",
+				TargetPackage:  "db",
+				SideEffectType: "DatabaseWrite",
+				Confidence:     85,
+			},
+			{
+				TestFunction:   "test_save_and_invalidate",
+				TestFile:       "integration_test.py",
+				TargetFunction: "Save",
+				TargetPackage:  "db",
+				SideEffectType: "ErrorReturn",
+				Confidence:     80,
+			},
+			{
+				TestFunction:   "test_save_and_invalidate",
+				TestFile:       "integration_test.py",
+				TargetFunction: "Invalidate",
+				TargetPackage:  "cache",
+				SideEffectType: "MapMutation",
+				Confidence:     75,
+			},
+		}
+
+		reports, summary := BuildQualityFromMappings(mappings, results)
+
+		if len(reports) != 1 {
+			t.Fatalf("got %d reports, want 1", len(reports))
+		}
+		r := reports[0]
+		// Shared ErrorReturn (se-shared) must be counted only once in the
+		// union. Total distinct effects: DatabaseWrite + ErrorReturn +
+		// MapMutation = 3 (not 4).
+		if r.ContractCoverage.TotalContractual != 3 {
+			t.Errorf("TotalContractual = %d, want 3 (shared effect deduplicated)",
+				r.ContractCoverage.TotalContractual)
+		}
+		if r.ContractCoverage.CoveredCount != 3 {
+			t.Errorf("CoveredCount = %d, want 3", r.ContractCoverage.CoveredCount)
+		}
+		if r.ContractCoverage.Percentage != 100 {
+			t.Errorf("ContractCoverage.Percentage = %v, want 100", r.ContractCoverage.Percentage)
+		}
+		if summary.TotalTests != 1 {
+			t.Errorf("summary.TotalTests = %d, want 1", summary.TotalTests)
+		}
+	})
+
 	t.Run("multi-target test unions effects across targets", func(t *testing.T) {
 		// Two distinct target functions with different side effects.
 		results := []taxonomy.AnalysisResult{
