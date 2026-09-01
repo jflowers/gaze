@@ -441,6 +441,93 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			t.Errorf("summary.TotalTests = %d, want 1", summary.TotalTests)
 		}
 	})
+
+	t.Run("multi-target test unions effects across targets", func(t *testing.T) {
+		// Two distinct target functions with different side effects.
+		results := []taxonomy.AnalysisResult{
+			{
+				Target: taxonomy.FunctionTarget{
+					Package:  "db",
+					Function: "Save",
+					Location: "db.go:10",
+				},
+				SideEffects: []taxonomy.SideEffect{
+					contractual("se-001", "DatabaseWrite"),
+					contractual("se-002", "ErrorReturn"),
+				},
+			},
+			{
+				Target: taxonomy.FunctionTarget{
+					Package:  "cache",
+					Function: "Invalidate",
+					Location: "cache.go:20",
+				},
+				SideEffects: []taxonomy.SideEffect{
+					contractual("se-003", "MapMutation"),
+				},
+			},
+		}
+
+		// One integration test exercises both targets.
+		mappings := []protocol.AssertionMappingData{
+			{
+				TestFunction:   "test_save_and_invalidate",
+				TestFile:       "integration_test.py",
+				TargetFunction: "Save",
+				TargetPackage:  "db",
+				SideEffectType: "DatabaseWrite",
+				Confidence:     85,
+			},
+			{
+				TestFunction:   "test_save_and_invalidate",
+				TestFile:       "integration_test.py",
+				TargetFunction: "Save",
+				TargetPackage:  "db",
+				SideEffectType: "ErrorReturn",
+				Confidence:     80,
+			},
+			{
+				TestFunction:   "test_save_and_invalidate",
+				TestFile:       "integration_test.py",
+				TargetFunction: "Invalidate",
+				TargetPackage:  "cache",
+				SideEffectType: "MapMutation",
+				Confidence:     75,
+			},
+		}
+
+		reports, summary := BuildQualityFromMappings(mappings, results)
+
+		if len(reports) != 1 {
+			t.Fatalf("got %d reports, want 1", len(reports))
+		}
+		r := reports[0]
+		if r.TestFunction != "test_save_and_invalidate" {
+			t.Errorf("TestFunction = %q, want %q", r.TestFunction, "test_save_and_invalidate")
+		}
+		// All 3 contractual effects from both targets should be in the
+		// union: DatabaseWrite, ErrorReturn, MapMutation.
+		// All 3 are asserted → 100% contract coverage.
+		if r.ContractCoverage.TotalContractual != 3 {
+			t.Errorf("TotalContractual = %d, want 3 (union of both targets' effects)",
+				r.ContractCoverage.TotalContractual)
+		}
+		if r.ContractCoverage.CoveredCount != 3 {
+			t.Errorf("CoveredCount = %d, want 3", r.ContractCoverage.CoveredCount)
+		}
+		if r.ContractCoverage.Percentage != 100 {
+			t.Errorf("ContractCoverage.Percentage = %v, want 100", r.ContractCoverage.Percentage)
+		}
+		if r.AssertionCount != 3 {
+			t.Errorf("AssertionCount = %d, want 3", r.AssertionCount)
+		}
+		if summary.TotalTests != 1 {
+			t.Errorf("summary.TotalTests = %d, want 1", summary.TotalTests)
+		}
+		if summary.AverageContractCoverage != 100 {
+			t.Errorf("summary.AverageContractCoverage = %v, want 100", summary.AverageContractCoverage)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
