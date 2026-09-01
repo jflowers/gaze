@@ -244,9 +244,25 @@ func TestQualityWithExternalAnalyzer_NoTestMapping_NoThresholds(t *testing.T) {
 		t.Errorf("expected analyzer name in stderr, got: %s", stderrStr)
 	}
 
-	// Verify JSON output is valid with empty reports.
+	// Verify JSON output contains the reason field.
 	if stdout.Len() == 0 {
-		t.Error("expected non-empty stdout")
+		t.Fatal("expected non-empty stdout")
+	}
+	var jsonOutput map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &jsonOutput); err != nil {
+		t.Fatalf("invalid JSON output: %v", err)
+	}
+	summaryRaw, ok := jsonOutput["quality_summary"]
+	if !ok {
+		t.Fatal("JSON output missing 'quality_summary' key")
+	}
+	var summaryMap map[string]any
+	if err := json.Unmarshal(summaryRaw, &summaryMap); err != nil {
+		t.Fatalf("invalid quality_summary JSON: %v", err)
+	}
+	reason, _ := summaryMap["reason"].(string)
+	if reason != "test_mapping unavailable" {
+		t.Errorf("quality_summary.reason = %q, want %q", reason, "test_mapping unavailable")
 	}
 }
 
@@ -294,6 +310,30 @@ func TestQualityWithExternalAnalyzer_TestMappingError_NoThresholds(t *testing.T)
 	}
 	if !strings.Contains(stderrStr, "connection refused") {
 		t.Errorf("expected underlying error in stderr, got: %s", stderrStr)
+	}
+
+	// Verify JSON output contains the reason field with error details.
+	if stdout.Len() == 0 {
+		t.Fatal("expected non-empty stdout")
+	}
+	var jsonOutput map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &jsonOutput); err != nil {
+		t.Fatalf("invalid JSON output: %v", err)
+	}
+	summaryRaw, ok := jsonOutput["quality_summary"]
+	if !ok {
+		t.Fatal("JSON output missing 'quality_summary' key")
+	}
+	var summaryMap map[string]any
+	if err := json.Unmarshal(summaryRaw, &summaryMap); err != nil {
+		t.Fatalf("invalid quality_summary JSON: %v", err)
+	}
+	reason, _ := summaryMap["reason"].(string)
+	if !strings.Contains(reason, "test_mapping error") {
+		t.Errorf("quality_summary.reason = %q, want it to contain %q", reason, "test_mapping error")
+	}
+	if !strings.Contains(reason, "connection refused") {
+		t.Errorf("quality_summary.reason = %q, want it to contain %q", reason, "connection refused")
 	}
 }
 
