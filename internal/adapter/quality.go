@@ -58,13 +58,34 @@ func BuildQualityFromMappings(
 	var reports []taxonomy.QualityReport
 
 	for tk, testMappings := range mappingsByTest {
-		// Determine target function(s) from mappings — use the first
-		// target as the primary (most common in practice: 1 test → 1 target).
-		targetKey := funcKey{
+		// Collect all distinct target functions referenced by this
+		// test's mappings. A single test may assert effects across
+		// multiple targets (e.g., integration tests).
+		targetSet := make(map[funcKey]struct{})
+		for _, m := range testMappings {
+			targetSet[funcKey{pkg: m.TargetPackage, function: m.TargetFunction}] = struct{}{}
+		}
+
+		// Union side effects across all referenced targets so that
+		// contract coverage considers the full effect surface the
+		// test exercises, not just the first target.
+		var effects []taxonomy.SideEffect
+		seen := make(map[string]bool)
+		for fk := range targetSet {
+			for _, e := range effectsByFunc[fk] {
+				if !seen[e.ID] {
+					seen[e.ID] = true
+					effects = append(effects, e)
+				}
+			}
+		}
+
+		// Use the first target as the primary for the report's
+		// TargetFunction metadata (display purposes only).
+		primaryTarget := funcKey{
 			pkg:      testMappings[0].TargetPackage,
 			function: testMappings[0].TargetFunction,
 		}
-		effects := effectsByFunc[targetKey]
 
 		// Convert protocol mappings to taxonomy mappings for this
 		// test function.
@@ -105,9 +126,9 @@ func BuildQualityFromMappings(
 			TestFunction: tk.testFunction,
 			TestLocation: tk.testFile,
 			TargetFunction: taxonomy.FunctionTarget{
-				Package:  targetKey.pkg,
-				Function: targetKey.function,
-				Location: locationByFunc[targetKey],
+				Package:  primaryTarget.pkg,
+				Function: primaryTarget.function,
+				Location: locationByFunc[primaryTarget],
 			},
 			ContractCoverage:             cc,
 			OverSpecification:            overSpec,
