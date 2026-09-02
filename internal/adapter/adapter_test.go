@@ -245,14 +245,13 @@ func TestSessionLifecycle_DocCoverageCapability(t *testing.T) {
 	session := adapter.NewSession(
 		fakeBinaryPath, []string{"--stdio"},
 		"/tmp/project", []string{"./..."},
-		&stderr,
+		&stderr, nil,
 	)
 
 	providers, err := session.Initialize()
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer func() { _ = session.Close() }()
 
 	if !providers.Capabilities.DocCoverage {
 		t.Error("Capabilities.DocCoverage = false, want true")
@@ -694,7 +693,7 @@ func TestExternalSideEffectAnalyzer_Streaming(t *testing.T) {
 func TestDocCoverage_NotInitialized(t *testing.T) {
 	session := adapter.NewSession(
 		fakeBinaryPath, []string{"--stdio"},
-		"/tmp/project", []string{"./..."}, nil,
+		"/tmp/project", []string{"./..."}, nil, nil,
 	)
 	// Do NOT call Initialize — session.initDone is false.
 
@@ -717,7 +716,7 @@ func TestDocCoverage_CapabilityDisabled(t *testing.T) {
 	session := adapter.NewSession(
 		fakeBinaryPath, []string{"--stdio", "--no-doc-coverage"},
 		"/tmp/project", []string{"./..."},
-		&stderr,
+		&stderr, nil,
 	)
 
 	_, err := session.Initialize()
@@ -745,7 +744,7 @@ func TestDocCoverage_HappyPath(t *testing.T) {
 	session := adapter.NewSession(
 		fakeBinaryPath, []string{"--stdio"},
 		"/tmp/project", []string{"./..."},
-		&stderr,
+		&stderr, nil,
 	)
 
 	_, err := session.Initialize()
