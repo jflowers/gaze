@@ -73,7 +73,7 @@ type SymbolDocStatus struct {
 **Rationale**: The existing `docscan` package is focused on Markdown file discovery and prioritization. API coverage analysis is a distinct concern that deserves its own test surface. The sub-package imports from `internal/protocol` (for types) but not from `internal/adapter` (no session management). This keeps dependencies minimal and testability high (Principle IV).
 
 **Package structure**:
-```
+```text
 internal/docscan/apidoc/
   types.go      — APICoverageReport, SymbolCoverage, StaleReference, CodeBlockIssue
   coverage.go   — ComputeCoverage (from DocCoverageResult or AnalyzedFunction list)
