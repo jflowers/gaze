@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/unbound-force/gaze/internal/adapter"
 	"github.com/unbound-force/gaze/internal/crap"
 )
 
@@ -121,9 +123,147 @@ func TestCrapWithExternalAnalyzer_NotFound(t *testing.T) {
 	}
 }
 
-// TestQualityWithExternalAnalyzer_Rejected verifies that --analyzer
-// on gaze quality produces an informative error (deferred per D12).
-func TestQualityWithExternalAnalyzer_Rejected(t *testing.T) {
+// TestQualityWithExternalAnalyzer verifies the full external analyzer
+// quality path: session init → analyze → classify_signals → test_mapping
+// → contract coverage report. The fake analyzer provides:
+//
+//   - 3 functions: add, multiply, divide (from analyze response)
+//   - classify_signals: signals for divide/ErrorReturn and multiply/ReturnValue
+//   - test_mapping: maps test_multiply → multiply/ReturnValue
+//
+// The quality report should contain entries for each analyzed function
+// with contract coverage data.
+func TestQualityWithExternalAnalyzer(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	// Use a temp directory as the "module root" — the external
+	// analyzer doesn't need a real Go module.
+	moduleDir := t.TempDir()
+
+	// Create a minimal go.mod so pattern resolution works.
+	goMod := filepath.Join(moduleDir, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	err := runQuality(qualityParams{
+		patterns:     []string{"./..."},
+		format:       "json",
+		analyzerFlag: fakeBinaryPath,
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err != nil {
+		t.Fatalf("runQuality with external analyzer: %v\nstderr: %s", err, stderr.String())
+	}
+
+	// Parse the JSON output to verify quality report structure.
+	var result struct {
+		Reports []json.RawMessage      `json:"quality_reports"`
+		Summary map[string]interface{} `json:"quality_summary"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("parsing JSON output: %v\nraw: %s", err, stdout.String())
+	}
+
+	// Should have reports (one per analyzed function from the external analyzer).
+	if len(result.Reports) == 0 {
+		t.Fatal("no reports in quality output")
+	}
+
+	// Summary should have average_contract_coverage.
+	if result.Summary == nil {
+		t.Fatal("missing summary in quality output")
+	}
+
+	// TotalTests should be 0 (external analyzers don't provide test function data).
+	totalTests, _ := result.Summary["total_tests"].(float64)
+	if totalTests != 0 {
+		t.Errorf("total_tests = %g, want 0 (external analyzers don't provide test data)", totalTests)
+	}
+
+	// Average contract coverage should be > 0 because the fake analyzer
+	// maps test_multiply → multiply/ReturnValue, giving multiply non-zero
+	// contract coverage.
+	avgCoverage, _ := result.Summary["average_contract_coverage"].(float64)
+	if avgCoverage <= 0 {
+		t.Errorf("average_contract_coverage = %g, want > 0 (multiply has test coverage)", avgCoverage)
+	}
+
+	// Inspect individual reports: each should have a target function and
+	// contract coverage. Find the multiply function which should have
+	// non-zero coverage from the test_mapping.
+	type reportEntry struct {
+		TargetFunction struct {
+			Function string `json:"function"`
+			Package  string `json:"package"`
+		} `json:"target_function"`
+		ContractCoverage struct {
+			Percentage float64 `json:"percentage"`
+		} `json:"contract_coverage"`
+	}
+	var foundMultiply bool
+	for _, raw := range result.Reports {
+		var entry reportEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			t.Fatalf("parsing report entry: %v", err)
+		}
+		if entry.TargetFunction.Function == "" {
+			t.Error("report entry has empty target_function.function")
+		}
+		if entry.TargetFunction.Function == "multiply" {
+			foundMultiply = true
+			if entry.ContractCoverage.Percentage <= 0 {
+				t.Errorf("multiply contract_coverage.percentage = %g, want > 0",
+					entry.ContractCoverage.Percentage)
+			}
+		}
+	}
+	if !foundMultiply {
+		t.Error("no report entry found for function 'multiply'")
+	}
+
+	// Stderr should mention the reduced report note.
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "contract coverage only") {
+		t.Errorf("stderr should mention reduced report, got: %s", stderrStr)
+	}
+
+	// Stderr should mention the external analyzer.
+	if !strings.Contains(stderrStr, "fake-analyzer") {
+		t.Errorf("stderr should mention analyzer name, got: %s", stderrStr)
+	}
+}
+
+// TestBuildExternalQualityReports_NilSideEffects verifies that
+// buildExternalQualityReports returns empty reports and an empty summary
+// when the providers have no SideEffects analyzer (nil).
+func TestBuildExternalQualityReports_NilSideEffects(t *testing.T) {
+	var stderr bytes.Buffer
+	providers := &adapter.Providers{
+		// SideEffects is nil — no side effect data available.
+	}
+	reports, summary := buildExternalQualityReports(nil, providers, qualityParams{
+		stderr: &stderr,
+	})
+	if len(reports) != 0 {
+		t.Errorf("expected 0 reports, got %d", len(reports))
+	}
+	if summary == nil {
+		t.Fatal("expected non-nil summary")
+	}
+	if summary.TotalTests != 0 {
+		t.Errorf("TotalTests = %d, want 0", summary.TotalTests)
+	}
+	if summary.AverageContractCoverage != 0 {
+		t.Errorf("AverageContractCoverage = %g, want 0", summary.AverageContractCoverage)
+	}
+}
+
+// TestQualityWithExternalAnalyzer_BinaryNotFound verifies that --analyzer
+// on gaze quality attempts to run the external analyzer and fails cleanly
+// when the binary does not exist.
+func TestQualityWithExternalAnalyzer_BinaryNotFound(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	err := runQuality(qualityParams{
@@ -134,9 +274,15 @@ func TestQualityWithExternalAnalyzer_Rejected(t *testing.T) {
 		stderr:       &stderr,
 	})
 	if err == nil {
-		t.Fatal("expected error for --analyzer on quality")
+		t.Fatal("expected error when analyzer binary not found")
 	}
-	if !bytes.Contains([]byte(err.Error()), []byte("not yet supported")) {
-		t.Errorf("error should mention 'not yet supported', got: %s", err.Error())
+	// The external analyzer path is now supported; error should be about
+	// the binary not being found, not about the feature being unsupported.
+	errMsg := err.Error()
+	if bytes.Contains([]byte(errMsg), []byte("not yet supported")) {
+		t.Errorf("quality --analyzer should no longer be rejected; got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "analyzer") {
+		t.Errorf("error should mention analyzer, got: %s", errMsg)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/unbound-force/gaze/internal/adapter"
@@ -125,7 +126,7 @@ func TestExternalSideEffectAnalyzer(t *testing.T) {
 
 	var stderr bytes.Buffer
 	analyzer := adapter.NewExternalSideEffectAnalyzer(
-		client, caps, "/tmp/project", []string{"./..."}, &stderr,
+		client, caps, "/tmp/project", []string{"./..."}, &stderr, nil,
 	)
 
 	results, err := analyzer.Analyze("math_utils")
@@ -177,7 +178,7 @@ func TestExternalSideEffectAnalyzer_FiltersByPackage(t *testing.T) {
 	caps := mustInitialize(t, client)
 
 	analyzer := adapter.NewExternalSideEffectAnalyzer(
-		client, caps, "/tmp/project", []string{"./..."}, nil,
+		client, caps, "/tmp/project", []string{"./..."}, nil, nil,
 	)
 
 	// Query a non-existent package — should return empty.
@@ -197,7 +198,7 @@ func TestSessionLifecycle(t *testing.T) {
 	session := adapter.NewSession(
 		fakeBinaryPath, []string{"--stdio"},
 		"/tmp/project", []string{"./..."},
-		&stderr,
+		&stderr, nil,
 	)
 
 	providers, err := session.Initialize()
@@ -229,8 +230,8 @@ func TestSessionLifecycle(t *testing.T) {
 	if !providers.Capabilities.Discover {
 		t.Error("Capabilities.Discover = false, want true")
 	}
-	if providers.Capabilities.ClassifySignals {
-		t.Error("Capabilities.ClassifySignals = true, want false")
+	if !providers.Capabilities.ClassifySignals {
+		t.Error("Capabilities.ClassifySignals = false, want true")
 	}
 	if !providers.Capabilities.DocCoverage {
 		t.Error("Capabilities.DocCoverage = false, want true")
@@ -319,7 +320,7 @@ func TestContractCoverageProvider_WithTestMapping(t *testing.T) {
 	caps := mustInitialize(t, client)
 
 	sideEffects := adapter.NewExternalSideEffectAnalyzer(
-		client, caps, "/tmp/project", []string{"./..."}, nil,
+		client, caps, "/tmp/project", []string{"./..."}, nil, nil,
 	)
 
 	provider := adapter.NewExternalContractCoverageProvider(
@@ -359,7 +360,7 @@ func TestContractCoverageProvider_WithTestMapping(t *testing.T) {
 func TestSessionClose_BeforeInitialize(t *testing.T) {
 	session := adapter.NewSession(
 		fakeBinaryPath, []string{"--stdio"},
-		"/tmp/project", []string{"./..."}, nil,
+		"/tmp/project", []string{"./..."}, nil, nil,
 	)
 
 	// Close without Initialize — should not panic or error.
@@ -373,7 +374,7 @@ func TestSessionClose_BeforeInitialize(t *testing.T) {
 func TestSession_BinaryNotFound(t *testing.T) {
 	session := adapter.NewSession(
 		"/nonexistent/analyzer", []string{"--stdio"},
-		"/tmp/project", []string{"./..."}, nil,
+		"/tmp/project", []string{"./..."}, nil, nil,
 	)
 
 	_, err := session.Initialize()
@@ -443,6 +444,189 @@ func mustInitialize(t *testing.T, client *protocol.Client) protocol.Capabilities
 	return initResult.Capabilities
 }
 
+// TestExternalSideEffectAnalyzer_ClassifySignals verifies that when
+// classify_signals capability is true, the adapter calls classify_signals
+// after analyze and merges the returned signals into cached effects.
+// Effects with pre-existing classifications (from the analyze response)
+// are preserved; effects without classification get classified via
+// ComputeScore.
+func TestExternalSideEffectAnalyzer_ClassifySignals(t *testing.T) {
+	client := mustNewClient(t)
+	defer func() { _ = client.Close() }()
+
+	caps := mustInitialize(t, client)
+	if !caps.ClassifySignals {
+		t.Fatal("expected ClassifySignals=true from fake analyzer")
+	}
+
+	var stderr bytes.Buffer
+	analyzer := adapter.NewExternalSideEffectAnalyzer(
+		client, caps, "/tmp/project", []string{"./..."}, &stderr, nil,
+	)
+
+	// First call triggers loadAll → analyze + classify_signals.
+	results, err := analyzer.Analyze("math_utils")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	// Verify classify_signals was called (no stderr warnings about failure).
+	if strings.Contains(stderr.String(), "classify_signals failed") {
+		t.Errorf("unexpected classify_signals failure: %s", stderr.String())
+	}
+
+	// Find multiply — its ReturnValue effect has a pre-existing classification
+	// from the analyze response (confidence 95, contractual). The classify_signals
+	// response sends a signal with weight -15 for it, but since the effect is
+	// already classified, mergeClassifications should preserve the original.
+	for _, r := range results {
+		if r.Target.Function == "multiply" {
+			if len(r.SideEffects) != 1 {
+				t.Fatalf("multiply has %d effects, want 1", len(r.SideEffects))
+			}
+			e := r.SideEffects[0]
+			if e.Classification == nil {
+				t.Fatal("multiply ReturnValue classification is nil after classify_signals")
+			}
+			// Pre-classified: should retain original confidence 95.
+			if e.Classification.Confidence != 95 {
+				t.Errorf("multiply ReturnValue confidence = %d, want 95 (pre-classified preserved)",
+					e.Classification.Confidence)
+			}
+		}
+	}
+}
+
+// TestExternalSideEffectAnalyzer_ClassifySignals_CacheConsistency verifies
+// that a second Analyze() call returns the same classified data from the
+// cache without re-calling classify_signals. The "no pre-classification"
+// path (where classify_signals signals are scored through ComputeScore on
+// unclassified effects) is tested via unit tests in classify_test.go, since
+// the fake analyzer's analyze response always includes pre-classifications.
+func TestExternalSideEffectAnalyzer_ClassifySignals_CacheConsistency(t *testing.T) {
+	client := mustNewClient(t)
+	defer func() { _ = client.Close() }()
+
+	caps := mustInitialize(t, client)
+
+	// Verify multi-call cache: a second Analyze() call returns the same
+	// classified data without re-calling classify_signals.
+	var stderr bytes.Buffer
+	analyzer := adapter.NewExternalSideEffectAnalyzer(
+		client, caps, "/tmp/project", []string{"./..."}, &stderr, nil,
+	)
+
+	// First call loads and classifies.
+	results1, err := analyzer.Analyze("math_utils")
+	if err != nil {
+		t.Fatalf("first Analyze: %v", err)
+	}
+
+	// Second call for same package — uses cache.
+	results2, err := analyzer.Analyze("math_utils")
+	if err != nil {
+		t.Fatalf("second Analyze: %v", err)
+	}
+
+	if len(results1) != len(results2) {
+		t.Fatalf("result count mismatch: first=%d, second=%d", len(results1), len(results2))
+	}
+
+	// Verify classification state is identical (cached, not re-classified).
+	for i := range results1 {
+		if results1[i].Target.Function != results2[i].Target.Function {
+			t.Errorf("result[%d] function mismatch: %q vs %q",
+				i, results1[i].Target.Function, results2[i].Target.Function)
+		}
+		for j := range results1[i].SideEffects {
+			c1 := results1[i].SideEffects[j].Classification
+			c2 := results2[i].SideEffects[j].Classification
+			if (c1 == nil) != (c2 == nil) {
+				t.Errorf("result[%d] effect[%d] classification nil mismatch", i, j)
+			}
+			if c1 != nil && c2 != nil && c1.Confidence != c2.Confidence {
+				t.Errorf("result[%d] effect[%d] confidence mismatch: %d vs %d",
+					i, j, c1.Confidence, c2.Confidence)
+			}
+		}
+	}
+}
+
+// TestExternalSideEffectAnalyzer_ClassifySignals_Disabled verifies that
+// when classify_signals capability is false, no classify_signals call is
+// made and effects without pre-classification remain unclassified.
+func TestExternalSideEffectAnalyzer_ClassifySignals_Disabled(t *testing.T) {
+	client := mustNewClient(t)
+	defer func() { _ = client.Close() }()
+
+	// Initialize to get protocol handshake done, but override caps.
+	mustInitialize(t, client)
+
+	// Use caps with ClassifySignals=false.
+	caps := protocol.Capabilities{
+		Discover:        true,
+		TestMapping:     true,
+		ClassifySignals: false,
+	}
+
+	var stderr bytes.Buffer
+	analyzer := adapter.NewExternalSideEffectAnalyzer(
+		client, caps, "/tmp/project", []string{"./..."}, &stderr, nil,
+	)
+
+	results, err := analyzer.Analyze("math_utils")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	// With ClassifySignals=false, the effects still have pre-classifications
+	// from the analyze response (they're baked into the protocol data).
+	// But no classify_signals call should have been made.
+	if strings.Contains(stderr.String(), "classify_signals") {
+		t.Errorf("unexpected classify_signals activity in stderr: %s", stderr.String())
+	}
+
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3", len(results))
+	}
+
+	// Verify pre-classified confidence values match the analyze response
+	// exactly — proving they came from the analyze response, not from
+	// classify_signals → ComputeScore. We check each effect individually
+	// since some functions have multiple effects.
+	type wantEffect struct {
+		seType     string
+		confidence int
+	}
+	wantConfidence := map[string][]wantEffect{
+		"multiply": {{"ReturnValue", 95}},
+		"divide":   {{"ReturnValue", 90}, {"ErrorReturn", 85}},
+		// add has no side effects
+	}
+	for _, r := range results {
+		wants, ok := wantConfidence[r.Target.Function]
+		if !ok {
+			continue
+		}
+		for _, w := range wants {
+			for _, e := range r.SideEffects {
+				if string(e.Type) != w.seType {
+					continue
+				}
+				if e.Classification == nil {
+					t.Errorf("%s/%s: expected pre-classification from analyze response, got nil",
+						r.Target.Function, w.seType)
+					continue
+				}
+				if e.Classification.Confidence != w.confidence {
+					t.Errorf("%s/%s: confidence = %d, want %d (from analyze response, not ComputeScore)",
+						r.Target.Function, w.seType, e.Classification.Confidence, w.confidence)
+				}
+			}
+		}
+	}
+}
+
 // TestExternalSideEffectAnalyzer_Streaming verifies that the streaming
 // adapter produces the same results as the batch adapter.
 func TestExternalSideEffectAnalyzer_Streaming(t *testing.T) {
@@ -460,7 +644,7 @@ func TestExternalSideEffectAnalyzer_Streaming(t *testing.T) {
 	batchAnalyzer := adapter.NewExternalSideEffectAnalyzer(
 		batchClient, batchCaps,
 		"/tmp/project", []string{"./..."},
-		&bytes.Buffer{},
+		&bytes.Buffer{}, nil,
 	)
 	batchResults, err := batchAnalyzer.Analyze("math_utils")
 	if err != nil {
@@ -480,7 +664,7 @@ func TestExternalSideEffectAnalyzer_Streaming(t *testing.T) {
 	streamAnalyzer := adapter.NewExternalSideEffectAnalyzer(
 		streamClient, streamCaps,
 		"/tmp/project", []string{"./..."},
-		&bytes.Buffer{},
+		&bytes.Buffer{}, nil,
 	)
 	streamResults, err := streamAnalyzer.Analyze("math_utils")
 	if err != nil {
