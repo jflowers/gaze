@@ -27,12 +27,12 @@ Add a `computeDetectionConfidenceFromMappings` function to `internal/adapter/con
 that computes assertion detection confidence from `protocol.AssertionMappingData` entries.
 The logic mirrors `computeDetectionConfidence`:
 
-- Total = count of mappings for a given test function
+- Total = count of mappings for a given target function
 - Recognized = count of mappings where `AssertionType` is non-empty (the external
   analyzer successfully classified the assertion pattern)
 - Confidence = `Recognized * 100 / Total` (0 when Total is 0)
 
-This is computed per test function, matching the Go-native path where each
+This is computed per target function, matching the Go-native path where each
 `QualityReport` has its own `AssertionDetectionConfidence`.
 
 ### Wire confidence into `buildContractLookup`
