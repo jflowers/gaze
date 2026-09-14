@@ -860,6 +860,244 @@ func TestDocCoverage_HappyPath(t *testing.T) {
 	}
 }
 
+// TestAnalyze_NotInitialized verifies that Analyze returns
+// (nil, nil) when the session has not been initialized.
+func TestAnalyze_NotInitialized(t *testing.T) {
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."}, nil, nil,
+	)
+
+	result, err := session.Analyze(context.Background(), protocol.AnalyzeParams{
+		RootPath: "/tmp/project",
+		Patterns: []string{"./..."},
+	})
+	if err != nil {
+		t.Fatalf("Analyze on uninitialized session: %v", err)
+	}
+	if result != nil {
+		t.Errorf("Analyze on uninitialized session returned non-nil result: %+v", result)
+	}
+}
+
+// TestAnalyze_HappyPath verifies that Analyze returns functions with
+// side effects from the fake analyzer.
+func TestAnalyze_HappyPath(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."},
+		&stderr, nil,
+	)
+
+	_, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	result, err := session.Analyze(context.Background(), protocol.AnalyzeParams{
+		RootPath: "/tmp/project",
+		Patterns: []string{"./..."},
+	})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Analyze returned nil result")
+	}
+
+	// Fake analyzer returns 3 functions: divide (2 effects),
+	// multiply (1 effect), add (1 effect).
+	if len(result.Functions) != 3 {
+		t.Fatalf("got %d functions, want 3", len(result.Functions))
+	}
+
+	want := map[string]int{
+		"divide":   2,
+		"multiply": 1,
+		"add":      0,
+	}
+	for _, fn := range result.Functions {
+		expectedEffects, ok := want[fn.Name]
+		if !ok {
+			t.Errorf("unexpected function %q", fn.Name)
+			continue
+		}
+		if len(fn.SideEffects) != expectedEffects {
+			t.Errorf("%s: got %d side effects, want %d",
+				fn.Name, len(fn.SideEffects), expectedEffects)
+		}
+		if fn.Package != "math_utils" {
+			t.Errorf("%s: package = %q, want %q", fn.Name, fn.Package, "math_utils")
+		}
+	}
+}
+
+// TestAnalyze_Timeout verifies that Analyze respects context
+// cancellation.
+func TestAnalyze_Timeout(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."},
+		&stderr, nil,
+	)
+
+	_, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	// Use an already-cancelled context.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = session.Analyze(ctx, protocol.AnalyzeParams{
+		RootPath: "/tmp/project",
+		Patterns: []string{"./..."},
+	})
+	if err == nil {
+		t.Fatal("Analyze with cancelled context should return an error")
+	}
+}
+
+// TestLanguage_BeforeInit verifies that Language returns empty string
+// before initialization.
+func TestLanguage_BeforeInit(t *testing.T) {
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."}, nil, nil,
+	)
+
+	lang := session.Language()
+	if lang != "" {
+		t.Errorf("Language before init = %q, want empty string", lang)
+	}
+}
+
+// TestLanguage_AfterInit verifies that Language returns the language
+// declared by the analyzer during initialization.
+func TestLanguage_AfterInit(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."},
+		&stderr, nil,
+	)
+
+	_, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	lang := session.Language()
+	if lang != "python" {
+		t.Errorf("Language after init = %q, want %q", lang, "python")
+	}
+}
+
+// TestFetchDocscanData_HappyPath verifies the combined FetchDocscanData
+// method returns both DocCoverage and Functions data.
+func TestFetchDocscanData_HappyPath(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."},
+		&stderr, nil,
+	)
+
+	_, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	data, err := session.FetchDocscanData(
+		context.Background(), "/tmp/project", []string{"./..."}, &stderr,
+	)
+	if err != nil {
+		t.Fatalf("FetchDocscanData: %v", err)
+	}
+	if data == nil {
+		t.Fatal("FetchDocscanData returned nil")
+	}
+
+	// DocCoverage should be populated (fake analyzer supports it).
+	if data.DocCoverage == nil {
+		t.Error("FetchDocscanData: DocCoverage is nil, expected non-nil")
+	}
+
+	// Functions should contain the fake analyzer's 3 functions.
+	if len(data.Functions) != 3 {
+		t.Errorf("FetchDocscanData: got %d functions, want 3", len(data.Functions))
+	}
+}
+
+// TestFetchDocscanData_NotInitialized verifies that FetchDocscanData
+// returns (non-nil data, nil error) when the session has not been
+// initialized, matching the Session.Analyze and Session.DocCoverage
+// behavior of returning (nil, nil) for uninitialized sessions.
+func TestFetchDocscanData_NotInitialized(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio"},
+		"/tmp/project", []string{"./..."}, nil, nil,
+	)
+
+	data, err := session.FetchDocscanData(
+		context.Background(), "/tmp/project", []string{"./..."}, &stderr,
+	)
+	if err != nil {
+		t.Fatalf("FetchDocscanData on uninitialized session: %v", err)
+	}
+	// Both DocCoverage and Functions should be nil/empty since the
+	// underlying methods return (nil, nil) when not initialized.
+	if data.DocCoverage != nil {
+		t.Errorf("DocCoverage should be nil on uninitialized session")
+	}
+	if len(data.Functions) != 0 {
+		t.Errorf("Functions should be empty on uninitialized session, got %d", len(data.Functions))
+	}
+}
+
+// TestFetchDocscanData_DocCoverageSoftFail verifies that
+// FetchDocscanData degrades gracefully when doc_coverage is
+// unsupported — returns nil DocCoverage but still returns Functions.
+func TestFetchDocscanData_DocCoverageSoftFail(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(
+		fakeBinaryPath, []string{"--stdio", "--no-doc-coverage"},
+		"/tmp/project", []string{"./..."},
+		&stderr, nil,
+	)
+
+	_, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	data, err := session.FetchDocscanData(
+		context.Background(), "/tmp/project", []string{"./..."}, &stderr,
+	)
+	if err != nil {
+		t.Fatalf("FetchDocscanData: %v", err)
+	}
+
+	// DocCoverage should be nil (capability disabled).
+	if data.DocCoverage != nil {
+		t.Errorf("DocCoverage should be nil when capability is disabled, got %+v", data.DocCoverage)
+	}
+
+	// Functions should still be populated.
+	if len(data.Functions) != 3 {
+		t.Errorf("got %d functions, want 3", len(data.Functions))
+	}
+}
+
 // startFakeAnalyzerWithArgs starts the fake analyzer binary with
 // extra command-line arguments appended after --stdio.
 func startFakeAnalyzerWithArgs(t *testing.T, extraArgs ...string) *protocol.Client {
