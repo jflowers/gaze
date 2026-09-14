@@ -12,14 +12,26 @@ import (
 // fences which are handled separately.
 var backtickRe = regexp.MustCompile("`([^`]+)`")
 
-// ignoredSymbols is the set of Go keywords and builtins that should
-// not be treated as API symbol references in documentation.
-var ignoredSymbols = map[string]bool{
-	"nil": true, "true": true, "false": true,
-	"error": true, "string": true, "int": true,
-	"bool": true, "any": true, "func": true,
-	"if": true, "for": true, "return": true,
-	"defer": true, "go": true,
+// ignoredSymbolsList is the set of Go keywords and builtins that
+// should not be treated as API symbol references in documentation.
+// Defined as a slice to avoid mutable package-level maps (CS-007).
+var ignoredSymbolsList = [...]string{
+	"nil", "true", "false",
+	"error", "string", "int",
+	"bool", "any", "func",
+	"if", "for", "return",
+	"defer", "go",
+}
+
+// isIgnoredSymbol reports whether s is a Go keyword or builtin that
+// should be excluded from symbol reference detection.
+func isIgnoredSymbol(s string) bool {
+	for _, sym := range ignoredSymbolsList {
+		if s == sym {
+			return true
+		}
+	}
+	return false
 }
 
 // allLowerHyphenRe matches strings that consist entirely of lowercase
@@ -27,28 +39,41 @@ var ignoredSymbols = map[string]bool{
 // "golangci-lint".
 var allLowerHyphenRe = regexp.MustCompile(`^[a-z][a-z-]*$`)
 
-// genericLanguageTags is the exhaustive set of language tags that
+// genericLanguageTagsList is the exhaustive set of language tags that
 // are considered generic and excluded from code block language
 // validation. These tags typically represent data formats, shell
 // commands, or output rather than source code in a specific
-// programming language.
-var genericLanguageTags = map[string]bool{
-	"text": true, "plaintext": true, "console": true,
-	"shell": true, "bash": true, "sh": true, "zsh": true,
-	"json": true, "yaml": true, "yml": true, "toml": true,
-	"xml": true, "html": true, "css": true, "sql": true,
-	"diff": true, "ini": true, "csv": true,
-	"makefile": true, "dockerfile": true,
-	"markdown": true, "md": true,
-	"output": true, "log": true,
+// programming language. Defined as a slice to avoid mutable
+// package-level maps (CS-007).
+var genericLanguageTagsList = [...]string{
+	"text", "plaintext", "console",
+	"shell", "bash", "sh", "zsh",
+	"json", "yaml", "yml", "toml",
+	"xml", "html", "css", "sql",
+	"diff", "ini", "csv",
+	"makefile", "dockerfile",
+	"markdown", "md",
+	"output", "log",
+}
+
+// isGenericLanguageTag reports whether lang is a generic language
+// tag that should be excluded from code block validation.
+func isGenericLanguageTag(lang string) bool {
+	for _, tag := range genericLanguageTagsList {
+		if lang == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // GenericLanguageTags returns the exhaustive set of language tags
-// considered generic. The returned map is a copy safe for mutation.
+// considered generic. The returned map is a fresh copy safe for
+// mutation by callers.
 func GenericLanguageTags() map[string]bool {
-	result := make(map[string]bool, len(genericLanguageTags))
-	for k, v := range genericLanguageTags {
-		result[k] = v
+	result := make(map[string]bool, len(genericLanguageTagsList))
+	for _, tag := range genericLanguageTagsList {
+		result[tag] = true
 	}
 	return result
 }
@@ -129,7 +154,7 @@ func shouldIgnoreBacktickContent(s string) bool {
 	}
 
 	// Go keywords and builtins
-	if ignoredSymbols[s] {
+	if isIgnoredSymbol(s) {
 		return true
 	}
 
@@ -183,7 +208,7 @@ func ValidateCodeBlocks(docs []docscan.DocumentFile, expectedLang string) []Code
 			}
 
 			// Generic tags are excluded from validation.
-			if genericLanguageTags[lang] {
+			if isGenericLanguageTag(lang) {
 				continue
 			}
 
