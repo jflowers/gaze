@@ -46,7 +46,7 @@ the mappings — but `Build`'s interface contract (`crap.ContractCoverageProvide
 returns only the lookup function and degraded packages. The confidence data
 needs to flow through a different channel to reach `QualityReport` construction.
 
-### D2: New `DetectionConfidenceByFunc` field on provider struct
+### D2: New `detectionConfidence` field on provider struct
 
 Store the per-function detection confidence map on
 `ExternalContractCoverageProvider` as a computed field populated during
