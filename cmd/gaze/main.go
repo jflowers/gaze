@@ -26,7 +26,6 @@ import (
 	"github.com/unbound-force/gaze/internal/docscan"
 	"github.com/unbound-force/gaze/internal/docscan/apidoc"
 	"github.com/unbound-force/gaze/internal/loader"
-	"github.com/unbound-force/gaze/internal/protocol"
 	"github.com/unbound-force/gaze/internal/provider/goprovider"
 	"github.com/unbound-force/gaze/internal/quality"
 	"github.com/unbound-force/gaze/internal/report"
@@ -996,13 +995,9 @@ automatically.`,
 	return cmd
 }
 
-// DocscanOutput is the structured JSON output for gaze docscan.
-// It wraps the document list with optional API coverage data from
-// an external analyzer.
-type DocscanOutput struct {
-	Documents   []docscan.DocumentFile    `json:"documents"`
-	APICoverage *apidoc.APICoverageReport `json:"api_coverage"`
-}
+// docscanOutput is a type alias for apidoc.DocscanEnvelope,
+// providing the structured JSON output for gaze docscan.
+type docscanOutput = apidoc.DocscanEnvelope
 
 // docscanParams holds the parsed flags for the docscan command.
 type docscanParams struct {
@@ -1052,12 +1047,12 @@ func runDocscan(p docscanParams) error {
 		return fmt.Errorf("scanning documents: %w", err)
 	}
 
-	output := DocscanOutput{Documents: docs}
+	output := docscanOutput{Documents: docs}
 
 	// External analyzer path: when --analyzer or --language is set,
 	// compute API documentation coverage via the external analyzer.
 	if p.analyzerFlag != "" || p.languageFlag != "" {
-		report, analyzerErr := runDocscanAnalyzer(p, repoRoot, docs)
+		report, analyzerErr := runDocscanAnalyzer(context.Background(), p, repoRoot, docs)
 		if analyzerErr != nil {
 			// Non-fatal: warn and continue without API coverage.
 			_, _ = fmt.Fprintf(p.stderr, "Warning: analyzer integration failed: %v\n", analyzerErr)
@@ -1076,49 +1071,29 @@ func runDocscan(p docscanParams) error {
 // supported) and analyze (for heuristic fallback), then delegates
 // to apidoc.Analyze for the final report.
 func runDocscanAnalyzer(
-	p docscanParams, moduleDir string, docs []docscan.DocumentFile,
+	ctx context.Context, p docscanParams, moduleDir string, docs []docscan.DocumentFile,
 ) (*apidoc.APICoverageReport, error) {
 	patterns := []string{p.pkgPath}
 
-	session, providers, err := initExternalSession(
+	session, _, err := initExternalSession(
 		p.analyzerFlag, p.languageFlag, moduleDir, patterns, p.stderr)
 	if err != nil {
 		return nil, fmt.Errorf("initializing analyzer: %w", err)
 	}
 	defer func() { _ = session.Close() }()
 
+	// FetchDocscanData consolidates the DocCoverage + Analyze call
+	// pattern shared with the report pipeline (runner_steps.go).
+	// Analyze failure is non-fatal here — continue with partial data.
+	data, fetchErr := session.FetchDocscanData(ctx, moduleDir, patterns, p.stderr)
+	if fetchErr != nil {
+		_, _ = fmt.Fprintf(p.stderr, "Warning: %v\n", fetchErr)
+	}
+
 	analyzerData := &apidoc.AnalyzerData{
-		Language: providers.Language,
-	}
-
-	// Attempt native doc_coverage if the analyzer supports it.
-	// Session methods apply AnalysisTimeout internally when no
-	// caller deadline is set, so context.Background() is sufficient.
-	ctx := context.Background()
-
-	docCov, docCovErr := session.DocCoverage(ctx, protocol.DocCoverageParams{
-		RootPath: moduleDir,
-		Patterns: patterns,
-	})
-	if docCovErr != nil {
-		// doc_coverage runtime failure — fall back to heuristic.
-		_, _ = fmt.Fprintf(p.stderr, "Warning: doc_coverage call failed, using heuristic: %v\n", docCovErr)
-	} else {
-		analyzerData.DocCoverage = docCov
-	}
-
-	// Get analyze results for the heuristic path (needed when
-	// doc_coverage is nil or unsupported). Accept the performance
-	// cost of a duplicate analyze call — design decision from
-	// integration spec task 6.1.
-	analyzeResult, analyzeErr := session.Analyze(ctx, protocol.AnalyzeParams{
-		RootPath: moduleDir,
-		Patterns: patterns,
-	})
-	if analyzeErr != nil {
-		_, _ = fmt.Fprintf(p.stderr, "Warning: analyze call failed: %v\n", analyzeErr)
-	} else if analyzeResult != nil {
-		analyzerData.Functions = analyzeResult.Functions
+		Functions:   data.Functions,
+		DocCoverage: data.DocCoverage,
+		Language:    session.Language(),
 	}
 
 	report, err := apidoc.Analyze(docs, analyzerData)

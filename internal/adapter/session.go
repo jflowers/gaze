@@ -214,6 +214,52 @@ func (s *Session) Language() string {
 	return s.language
 }
 
+// DocscanData holds the raw data fetched from an external analyzer
+// for use with apidoc.Analyze. See [Session.FetchDocscanData].
+type DocscanData struct {
+	// DocCoverage is the native doc_coverage result from the analyzer.
+	// Nil when the capability is unsupported or the call failed.
+	DocCoverage *protocol.DocCoverageResult
+
+	// Functions is the list of analyzed functions from the analyze call.
+	Functions []protocol.AnalyzedFunction
+}
+
+// FetchDocscanData calls DocCoverage and Analyze in sequence and
+// returns the combined data for API documentation coverage analysis.
+// DocCoverage failure is non-fatal — the returned DocCoverage will be
+// nil and a warning is logged to stderr. An error is returned only
+// when the Analyze call fails. Callers that want graceful degradation
+// on Analyze failure should check the error and proceed accordingly.
+func (s *Session) FetchDocscanData(ctx context.Context, rootPath string, patterns []string, stderr io.Writer) (*DocscanData, error) {
+	data := &DocscanData{}
+
+	// DocCoverage is optional — failures fall back to heuristic.
+	docCov, docCovErr := s.DocCoverage(ctx, protocol.DocCoverageParams{
+		RootPath: rootPath,
+		Patterns: patterns,
+	})
+	if docCovErr != nil {
+		_, _ = fmt.Fprintf(stderr, "warning: doc_coverage call failed, falling back to heuristic: %v\n", docCovErr)
+	} else {
+		data.DocCoverage = docCov
+	}
+
+	// Analyze provides the function list for heuristic coverage.
+	result, err := s.Analyze(ctx, protocol.AnalyzeParams{
+		RootPath: rootPath,
+		Patterns: patterns,
+	})
+	if err != nil {
+		return data, fmt.Errorf("analyze: %w", err)
+	}
+	if result != nil {
+		data.Functions = result.Functions
+	}
+
+	return data, nil
+}
+
 // Close sends a shutdown request to the analyzer and waits for the
 // subprocess to exit. Safe to call even if Initialize was not called
 // or failed.
