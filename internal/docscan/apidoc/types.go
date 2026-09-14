@@ -5,7 +5,10 @@
 // fallback (scanning Markdown for backtick-quoted symbol references).
 package apidoc
 
-import "github.com/unbound-force/gaze/internal/protocol"
+import (
+	"github.com/unbound-force/gaze/internal/docscan"
+	"github.com/unbound-force/gaze/internal/protocol"
+)
 
 // AnalyzerData is the input struct that carries analyzer output
 // into the coverage computation. DocCoverage is non-nil when the
@@ -23,6 +26,20 @@ type AnalyzerData struct {
 	// Language is the primary language the analyzer targets
 	// (e.g., "python", "go"). Used for code block validation.
 	Language string `json:"language"`
+}
+
+// DocscanEnvelope wraps the docscan output in a structured envelope
+// with optional API coverage data. It is the canonical JSON output
+// type for the gaze docscan command and the docscan step of the
+// report pipeline, providing a single shared definition for both
+// layers (AP-007 compliant — both import from internal/).
+type DocscanEnvelope struct {
+	// Documents is the list of documentation files discovered.
+	Documents []docscan.DocumentFile `json:"documents"`
+
+	// APICoverage is the optional API documentation coverage report
+	// from an external analyzer. Nil when no analyzer is configured.
+	APICoverage *APICoverageReport `json:"api_coverage"`
 }
 
 // APICoverageReport is the output struct containing the full
