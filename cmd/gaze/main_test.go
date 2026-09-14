@@ -500,10 +500,10 @@ func TestRunDocscan_OutputsJSON(t *testing.T) {
 	}
 
 	// Output should be a JSON object with "documents" and
-	// "api_coverage" keys (DocscanOutput envelope).
-	var output DocscanOutput
+	// "api_coverage" keys (DocscanEnvelope envelope).
+	var output docscanOutput
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &output); jsonErr != nil {
-		t.Fatalf("docscan output is not valid DocscanOutput JSON: %v\noutput:\n%s",
+		t.Fatalf("docscan output is not valid DocscanEnvelope JSON: %v\noutput:\n%s",
 			jsonErr, stdout.String())
 	}
 
@@ -585,10 +585,10 @@ func TestRunDocscan_AnalyzerFlag_InvalidBinary(t *testing.T) {
 		t.Errorf("expected warning on stderr, got: %s", stderr.String())
 	}
 
-	// Output should still be valid DocscanOutput JSON.
-	var output DocscanOutput
+	// Output should still be valid DocscanEnvelope JSON.
+	var output docscanOutput
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &output); jsonErr != nil {
-		t.Fatalf("output is not valid DocscanOutput JSON: %v\noutput:\n%s",
+		t.Fatalf("output is not valid DocscanEnvelope JSON: %v\noutput:\n%s",
 			jsonErr, stdout.String())
 	}
 
