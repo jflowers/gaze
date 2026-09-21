@@ -44,7 +44,7 @@ Depends on: Groups 2 and 3 (coverage + validation functions must exist).
 
 Depends on: Group 4 (`apidoc.Analyze` must exist).
 
-- [x] 5.1 Add `DocscanOutput` struct to `cmd/gaze/main.go` (CLI layer) with `Documents []docscan.DocumentFile` and `APICoverage *apidoc.APICoverageReport` fields — NOT in `internal/docscan/` (would create circular import with `apidoc`)
+- [x] 5.1 Add `DocscanEnvelope` struct to `internal/docscan/apidoc/types.go` with `Documents []docscan.DocumentFile` and `APICoverage *APICoverageReport` fields — shared by both the CLI and report consumers
 - [x] 5.2 Update `runDocscan` in `cmd/gaze/main.go` — add `--analyzer` and `--language` flags, create adapter session (with `defer session.Close()`), call `session.DocCoverage()` (gated on capabilities), call `apidoc.Analyze`, output `DocscanOutput` JSON. If `doc_coverage` call fails at runtime, fall back to heuristic with warning.
 - [x] 5.3 [P] Add tests for `runDocscan` with and without analyzer in `cmd/gaze/main_test.go` or dedicated test file — verify JSON output structure, nil api_coverage when no analyzer
 
@@ -54,10 +54,10 @@ Depends on: Groups 4 and 5 (`apidoc.Analyze` and `DocscanOutput` must exist).
 
 - [x] 6.0 Add `DocCoverage(ctx context.Context, params protocol.DocCoverageParams) (*protocol.DocCoverageResult, error)` method to `adapter.Session` in `internal/adapter/session.go`, gated on `s.caps.DocCoverage`. Uses `callAndUnmarshal` pattern. Returns nil when capability is false.
 - [x] 6.1 Update `runDocscanStep` signature in `internal/aireport/runner_steps.go` to accept `*adapter.Session` parameter; when non-nil, call `session.DocCoverage()` and `analyze` (accept performance cost of duplicate call), then call `apidoc.Analyze`
-- [x] 6.2 Update `pipelineStepFuncs` type and `runProductionPipeline` in `internal/aireport/runner.go` to pass the analyzer session to the docscan step. Add `AnalyzerSession *adapter.Session` to `RunnerOptions` or thread the session through `runProductionPipeline` parameter.
+- [x] 6.2 Export `RunDocscanStep` in `internal/aireport/runner_steps.go` (accepting `*adapter.Session`); the external report path calls it directly from `runExternalReportCRAP` with the session, while the Go-native `runProductionPipeline` invokes it with a nil session.
 - [x] 6.3 [P] Update `runDocscanStep` tests in `internal/aireport/runner_steps_test.go` for the new signature (nil session path)
 - [x] 6.4 [P] Update pipeline internal tests in `internal/aireport/pipeline_internal_test.go` for the new `docscanStep` function type
-- [x] 6.5 [P] Update `compactDocscanField` in `internal/aireport/compact.go` to unmarshal the new `DocscanOutput` envelope instead of bare `[]DocumentFile` array — compact the `Documents` slice, pass through `APICoverage`. Update the 4 docscan-related tests in `compact_test.go`.
+- [x] 6.5 [P] Update `compactDocscanField` in `internal/aireport/compact.go` to unmarshal the new `DocscanEnvelope` envelope instead of bare `[]DocumentFile` array — compact the `Documents` slice, pass through `APICoverage`. Update the 4 docscan-related tests in `compact_test.go`.
 
 ## 7. Fake Analyzer Update
 
@@ -69,7 +69,7 @@ Depends on: Group 1 (protocol types must exist).
 ## 8. Documentation and Verification
 
 - [x] 8.1 Update `AGENTS.md` — add `internal/docscan/apidoc` to Architecture section, mention `doc_coverage` protocol method in Key Patterns
-- [x] 8.2 Update `README.md` — add `--analyzer` flag documentation for `gaze docscan`, document the `api_coverage` JSON output section, **document the breaking change from bare `[]DocumentFile` array to `DocscanOutput` structured object with migration guidance**
+- [x] 8.2 Update `README.md` — add `--analyzer` flag documentation for `gaze docscan`, document the `api_coverage` JSON output section, **document the breaking change from bare `[]DocumentFile` array to `DocscanEnvelope` structured object with migration guidance**
 - [x] 8.3 Verify constitution alignment — run `go test -race -count=1 -short ./...` and `golangci-lint run`, confirm all tests pass, confirm Principle I (Accuracy: native doc_coverage tested), Principle II (Minimal Assumptions: nil analyzer graceful fallback tested), Principle III (Actionable Output: JSON output includes specific symbols/files/lines), Principle IV (Testability: all apidoc functions tested with synthetic data)
 - [x] 8.4 File website documentation issue — `gh issue create --repo unbound-force/website --title "docs: gaze docscan --analyzer flag and api_coverage JSON output"` tracking: new --analyzer/--language flags, api_coverage JSON section, breaking change from bare array to structured object, doc_coverage protocol method
 - [x] 8.5 Verify GoDoc completeness — confirm package-level doc comment on `internal/docscan/apidoc`, GoDoc comments on all exported types (`APICoverageReport`, `SymbolCoverage`, `StaleReference`, `CodeBlockIssue`, `AnalyzerData`, `CoverageResult`) and functions (`Analyze`, `ComputeCoverage`, `ValidateReferences`, `ValidateCodeBlocks`)
