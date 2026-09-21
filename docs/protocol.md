@@ -12,7 +12,7 @@ This protocol follows the same transport model as the Language Server Protocol (
 ## Lifecycle
 
 ```text
-gaze crap --analyzer snake-eyes ./src
+gaze {crap,quality,report} --analyzer snake-eyes ./src
 |
 +-- 1. Discover analyzer binary (CLI flag / .gaze.yaml / PATH)
 +-- 2. Spawn: snake-eyes --stdio
@@ -578,7 +578,7 @@ When a required method (`analyze`, `complexity`, `coverage`) returns a JSON-RPC 
 When an optional method (`discover`, `test_mapping`, `classify_signals`) returns an error, Gaze logs a warning to stderr and degrades gracefully:
 
 - `discover` error: no impact (not currently consumed)
-- `test_mapping` error: GazeCRAP is unavailable
+- `test_mapping` error: GazeCRAP is unavailable and `gaze quality` degrades to zero contract coverage (JSON summary sets `reason` to `test_mapping_error`)
 - `classify_signals` error: uses pre-classified effects from `analyze`
 
 ### Process crashes
