@@ -53,7 +53,7 @@ The `DocCoverageResult` struct MUST include:
 ### Requirement: `SymbolDocStatus` Type
 
 The `SymbolDocStatus` struct MUST include:
-- `Name string` (JSON: `"name"`) — fully qualified symbol name
+- `Name string` (JSON: `"name"`) — unqualified symbol name (e.g., `"ProcessData"`); the qualified form is derived as `package.Name`
 - `Package string` (JSON: `"package"`) — package/module path
 - `File string` (JSON: `"file"`) — source file path
 - `Line int` (JSON: `"line"`) — declaration line number

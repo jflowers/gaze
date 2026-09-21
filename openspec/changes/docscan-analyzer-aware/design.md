@@ -46,7 +46,7 @@ type DocCoverageResult struct {
 
 // SymbolDocStatus reports documentation status for a single public symbol.
 type SymbolDocStatus struct {
-    Name       string `json:"name"`        // Fully qualified symbol name
+    Name       string `json:"name"`        // Unqualified symbol name (e.g., "ProcessData")
     Package    string `json:"package"`     // Package/module path
     File       string `json:"file"`        // Source file path
     Line       int    `json:"line"`        // Declaration line
@@ -78,7 +78,7 @@ internal/docscan/apidoc/
   types.go      — APICoverageReport, SymbolCoverage, StaleReference, CodeBlockIssue
   coverage.go   — ComputeCoverage (from DocCoverageResult or AnalyzedFunction list)
   validation.go — ValidateReferences, ValidateCodeBlocks
-  report.go     — WriteJSON, WriteText output formatters
+  analyze.go    — Analyze orchestrator (ComputeCoverage + ValidateReferences + ValidateCodeBlocks)
 ```
 
 ### D4: Separate orchestration via `apidoc.Analyze`
@@ -97,9 +97,9 @@ internal/docscan/apidoc/
 
 ### D6: Report pipeline integration
 
-**Decision**: `runDocscanStep` in `internal/aireport/runner_steps.go` gains an optional `*adapter.Session` parameter. When non-nil, it calls `apidoc.Analyze` after the existing Markdown scan and merges the API coverage data into the docscan JSON output.
+**Decision**: The docscan step is exposed as `RunDocscanStep(ctx context.Context, moduleDir string, sess *adapter.Session, stderr io.Writer)` in `internal/aireport/runner_steps.go`. When `sess` is non-nil, it calls `apidoc.Analyze` after the existing Markdown scan and merges the API coverage data into the docscan JSON output. The Go-native report pipeline calls it with a nil session (heuristic-only); the external-analyzer report path (`runExternalReportCRAP`) invokes it directly with the session it already holds.
 
-**Rationale**: The report pipeline already manages an analyzer session for CRAP/quality steps. Passing the same session to the docscan step avoids spawning a second analyzer subprocess. The session is shared sequentially — the pipeline runs steps in order, so the session is never accessed concurrently.
+**Rationale**: The report pipeline's Go-native path uses Go providers and never has an external analyzer session, so the session is threaded only through the external-analyzer path where one actually exists. Reusing the single session the external path already holds avoids spawning a second analyzer subprocess and avoids dead `RunnerOptions`/`runProductionPipeline` session plumbing that no production caller would ever populate.
 
 ### D7: JSON output structure
 

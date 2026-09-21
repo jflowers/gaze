@@ -56,37 +56,37 @@ The `gaze docscan` JSON output MUST change from a bare `[]DocumentFile` array to
 
 ### Requirement: Report Pipeline Docscan Step Extension
 
-The `runDocscanStep` function in `internal/aireport/runner_steps.go` MUST accept an optional analyzer session parameter for computing API documentation coverage alongside the existing Markdown scan.
+The `RunDocscanStep` function in `internal/aireport/runner_steps.go` MUST accept an optional analyzer session parameter and a `context.Context` for computing API documentation coverage alongside the existing Markdown scan. The Go-native pipeline invokes it with a nil session (heuristic-only); the external-analyzer report path invokes it directly with the session it already holds.
 
 #### Scenario: Report pipeline with analyzer session
 - **GIVEN** a `gaze report --analyzer ./snake-eyes ./...` invocation
 - **AND** the analyzer session is already initialized for the CRAP step
-- **WHEN** `runDocscanStep` executes
+- **WHEN** `RunDocscanStep` executes (via `runExternalReportCRAP`)
 - **THEN** the step MUST reuse the existing session (not spawn a second analyzer), call `analyze` (cached) and optionally `doc_coverage`, and include `api_coverage` in the docscan JSON output
 
 #### Scenario: Report pipeline without analyzer
 - **GIVEN** a `gaze report ./...` invocation with no analyzer
-- **WHEN** `runDocscanStep` executes
+- **WHEN** `RunDocscanStep` executes
 - **THEN** the step MUST produce the existing `[]DocumentFile` output wrapped in `{"documents": [...], "api_coverage": null}`
 
 ### Requirement: Docscan Output Type
 
-A new `DocscanOutput` struct MUST be defined in `cmd/gaze/` (the CLI layer), NOT in `internal/docscan/` or `internal/docscan/apidoc/`. Placing it in `internal/docscan/` would create a circular import (`docscan` → `apidoc` → `docscan`), since `apidoc.Analyze` accepts `[]docscan.DocumentFile`. The CLI layer already imports both packages:
+A single shared `DocscanEnvelope` struct MUST be defined in `internal/docscan/apidoc/types.go` and used directly by both consumers (`cmd/gaze` and `internal/aireport`). This avoids duplicating the envelope in each layer while keeping the type out of `internal/docscan` (which would create a circular import, since `apidoc.Analyze` accepts `[]docscan.DocumentFile`):
 
 ```go
-type DocscanOutput struct {
-    Documents   []docscan.DocumentFile   `json:"documents"`
-    APICoverage *apidoc.APICoverageReport `json:"api_coverage"`
+type DocscanEnvelope struct {
+    Documents   []docscan.DocumentFile `json:"documents"`
+    APICoverage *APICoverageReport     `json:"api_coverage"`
 }
 ```
 
 #### Scenario: Marshaling with coverage
-- **GIVEN** a `DocscanOutput` with 3 documents and a non-nil `APICoverageReport`
+- **GIVEN** a `DocscanEnvelope` with 3 documents and a non-nil `APICoverageReport`
 - **WHEN** marshaled to JSON
 - **THEN** the output MUST contain both `documents` and `api_coverage` keys
 
 #### Scenario: Marshaling without coverage
-- **GIVEN** a `DocscanOutput` with 3 documents and nil `APICoverage`
+- **GIVEN** a `DocscanEnvelope` with 3 documents and nil `APICoverage`
 - **WHEN** marshaled to JSON
 - **THEN** the output MUST contain `documents` array and `"api_coverage": null`
 
@@ -95,27 +95,25 @@ type DocscanOutput struct {
 ### Requirement: `docscan.ScanOptions` — No Modification
 
 `ScanOptions` is NOT modified. It retains its existing fields (`Config *config.GazeConfig`, `PackageDir string`). The caller is responsible for obtaining analyzer data and calling `apidoc.Analyze` separately after calling `Scan`.
+### Requirement: `RunDocscanStep` Signature
 
-### Requirement: `runDocscanStep` Signature Change
+The docscan step is exported as:
 
-Previously: `func runDocscanStep(moduleDir string, stderr io.Writer) (json.RawMessage, error)`
-
-The function signature MUST change to accept an optional analyzer session:
 ```go
-func runDocscanStep(moduleDir string, sess *adapter.Session, stderr io.Writer) (json.RawMessage, error)
+func RunDocscanStep(ctx context.Context, moduleDir string, sess *adapter.Session, stderr io.Writer) (json.RawMessage, error)
 ```
 
-When `sess` is nil, behavior is identical to the current implementation (Markdown scan only), wrapped in the new `DocscanOutput` structure. When non-nil, the function MUST additionally compute API coverage.
+When `sess` is nil, behavior is the Markdown scan only (no API coverage), wrapped in the shared `DocscanEnvelope` structure. When non-nil, the function MUST additionally compute API coverage. The `context.Context` enables caller cancellation/timeout control for the analyzer invocation.
 
 ### Requirement: `pipelineStepFuncs.docscanStep` Type Change
 
-Previously: `docscanStep func(string, io.Writer) (json.RawMessage, error)`
+The Go-native pipeline's injected step type MUST be:
 
-The type MUST change to match the new `runDocscanStep` signature:
 ```go
-docscanStep func(string, *adapter.Session, io.Writer) (json.RawMessage, error)
+docscanStep func(context.Context, string, io.Writer) (json.RawMessage, error)
 ```
 
+The production default wraps `RunDocscanStep` with a nil session (the Go-native pipeline has no external analyzer). The external-analyzer report path calls `RunDocscanStep` directly with its session rather than flowing through `runProductionPipeline`.
 ## REMOVED Requirements
 
 _(None.)_
