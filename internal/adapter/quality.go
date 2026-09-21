@@ -226,6 +226,13 @@ func buildQualitySummary(reports []taxonomy.QualityReport) *taxonomy.PackageSumm
 // standalone function used by the quality CLI path (which doesn't
 // go through ExternalContractCoverageProvider).
 //
+// It intentionally parallels
+// (*ExternalContractCoverageProvider).fetchTestMappings in contract.go,
+// which serves the crap/contract-coverage provider path. The two differ
+// in error handling: this function returns errors to the caller, while
+// the provider variant warns and degrades internally. Keep both in sync
+// when the test_mapping protocol changes.
+//
 // Returns the error on failure. The caller is responsible for
 // graceful degradation (e.g., producing a zero-coverage report).
 func FetchTestMappings(

@@ -90,6 +90,11 @@ func noopLookup() func(pkg, function string) (crap.ContractCoverageInfo, bool) {
 
 // fetchTestMappings calls the test_mapping protocol method and parses
 // the response. Returns nil on any failure (graceful degradation per D7).
+//
+// This is the crap/contract-coverage provider path. The quality CLI
+// path uses the standalone FetchTestMappings function in quality.go
+// instead, which returns errors rather than warning internally. Keep
+// both in sync when the test_mapping protocol changes.
 func (p *ExternalContractCoverageProvider) fetchTestMappings(patterns []string, rootDir string) ([]protocol.AssertionMappingData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), protocol.AnalysisTimeout)
 	defer cancel()
@@ -224,6 +229,12 @@ func confidenceRange(effects []taxonomy.SideEffect) (minConf, maxConf int, found
 // the given type in the effects slice. Returns empty string if not
 // found. This bridges the protocol's type-based mapping to the
 // taxonomy's ID-based mapping.
+//
+// The first match is deterministic (slice order), so when a function
+// emits multiple effects of the same type (e.g., two ReturnValue
+// effects) the mapping resolves to the earliest one. This mirrors the
+// pre-existing type-first behavior in the contract coverage path and
+// is asserted by TestFindSideEffectID.
 func findSideEffectID(effects []taxonomy.SideEffect, sideEffectType string) string {
 	for _, e := range effects {
 		if string(e.Type) == sideEffectType {
