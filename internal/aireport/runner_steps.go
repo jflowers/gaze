@@ -330,11 +330,12 @@ func runClassifyStep(patterns []string, moduleDir string, stderr io.Writer, deps
 // output across the CLI and report pipeline.
 type docscanEnvelope = apidoc.DocscanEnvelope
 
-// runDocscanStep runs the documentation scanner and returns the JSON output.
+// RunDocscanStep runs the documentation scanner and returns the JSON output.
 // When sess is non-nil and initialized, it uses the external analyzer for
 // language-aware documentation coverage analysis. When sess is nil, only
-// the heuristic docscan is performed.
-func runDocscanStep(moduleDir string, sess *adapter.Session, stderr io.Writer) (json.RawMessage, error) {
+// the document scan is performed (no API coverage). ctx enables cancellation
+// and timeout control for the analyzer invocation.
+func RunDocscanStep(ctx context.Context, moduleDir string, sess *adapter.Session, stderr io.Writer) (json.RawMessage, error) {
 	cfg := config.LoadFromDir(moduleDir, stderr)
 	scanOpts := docscan.ScanOptions{Config: cfg}
 
@@ -345,7 +346,7 @@ func runDocscanStep(moduleDir string, sess *adapter.Session, stderr io.Writer) (
 
 	var apiCoverage *apidoc.APICoverageReport
 	if sess != nil {
-		apiCoverage = runDocscanAnalyzer(context.Background(), moduleDir, sess, docs, stderr)
+		apiCoverage = runDocscanAnalyzer(ctx, moduleDir, sess, docs, stderr)
 	}
 
 	envelope := docscanEnvelope{

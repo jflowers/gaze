@@ -2,6 +2,7 @@ package aireport
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,7 +38,7 @@ func fakeSteps() pipelineStepFuncs {
 				Incidental:  1,
 			}, nil
 		},
-		docscanStep: func(_ string, _ *adapter.Session, _ io.Writer) (json.RawMessage, error) {
+		docscanStep: func(_ context.Context, _ string, _ *adapter.Session, _ io.Writer) (json.RawMessage, error) {
 			return json.RawMessage(`{"documents":[],"api_coverage":null}`), nil
 		},
 	}
@@ -47,7 +48,7 @@ func TestRunProductionPipeline_AllStepsSucceed(t *testing.T) {
 	var stderr bytes.Buffer
 	steps := fakeSteps()
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestRunProductionPipeline_CRAPStepSSADegradation(t *testing.T) {
 		}, nil
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestRunProductionPipeline_CRAPStepFails(t *testing.T) {
 		return nil, fmt.Errorf("crap analysis failed")
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("pipeline should not return error on step failure, got: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestRunProductionPipeline_QualityStepFails(t *testing.T) {
 		return nil, fmt.Errorf("quality analysis failed")
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("pipeline should not return error on step failure, got: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestRunProductionPipeline_ClassifyStepFails(t *testing.T) {
 		return nil, fmt.Errorf("classify failed")
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("pipeline should not return error on step failure, got: %v", err)
 	}
@@ -219,11 +220,11 @@ func TestRunProductionPipeline_ClassifyStepFails(t *testing.T) {
 func TestRunProductionPipeline_DocscanStepFails(t *testing.T) {
 	var stderr bytes.Buffer
 	steps := fakeSteps()
-	steps.docscanStep = func(_ string, _ *adapter.Session, _ io.Writer) (json.RawMessage, error) {
+	steps.docscanStep = func(_ context.Context, _ string, _ *adapter.Session, _ io.Writer) (json.RawMessage, error) {
 		return nil, fmt.Errorf("docscan failed")
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("pipeline should not return error on step failure, got: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestRunProductionPipeline_MultipleStepsFail(t *testing.T) {
 		return nil, fmt.Errorf("quality failed")
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("pipeline should not return error on step failures, got: %v", err)
 	}
@@ -285,7 +286,7 @@ func TestRunProductionPipeline_EmptyPatterns(t *testing.T) {
 		return nil, nil
 	}
 
-	_, err := runProductionPipeline([]string{}, "/tmp", "", false, &stderr, steps, nil)
+	_, err := runProductionPipeline(context.Background(), []string{}, "/tmp", "", false, &stderr, steps, nil)
 	if err == nil {
 		t.Fatal("expected error for empty patterns")
 	}
@@ -313,7 +314,7 @@ func TestRunProductionPipeline_GazeCRAPloadFlowsThroughPipeline(t *testing.T) {
 		}, nil
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -327,7 +328,7 @@ func TestRunProductionPipeline_SummaryFields(t *testing.T) {
 	var stderr bytes.Buffer
 	steps := fakeSteps()
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -355,7 +356,7 @@ func TestRunProductionPipeline_CRAPStepFails_CRAPloadIsNil(t *testing.T) {
 		return nil, fmt.Errorf("crap analysis failed")
 	}
 
-	payload, err := runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	payload, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("pipeline should not return error on step failure, got: %v", err)
 	}
@@ -395,7 +396,7 @@ func TestRunProductionPipeline_TestShortThreadsToStep(t *testing.T) {
 	}
 
 	// Pass testShort=true and verify it reaches the step.
-	_, err := runProductionPipeline([]string{"./..."}, "/tmp", "", true, &stderr, steps, nil)
+	_, err := runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", true, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -405,7 +406,7 @@ func TestRunProductionPipeline_TestShortThreadsToStep(t *testing.T) {
 
 	// Pass testShort=false and verify it reaches the step.
 	capturedShort = true // reset to non-default
-	_, err = runProductionPipeline([]string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
+	_, err = runProductionPipeline(context.Background(), []string{"./..."}, "/tmp", "", false, &stderr, steps, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}

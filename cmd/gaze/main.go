@@ -1005,12 +1005,18 @@ type docscanParams struct {
 	configPath   string
 	analyzerFlag string
 	languageFlag string
+	ctx          context.Context
 	stdout       io.Writer
 	stderr       io.Writer
 }
 
 // runDocscan is the extracted, testable body of the docscan command.
 func runDocscan(p docscanParams) error {
+	ctx := p.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	cfg, err := loadConfig(p.configPath, -1, -1)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -1052,7 +1058,7 @@ func runDocscan(p docscanParams) error {
 	// External analyzer path: when --analyzer or --language is set,
 	// compute API documentation coverage via the external analyzer.
 	if p.analyzerFlag != "" || p.languageFlag != "" {
-		report, analyzerErr := runDocscanAnalyzer(context.Background(), p, repoRoot, docs)
+		report, analyzerErr := runDocscanAnalyzer(ctx, p, repoRoot, docs)
 		if analyzerErr != nil {
 			// Non-fatal: warn and continue without API coverage.
 			_, _ = fmt.Fprintf(p.stderr, "Warning: analyzer integration failed: %v\n", analyzerErr)
@@ -1125,7 +1131,7 @@ Priority:
   2 = module root
   3 = other locations`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			pkgPath := "."
 			if len(args) > 0 {
 				pkgPath = args[0]
@@ -1135,6 +1141,7 @@ Priority:
 				configPath:   configPath,
 				analyzerFlag: analyzerFlag,
 				languageFlag: languageFlag,
+				ctx:          cmd.Context(),
 				stdout:       os.Stdout,
 				stderr:       os.Stderr,
 			})
@@ -1936,6 +1943,7 @@ type reportParams struct {
 	languageFlag        string
 	// testShort passes -short to internal go test invocations when true.
 	testShort bool
+	ctx       context.Context
 	stdout    io.Writer
 	stderr    io.Writer
 
@@ -2057,6 +2065,7 @@ func runReport(p reportParams) error {
 			MinContractCoverage: p.minContractCoverage,
 		},
 		TestShort: p.testShort,
+		Context:   p.ctx,
 	}
 
 	// External analyzer path: when --analyzer is set, override the
@@ -2066,7 +2075,7 @@ func runReport(p reportParams) error {
 	// in the payload).
 	if p.analyzerFlag != "" {
 		analyzeFunc, cleanup, extErr := buildExternalReportAnalyzeFunc(
-			p.analyzerFlag, p.languageFlag, moduleDir, p.patterns, p.stderr,
+			p.ctx, p.analyzerFlag, p.languageFlag, moduleDir, p.patterns, p.stderr,
 		)
 		if extErr != nil {
 			return extErr
@@ -2089,6 +2098,7 @@ func runReport(p reportParams) error {
 // Go-specific). Returns the analyze function, a cleanup function
 // (to close the session), and an error.
 func buildExternalReportAnalyzeFunc(
+	ctx context.Context,
 	analyzerFlag, languageFlag, moduleDir string,
 	patterns []string,
 	stderr io.Writer,
@@ -2100,7 +2110,7 @@ func buildExternalReportAnalyzeFunc(
 	}
 
 	analyzeFunc := func(pats []string, modDir string) (*aireport.ReportPayload, error) {
-		return runExternalReportCRAP(pats, modDir, providers, stderr)
+		return runExternalReportCRAP(ctx, pats, modDir, providers, session, stderr)
 	}
 
 	cleanup := func() { _ = session.Close() }
@@ -2108,9 +2118,10 @@ func buildExternalReportAnalyzeFunc(
 }
 
 // runExternalReportCRAP runs the CRAP step using external providers
-// and builds a ReportPayload with only the CRAP section populated.
-// Quality, classify, and docscan are Go-specific and skipped.
-func runExternalReportCRAP(pats []string, modDir string, providers *adapter.Providers, stderr io.Writer) (*aireport.ReportPayload, error) {
+// and builds a ReportPayload with the CRAP section populated plus the
+// docscan step when an analyzer session is available. Quality and
+// classify are Go-specific and skipped.
+func runExternalReportCRAP(ctx context.Context, pats []string, modDir string, providers *adapter.Providers, sess *adapter.Session, stderr io.Writer) (*aireport.ReportPayload, error) {
 	opts := crap.DefaultOptions()
 	opts.Stderr = stderr
 	wireExternalProviders(&opts, providers)
@@ -2136,7 +2147,17 @@ func runExternalReportCRAP(pats []string, modDir string, providers *adapter.Prov
 	skipped := "skipped: external analyzer mode"
 	payload.Errors.Quality = &skipped
 	payload.Errors.Classify = &skipped
-	payload.Errors.Docscan = &skipped
+
+	// The docscan step has external-analyzer support (via the optional
+	// doc_coverage protocol method), so run it when a session is available.
+	if sess != nil {
+		if docscanJSON, err := aireport.RunDocscanStep(ctx, modDir, sess, stderr); err != nil {
+			msg := err.Error()
+			payload.Errors.Docscan = &msg
+		} else {
+			payload.Docscan = docscanJSON
+		}
+	}
 
 	return payload, nil
 }
@@ -2211,6 +2232,7 @@ Examples:
 				analyzerFlag:        analyzerFlag,
 				languageFlag:        languageFlag,
 				testShort:           testShortFlag,
+				ctx:                 cmd.Context(),
 				stdout:              cmd.OutOrStdout(),
 				stderr:              cmd.ErrOrStderr(),
 			}

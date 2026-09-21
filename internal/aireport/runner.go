@@ -67,6 +67,11 @@ type RunnerOptions struct {
 	// language-aware documentation coverage analysis.
 	AnalyzerSession *adapter.Session
 
+	// Context is the caller's context, propagated to the analysis steps
+	// (notably the docscan analyzer invocation) for cancellation and
+	// timeout control. When nil, context.Background() is used.
+	Context context.Context
+
 	// AnalyzeFunc overrides the analysis pipeline for testing.
 	// When nil, the production pipeline is called.
 	AnalyzeFunc func(patterns []string, moduleDir string) (*ReportPayload, error)
@@ -160,10 +165,15 @@ func Run(opts RunnerOptions) error {
 		return err
 	}
 
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	analyzeFunc := opts.AnalyzeFunc
 	if analyzeFunc == nil {
 		analyzeFunc = func(patterns []string, moduleDir string) (*ReportPayload, error) {
-			return runProductionPipeline(patterns, moduleDir, opts.CoverProfile, opts.TestShort, opts.Stderr, pipelineStepFuncs{}, opts.AnalyzerSession)
+			return runProductionPipeline(ctx, patterns, moduleDir, opts.CoverProfile, opts.TestShort, opts.Stderr, pipelineStepFuncs{}, opts.AnalyzerSession)
 		}
 	}
 
@@ -253,7 +263,7 @@ type pipelineStepFuncs struct {
 	crapStep     func([]string, string, string, io.Writer, crap.ContractCoverageProvider, bool) (*crapStepResult, error)
 	qualityStep  func([]string, string, io.Writer, ...qualityPipelineDeps) (*qualityStepResult, error)
 	classifyStep func([]string, string, io.Writer, ...qualityPipelineDeps) (*classifyStepResult, error)
-	docscanStep  func(string, *adapter.Session, io.Writer) (json.RawMessage, error)
+	docscanStep  func(context.Context, string, *adapter.Session, io.Writer) (json.RawMessage, error)
 }
 
 // runProductionPipeline runs the four-step analysis pipeline and returns
@@ -268,7 +278,7 @@ type pipelineStepFuncs struct {
 //
 // analyzerSession is an optional external analyzer session for the docscan
 // step. Pass nil when no external analyzer is configured.
-func runProductionPipeline(patterns []string, moduleDir string, coverProfile string, testShort bool, stderr io.Writer, steps pipelineStepFuncs, analyzerSession *adapter.Session) (*ReportPayload, error) {
+func runProductionPipeline(ctx context.Context, patterns []string, moduleDir string, coverProfile string, testShort bool, stderr io.Writer, steps pipelineStepFuncs, analyzerSession *adapter.Session) (*ReportPayload, error) {
 	// Default nil step functions to real implementations.
 	if steps.crapStep == nil {
 		steps.crapStep = runCRAPStep
@@ -280,7 +290,7 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 		steps.classifyStep = runClassifyStep
 	}
 	if steps.docscanStep == nil {
-		steps.docscanStep = runDocscanStep
+		steps.docscanStep = RunDocscanStep
 	}
 
 	payload := &ReportPayload{}
@@ -340,7 +350,7 @@ func runProductionPipeline(patterns []string, moduleDir string, coverProfile str
 
 	// Step 4: Documentation scan.
 	_, _ = fmt.Fprintln(stderr, "Scanning documentation...")
-	if docscanJSON, err := steps.docscanStep(moduleDir, analyzerSession, stderr); err != nil {
+	if docscanJSON, err := steps.docscanStep(ctx, moduleDir, analyzerSession, stderr); err != nil {
 		payload.Errors.Docscan = errString(err)
 	} else {
 		payload.Docscan = docscanJSON
