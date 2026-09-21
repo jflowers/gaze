@@ -414,7 +414,7 @@ const QualitySchema = `{
       "properties": {
         "reason": {
           "type": "string",
-          "description": "Human-readable explanation when quality metrics are unavailable or degraded"
+          "description": "Stable machine-readable degradation identifier when quality metrics are unavailable (e.g., \"test_mapping_unavailable\" or \"test_mapping_error\")"
         },
         "total_tests": { "type": "integer" },
         "average_contract_coverage": {
