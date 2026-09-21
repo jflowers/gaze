@@ -139,12 +139,7 @@ func isDocumented(name, pkg string, quotedNames map[string]bool) bool {
 	// Check qualified name: `pkg.ProcessData`
 	// Use the last segment of the package path for qualification.
 	if pkg != "" {
-		lastSlash := strings.LastIndex(pkg, "/")
-		shortPkg := pkg
-		if lastSlash >= 0 {
-			shortPkg = pkg[lastSlash+1:]
-		}
-		qualified := shortPkg + "." + name
+		qualified := shortPackageName(pkg) + "." + name
 		if quotedNames[qualified] {
 			return true
 		}

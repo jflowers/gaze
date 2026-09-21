@@ -471,3 +471,75 @@ func TestGenericLanguageTags_Completeness(t *testing.T) {
 		t.Errorf("GenericLanguageTags() has %d entries, expected %d", len(tags), len(expected))
 	}
 }
+
+func TestCodeFenceLen(t *testing.T) {
+	cases := []struct {
+		name    string
+		trimmed string
+		want    int
+	}{
+		{"empty", "", 0},
+		{"triple", "```", 3},
+		{"quad", "````", 4},
+		{"single", "`x", 1},
+		{"triple-with-lang", "```go", 3},
+		{"leading-space", "  ```", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := codeFenceLen(tc.trimmed); got != tc.want {
+				t.Errorf("codeFenceLen(%q) = %d, want %d", tc.trimmed, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateCodeBlocks_LanguageTagWithFilenameHint(t *testing.T) {
+	docs := []docscan.DocumentFile{
+		{
+			Path:    "README.md",
+			Content: "```go example.go\nfunc main() {}\n```\n",
+		},
+	}
+	issues := ValidateCodeBlocks(docs, "go")
+	if len(issues) != 0 {
+		t.Fatalf("ValidateCodeBlocks() = %d issues, want 0 (filename hint should not be parsed as language): %+v", len(issues), issues)
+	}
+
+	// A mismatched language must still be detected even with a filename hint.
+	mismatched := []docscan.DocumentFile{
+		{
+			Path:    "README.md",
+			Content: "```python main.py\nprint('hi')\n```\n",
+		},
+	}
+	issues = ValidateCodeBlocks(mismatched, "go")
+	if len(issues) != 1 {
+		t.Fatalf("ValidateCodeBlocks() = %d issues, want 1", len(issues))
+	}
+	if issues[0].DeclaredLang != "python" {
+		t.Errorf("DeclaredLang = %q, want %q", issues[0].DeclaredLang, "python")
+	}
+}
+
+func TestValidateReferences_FourBacktickFenceNested(t *testing.T) {
+	docs := []docscan.DocumentFile{
+		{
+			Path: "README.md",
+			Content: "`Before`\n" +
+				"````\n" +
+				"`InsideStale`\n" +
+				"```\n" +
+				"````\n" +
+				"`After`\n",
+		},
+	}
+	refs := ValidateReferences(docs, map[string]bool{})
+	if len(refs) != 2 {
+		t.Fatalf("ValidateReferences() = %d refs, want 2: %+v", len(refs), refs)
+	}
+	got := map[string]bool{refs[0].Symbol: true, refs[1].Symbol: true}
+	if !got["Before"] || !got["After"] {
+		t.Errorf("refs = %v, want Before and After (InsideStale must be skipped)", got)
+	}
+}
