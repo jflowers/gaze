@@ -16,6 +16,7 @@ Gaze is a single-binary CLI tool that performs static analysis on Go source code
 | `internal/quality/` | Test quality assessment. Test-target pairing via SSA call graphs, assertion detection, four-pass assertion-to-effect mapping, contract coverage, over-specification scoring. | `taxonomy`, `analysis`, `classify`, `loader`, `config`, `go/ast`, `x/tools/go/ssa` |
 | `internal/report/` | Output formatters for analysis results. JSON, styled text, and self-contained analyze HTML formatters. Embeds the JSON Schema (Draft 2020-12) and analyze HTML template. | `taxonomy`, `lipgloss`, `html/template` |
 | `internal/docscan/` | Documentation file scanner. Finds Markdown files in the repository, prioritized by proximity to the target package. | None (leaf package) |
+| `internal/docscan/apidoc/` | API documentation coverage analysis. Cross-references analyzer output (`doc_coverage` + `analyze`) against documentation files; computes coverage, stale references, and code-block language validation. | `docscan`, `protocol` |
 | `internal/aireport/` | AI-powered CI quality report pipeline. Orchestrates all four analysis operations, pipes JSON to external AI CLIs (Claude, Gemini, Ollama, OpenCode), threshold enforcement, GitHub Step Summary integration. | `taxonomy`, `crap`, `quality`, `analysis`, `classify`, `docscan`, `loader`, `config` |
 | `internal/scaffold/` | OpenCode file scaffolding. Uses `embed.FS` to scaffold agent and command files into user projects via [`gaze init`](../reference/cli/init.md). | None (uses `embed.FS`) |
 
@@ -189,9 +190,11 @@ report    ──> taxonomy (leaf for output formatting)
     |
 docscan   (leaf — no internal deps)
     |
+apidoc    ──> docscan, protocol
+    |
 scaffold  (leaf — uses embed.FS only)
     |
-aireport  ──> taxonomy, crap, quality, analysis, classify, docscan, loader, config
+aireport  ──> taxonomy, crap, quality, analysis, classify, docscan, apidoc, loader, config
     ^
     |
 cmd/gaze/ ──> all internal packages
@@ -206,4 +209,4 @@ Key observations:
 - **`quality`** and **`crap`** are higher-level packages that compose `analysis` + `classify`
 - **`report`** depends only on `taxonomy` — it formats results without knowing how they were produced
 - **`aireport`** is the highest-level internal package, orchestrating all others
-- **`scaffold`** and **`docscan`** are isolated utilities with no internal dependencies
+- **`scaffold`** is an isolated utility with no internal dependencies; **`docscan`** is a leaf package whose `apidoc` sub-package depends on it and on `protocol`
