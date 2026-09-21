@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -552,5 +553,52 @@ func TestRunReport_GoNativePath_FindModuleRootFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "finding module root") {
 		t.Errorf("error should contain 'finding module root', got: %s", err)
+	}
+}
+
+// TestReportWithExternalAnalyzer_DocscanPopulated verifies that the external
+// report path wires the analyzer session into the docscan step so the payload
+// carries a populated api_coverage section.
+func TestReportWithExternalAnalyzer_DocscanPopulated(t *testing.T) {
+	moduleDir := t.TempDir()
+	goMod := filepath.Join(moduleDir, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	analyzeFunc, cleanup, err := buildExternalReportAnalyzeFunc(
+		context.Background(), fakeBinaryPath, "python", moduleDir, []string{"./..."}, &stderr)
+	if err != nil {
+		t.Fatalf("buildExternalReportAnalyzeFunc: %v", err)
+	}
+	defer cleanup()
+
+	payload, err := analyzeFunc([]string{"./..."}, moduleDir)
+	if err != nil {
+		t.Fatalf("analyzeFunc: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if payload.Docscan == nil {
+		t.Fatal("payload.Docscan is nil, expected docscan envelope")
+	}
+
+	var env struct {
+		APICoverage map[string]interface{} `json:"api_coverage"`
+	}
+	if err := json.Unmarshal(payload.Docscan, &env); err != nil {
+		t.Fatalf("unmarshal docscan envelope: %v\nraw: %s", err, string(payload.Docscan))
+	}
+	if env.APICoverage == nil {
+		t.Fatal("api_coverage is null, expected populated")
+	}
+	if env.APICoverage["source"] != "doc_coverage" {
+		t.Errorf("api_coverage source = %v, want doc_coverage", env.APICoverage["source"])
+	}
+	if env.APICoverage["total_symbols"] != float64(3) {
+		t.Errorf("api_coverage total_symbols = %v, want 3", env.APICoverage["total_symbols"])
+	}
+	if env.APICoverage["documented_symbols"] != float64(2) {
+		t.Errorf("api_coverage documented_symbols = %v, want 2", env.APICoverage["documented_symbols"])
 	}
 }
