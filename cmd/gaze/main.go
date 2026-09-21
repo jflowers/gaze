@@ -995,10 +995,6 @@ automatically.`,
 	return cmd
 }
 
-// docscanOutput is a type alias for apidoc.DocscanEnvelope,
-// providing the structured JSON output for gaze docscan.
-type docscanOutput = apidoc.DocscanEnvelope
-
 // docscanParams holds the parsed flags for the docscan command.
 type docscanParams struct {
 	pkgPath      string
@@ -1053,7 +1049,7 @@ func runDocscan(p docscanParams) error {
 		return fmt.Errorf("scanning documents: %w", err)
 	}
 
-	output := docscanOutput{Documents: docs}
+	output := apidoc.DocscanEnvelope{Documents: docs}
 
 	// External analyzer path: when --analyzer or --language is set,
 	// compute API documentation coverage via the external analyzer.

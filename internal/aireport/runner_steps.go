@@ -325,11 +325,6 @@ func runClassifyStep(patterns []string, moduleDir string, stderr io.Writer, deps
 	}, nil
 }
 
-// docscanEnvelope is a type alias for the shared envelope type
-// in apidoc, providing a consistent JSON structure for the docscan
-// output across the CLI and report pipeline.
-type docscanEnvelope = apidoc.DocscanEnvelope
-
 // RunDocscanStep runs the documentation scanner and returns the JSON output.
 // When sess is non-nil and initialized, it uses the external analyzer for
 // language-aware documentation coverage analysis. When sess is nil, only
@@ -349,7 +344,7 @@ func RunDocscanStep(ctx context.Context, moduleDir string, sess *adapter.Session
 		apiCoverage = runDocscanAnalyzer(ctx, moduleDir, sess, docs, stderr)
 	}
 
-	envelope := docscanEnvelope{
+	envelope := apidoc.DocscanEnvelope{
 		Documents:   docs,
 		APICoverage: apiCoverage,
 	}
@@ -366,6 +361,12 @@ func RunDocscanStep(ctx context.Context, moduleDir string, sess *adapter.Session
 func runDocscanAnalyzer(ctx context.Context, moduleDir string, sess *adapter.Session, docs []docscan.DocumentFile, stderr io.Writer) *apidoc.APICoverageReport {
 	// FetchDocscanData consolidates the DocCoverage + Analyze call
 	// pattern shared with the CLI layer (cmd/gaze/main.go).
+	//
+	// The "./..." pattern is intentional: documentation coverage is
+	// computed over the whole module's API surface (matching the CLI
+	// docscan's module-scoped scan), not just the caller's package
+	// pattern. CRAP/quality analyze the requested pattern; docscan
+	// always reflects the full documented surface.
 	data, err := sess.FetchDocscanData(ctx, moduleDir, []string{"./..."}, stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "warning: %v for docscan, skipping API coverage\n", err)

@@ -13,6 +13,7 @@ import (
 	"github.com/unbound-force/gaze/internal/aireport"
 	"github.com/unbound-force/gaze/internal/analysis"
 	"github.com/unbound-force/gaze/internal/crap"
+	"github.com/unbound-force/gaze/internal/docscan/apidoc"
 	"github.com/unbound-force/gaze/internal/provider/goprovider"
 	"github.com/unbound-force/gaze/internal/quality"
 	"github.com/unbound-force/gaze/internal/taxonomy"
@@ -501,7 +502,7 @@ func TestRunDocscan_OutputsJSON(t *testing.T) {
 
 	// Output should be a JSON object with "documents" and
 	// "api_coverage" keys (DocscanEnvelope envelope).
-	var output docscanOutput
+	var output apidoc.DocscanEnvelope
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &output); jsonErr != nil {
 		t.Fatalf("docscan output is not valid DocscanEnvelope JSON: %v\noutput:\n%s",
 			jsonErr, stdout.String())
@@ -586,7 +587,7 @@ func TestRunDocscan_AnalyzerFlag_InvalidBinary(t *testing.T) {
 	}
 
 	// Output should still be valid DocscanEnvelope JSON.
-	var output docscanOutput
+	var output apidoc.DocscanEnvelope
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &output); jsonErr != nil {
 		t.Fatalf("output is not valid DocscanEnvelope JSON: %v\noutput:\n%s",
 			jsonErr, stdout.String())

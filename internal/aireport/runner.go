@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unbound-force/gaze/internal/adapter"
 	"github.com/unbound-force/gaze/internal/crap"
 	"github.com/unbound-force/gaze/internal/provider/goprovider"
 )
@@ -61,11 +60,6 @@ type RunnerOptions struct {
 
 	// TestShort passes -short to the internal go test invocation when true.
 	TestShort bool
-
-	// AnalyzerSession is an optional external analyzer session for
-	// the docscan step. When non-nil, the docscan step uses it for
-	// language-aware documentation coverage analysis.
-	AnalyzerSession *adapter.Session
 
 	// Context is the caller's context, propagated to the analysis steps
 	// (notably the docscan analyzer invocation) for cancellation and
@@ -173,7 +167,7 @@ func Run(opts RunnerOptions) error {
 	analyzeFunc := opts.AnalyzeFunc
 	if analyzeFunc == nil {
 		analyzeFunc = func(patterns []string, moduleDir string) (*ReportPayload, error) {
-			return runProductionPipeline(ctx, patterns, moduleDir, opts.CoverProfile, opts.TestShort, opts.Stderr, pipelineStepFuncs{}, opts.AnalyzerSession)
+			return runProductionPipeline(ctx, patterns, moduleDir, opts.CoverProfile, opts.TestShort, opts.Stderr, pipelineStepFuncs{})
 		}
 	}
 
@@ -263,7 +257,7 @@ type pipelineStepFuncs struct {
 	crapStep     func([]string, string, string, io.Writer, crap.ContractCoverageProvider, bool) (*crapStepResult, error)
 	qualityStep  func([]string, string, io.Writer, ...qualityPipelineDeps) (*qualityStepResult, error)
 	classifyStep func([]string, string, io.Writer, ...qualityPipelineDeps) (*classifyStepResult, error)
-	docscanStep  func(context.Context, string, *adapter.Session, io.Writer) (json.RawMessage, error)
+	docscanStep  func(context.Context, string, io.Writer) (json.RawMessage, error)
 }
 
 // runProductionPipeline runs the four-step analysis pipeline and returns
@@ -275,10 +269,7 @@ type pipelineStepFuncs struct {
 //
 // The steps parameter allows injection of fake step functions for testing.
 // Pass pipelineStepFuncs{} (zero value) for production behavior.
-//
-// analyzerSession is an optional external analyzer session for the docscan
-// step. Pass nil when no external analyzer is configured.
-func runProductionPipeline(ctx context.Context, patterns []string, moduleDir string, coverProfile string, testShort bool, stderr io.Writer, steps pipelineStepFuncs, analyzerSession *adapter.Session) (*ReportPayload, error) {
+func runProductionPipeline(ctx context.Context, patterns []string, moduleDir string, coverProfile string, testShort bool, stderr io.Writer, steps pipelineStepFuncs) (*ReportPayload, error) {
 	// Default nil step functions to real implementations.
 	if steps.crapStep == nil {
 		steps.crapStep = runCRAPStep
@@ -290,7 +281,13 @@ func runProductionPipeline(ctx context.Context, patterns []string, moduleDir str
 		steps.classifyStep = runClassifyStep
 	}
 	if steps.docscanStep == nil {
-		steps.docscanStep = RunDocscanStep
+		// The Go-native pipeline has no external analyzer session. The
+		// language-aware docscan path is reached directly from the CLI
+		// external-analyzer report path (runExternalReportCRAP), so here
+		// the step always runs with a nil session (heuristic-only).
+		steps.docscanStep = func(ctx context.Context, moduleDir string, stderr io.Writer) (json.RawMessage, error) {
+			return RunDocscanStep(ctx, moduleDir, nil, stderr)
+		}
 	}
 
 	payload := &ReportPayload{}
@@ -350,7 +347,7 @@ func runProductionPipeline(ctx context.Context, patterns []string, moduleDir str
 
 	// Step 4: Documentation scan.
 	_, _ = fmt.Fprintln(stderr, "Scanning documentation...")
-	if docscanJSON, err := steps.docscanStep(ctx, moduleDir, analyzerSession, stderr); err != nil {
+	if docscanJSON, err := steps.docscanStep(ctx, moduleDir, stderr); err != nil {
 		payload.Errors.Docscan = errString(err)
 	} else {
 		payload.Docscan = docscanJSON
