@@ -19,7 +19,7 @@ This closes the gap between "here are your docs" and "here's what your docs are 
 
 3. **Separate `apidoc.Analyze` orchestrator** — The caller (CLI or report pipeline) obtains analyzer data via `adapter.Session`, then passes it to `apidoc.Analyze(docs, data)` alongside the Markdown scan results. `docscan.Scan` itself remains unchanged — it continues to return `[]DocumentFile` without any new fields.
 
-4. **CLI integration** — `gaze docscan --analyzer <path>` (or auto-discovered) activates analyzer-aware mode. JSON output gains an `api_coverage` section alongside the existing `[]DocumentFile` array.
+4. **CLI integration** — `gaze docscan --analyzer <path>` (or auto-discovered) activates analyzer-aware mode. JSON output changes from a bare `[]DocumentFile` array to a structured `{"documents": [...], "api_coverage": ...}` envelope.
 
 5. **Report pipeline integration** — `runDocscanStep` in the report pipeline passes the analyzer session (when available) to produce richer documentation analysis in `gaze report` output.
 
@@ -36,8 +36,8 @@ This closes the gap between "here are your docs" and "here's what your docs are 
 
 ## Impact
 
-- **New files**: `internal/docscan/apidoc/` package (~4 files: types, coverage, validation, report)
-- **Modified files**: `internal/docscan/scanner.go` (new `DocscanOutput` type), `internal/protocol/types.go` (new `doc_coverage` method types), `cmd/gaze/main.go` (`runDocscan` gains `--analyzer` flag), `internal/aireport/runner_steps.go` (`runDocscanStep` gains session parameter), `internal/aireport/compact.go` (update `compactDocscanField` for new JSON shape)
+- **New files**: `internal/docscan/apidoc/` package (~4 files: types, coverage, validation, analyze)
+- **Modified files**: `internal/docscan/apidoc/types.go` (new `DocscanEnvelope` type), `internal/protocol/types.go` (new `doc_coverage` method types), `cmd/gaze/main.go` (`runDocscan` gains `--analyzer` flag), `internal/aireport/runner_steps.go` (`RunDocscanStep` gains session parameter), `internal/aireport/compact.go` (update `compactDocscanField` for new JSON shape)
 - **Breaking change**: JSON output format changes from bare `[]DocumentFile` array to structured `{"documents": [...], "api_coverage": ...}` object — requires semver MAJOR version bump per constitution policy
 - **Protocol version**: Remains 1.1.0 (new optional method, no protocol-level breaking changes)
 - **Dependencies**: No new external dependencies — uses existing `internal/protocol` and `internal/adapter` packages

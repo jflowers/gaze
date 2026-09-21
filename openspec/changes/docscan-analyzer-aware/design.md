@@ -64,7 +64,7 @@ type SymbolDocStatus struct {
 
 **Rationale**: Every conforming analyzer implements `analyze`, so we can always extract a list of public function names. Cross-referencing those names against Markdown content provides a reasonable (though imperfect) proxy for documentation coverage. The heuristic is clearly labeled as such in the output.
 
-**Implementation**: The `apidoc` package accepts either `DocCoverageResult` (from analyzer) or `[]AnalyzedFunction` (from `analyze`) and produces the same `APICoverageReport` output. A `Source` field on each finding indicates whether the data came from `doc_coverage` (native) or `analyze` (heuristic).
+**Implementation**: The `apidoc` package accepts either `DocCoverageResult` (from analyzer) or `[]AnalyzedFunction` (from `analyze`) and produces the same `APICoverageReport` output. A `Source` field on the report indicates whether the data came from `doc_coverage` (native) or `analyze` (heuristic).
 
 ### D3: New `internal/docscan/apidoc` sub-package
 
