@@ -1250,7 +1250,7 @@ func handleQualityNoTestMapping(p qualityParams, providers *adapter.Providers) e
 		providers.AnalyzerName)
 
 	summary := &taxonomy.PackageSummary{
-		Reason: "test_mapping unavailable",
+		Reason: "test_mapping_unavailable",
 	}
 	if err := writeQualityEmptyOutput(p, summary); err != nil {
 		return err
@@ -1272,7 +1272,7 @@ func handleQualityTestMappingError(p qualityParams, providers *adapter.Providers
 		providers.AnalyzerName, fetchErr)
 
 	summary := &taxonomy.PackageSummary{
-		Reason: fmt.Sprintf("test_mapping error: %v", fetchErr),
+		Reason: "test_mapping_error",
 	}
 	if err := writeQualityEmptyOutput(p, summary); err != nil {
 		return err
