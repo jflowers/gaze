@@ -60,11 +60,7 @@ func buildSymbolNames(data *AnalyzerData) map[string]bool {
 		for _, sym := range data.DocCoverage.Symbols {
 			names[sym.Name] = true
 			if sym.Package != "" {
-				shortPkg := sym.Package
-				if idx := strings.LastIndex(sym.Package, "/"); idx >= 0 {
-					shortPkg = sym.Package[idx+1:]
-				}
-				names[shortPkg+"."+sym.Name] = true
+				names[shortPackageName(sym.Package)+"."+sym.Name] = true
 			}
 		}
 		return names
@@ -74,13 +70,19 @@ func buildSymbolNames(data *AnalyzerData) map[string]bool {
 	for _, fn := range data.Functions {
 		names[fn.Name] = true
 		if fn.Package != "" {
-			shortPkg := fn.Package
-			if idx := strings.LastIndex(fn.Package, "/"); idx >= 0 {
-				shortPkg = fn.Package[idx+1:]
-			}
-			names[shortPkg+"."+fn.Name] = true
+			names[shortPackageName(fn.Package)+"."+fn.Name] = true
 		}
 	}
 
 	return names
+}
+
+// shortPackageName returns the last path segment of a package path
+// (e.g., "math_utils" from "some/path/math_utils"). It returns the
+// path unchanged when it contains no "/".
+func shortPackageName(pkg string) string {
+	if idx := strings.LastIndex(pkg, "/"); idx >= 0 {
+		return pkg[idx+1:]
+	}
+	return pkg
 }
