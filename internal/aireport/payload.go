@@ -89,8 +89,9 @@ type ReportPayload struct {
 	// Nil when the classification step failed.
 	Classify json.RawMessage `json:"classify"`
 
-	// Docscan holds the raw JSON from gaze docscan ([]docscan.DocumentFile).
-	// Nil when the docscan step failed.
+	// Docscan holds the raw JSON from the docscan step, a docscan envelope
+	// ({"documents": [...], "api_coverage": ...}). Nil when the docscan step
+	// failed.
 	Docscan json.RawMessage `json:"docscan"`
 
 	// Errors records step-level failures. A nil pointer value means the

@@ -1,6 +1,7 @@
 package aireport
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -43,7 +44,7 @@ func TestRunCRAPStep_RealPackage(t *testing.T) {
 	}
 }
 
-// TestRunDocscanStep_RealModuleDir verifies that runDocscanStep runs without
+// TestRunDocscanStep_RealModuleDir verifies that RunDocscanStep runs without
 // error on the module root and returns a non-nil JSON payload.
 // Guarded by testing.Short().
 func TestRunDocscanStep_RealModuleDir(t *testing.T) {
@@ -51,12 +52,12 @@ func TestRunDocscanStep_RealModuleDir(t *testing.T) {
 		t.Skip("skipping: runs real docscan pipeline")
 	}
 	modRoot := findModuleRoot(t)
-	raw, err := runDocscanStep(modRoot, nil, io.Discard)
+	raw, err := RunDocscanStep(context.Background(), modRoot, nil, io.Discard)
 	if err != nil {
-		t.Fatalf("runDocscanStep: %v", err)
+		t.Fatalf("RunDocscanStep: %v", err)
 	}
 	if raw == nil {
-		t.Error("expected non-nil JSON from runDocscanStep")
+		t.Error("expected non-nil JSON from RunDocscanStep")
 	}
 }
 
@@ -102,6 +103,7 @@ func TestRunProductionPipeline_RealPackage(t *testing.T) {
 	}
 	modRoot := findModuleRoot(t)
 	payload, err := runProductionPipeline(
+		context.Background(),
 		[]string{"github.com/unbound-force/gaze/internal/config"},
 		modRoot,
 		"",    // no pre-generated profile — use internal generation
