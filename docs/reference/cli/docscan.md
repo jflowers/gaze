@@ -29,6 +29,8 @@ When a relative path is provided (starting with `./` or `../`), it is resolved t
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--config` | `string` | `""` (search CWD) | Path to `.gaze.yaml` config file |
+| `--analyzer` | `string` | `""` | External analyzer binary (e.g., `snake-eyes`) |
+| `--language` | `string` | `""` | Target language for analyzer discovery (e.g., `python`) |
 
 ## Configuration Interaction
 
@@ -55,24 +57,29 @@ See [Configuration Reference](../configuration.md) for all `.gaze.yaml` options.
 
 ## Output Format
 
-The output is always JSON (there is no `--format` flag). Each entry includes the file path and its priority level:
+The output is always JSON (there is no `--format` flag). Documents are wrapped in an envelope with an optional API coverage report:
 
 ```json
-[
-  {
-    "path": "internal/crap/README.md",
-    "priority": 1
-  },
-  {
-    "path": "README.md",
-    "priority": 2
-  },
-  {
-    "path": "docs/concepts/scoring.md",
-    "priority": 3
-  }
-]
+{
+  "documents": [
+    {
+      "path": "internal/crap/README.md",
+      "priority": 1
+    },
+    {
+      "path": "README.md",
+      "priority": 2
+    },
+    {
+      "path": "docs/concepts/scoring.md",
+      "priority": 3
+    }
+  ],
+  "api_coverage": null
+}
 ```
+
+When `--analyzer` or `--language` is provided, `api_coverage` holds the documentation coverage report (`total_symbols`, `documented_symbols`, `coverage_percent`, `undocumented`, `stale_references`, `code_block_issues`); otherwise it is `null`.
 
 ## Examples
 
@@ -95,7 +102,7 @@ gaze docscan ./internal/crap --config=/path/to/.gaze.yaml
 The docscan output is typically consumed by `gaze report` internally, but can be used standalone for debugging or custom pipelines:
 
 ```bash
-gaze docscan ./internal/crap | jq '.[].path'
+gaze docscan ./internal/crap | jq '.documents[].path'
 ```
 
 ## See Also
