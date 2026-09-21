@@ -50,8 +50,8 @@ func Analyze(docs []docscan.DocumentFile, data *AnalyzerData) (*APICoverageRepor
 // documentation references using either style are recognized.
 //
 // Native path (DocCoverage != nil): names come from SymbolDocStatus entries.
-// Heuristic path: names come from AnalyzedFunction entries, with the
-// qualified form using the last segment of the package path
+// Heuristic path: names come from AnalyzedFunction entries. Both paths use
+// the last segment of the package path for the qualified form
 // (e.g., "math_utils" from "some/path/math_utils").
 func buildSymbolNames(data *AnalyzerData) map[string]bool {
 	names := make(map[string]bool)
@@ -60,7 +60,11 @@ func buildSymbolNames(data *AnalyzerData) map[string]bool {
 		for _, sym := range data.DocCoverage.Symbols {
 			names[sym.Name] = true
 			if sym.Package != "" {
-				names[sym.Package+"."+sym.Name] = true
+				shortPkg := sym.Package
+				if idx := strings.LastIndex(sym.Package, "/"); idx >= 0 {
+					shortPkg = sym.Package[idx+1:]
+				}
+				names[shortPkg+"."+sym.Name] = true
 			}
 		}
 		return names

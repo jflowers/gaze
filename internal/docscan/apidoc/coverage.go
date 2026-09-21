@@ -92,13 +92,22 @@ func extractBacktickQuoted(docs []docscan.DocumentFile) map[string]bool {
 	for _, doc := range docs {
 		lines := strings.Split(doc.Content, "\n")
 		inCodeBlock := false
+		openFenceLen := 0
 
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
 
-			// Track fenced code block boundaries.
-			if strings.HasPrefix(trimmed, "```") {
-				inCodeBlock = !inCodeBlock
+			// Track fenced code block boundaries, matching fence
+			// lengths so four-backtick fences are handled independently
+			// of triple-backtick fences.
+			if n := codeFenceLen(trimmed); n >= 3 {
+				if inCodeBlock && n >= openFenceLen {
+					inCodeBlock = false
+					openFenceLen = 0
+				} else if !inCodeBlock {
+					inCodeBlock = true
+					openFenceLen = n
+				}
 				continue
 			}
 
@@ -130,10 +139,10 @@ func isDocumented(name, pkg string, quotedNames map[string]bool) bool {
 	// Check qualified name: `pkg.ProcessData`
 	// Use the last segment of the package path for qualification.
 	if pkg != "" {
-		lastDot := strings.LastIndex(pkg, "/")
+		lastSlash := strings.LastIndex(pkg, "/")
 		shortPkg := pkg
-		if lastDot >= 0 {
-			shortPkg = pkg[lastDot+1:]
+		if lastSlash >= 0 {
+			shortPkg = pkg[lastSlash+1:]
 		}
 		qualified := shortPkg + "." + name
 		if quotedNames[qualified] {

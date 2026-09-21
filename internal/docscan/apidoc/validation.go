@@ -12,6 +12,18 @@ import (
 // fences which are handled separately.
 var backtickRe = regexp.MustCompile("`([^`]+)`")
 
+// codeFenceLen returns the number of leading backtick characters on the
+// trimmed line. Callers treat a value >= 3 as a fenced-code-block delimiter
+// and compare opening/closing fence lengths so that four-backtick fences are
+// not confused with triple-backtick fences.
+func codeFenceLen(trimmed string) int {
+	n := 0
+	for n < len(trimmed) && trimmed[n] == '`' {
+		n++
+	}
+	return n
+}
+
 // ignoredSymbolsList is the set of Go keywords and builtins that
 // should not be treated as API symbol references in documentation.
 // Defined as a slice to avoid mutable package-level maps (CS-007).
@@ -94,14 +106,22 @@ func ValidateReferences(docs []docscan.DocumentFile, symbolNames map[string]bool
 	for _, doc := range docs {
 		lines := strings.Split(doc.Content, "\n")
 		inCodeBlock := false
+		openFenceLen := 0
 
 		for lineIdx, line := range lines {
 			trimmed := strings.TrimSpace(line)
 
-			// Track fenced code block boundaries. A line starting
-			// with ``` toggles the in-code-block state.
-			if strings.HasPrefix(trimmed, "```") {
-				inCodeBlock = !inCodeBlock
+			// Track fenced code block boundaries. A delimiter line
+			// starts with three or more backticks; the block closes
+			// on a fence at least as long as the opening fence.
+			if n := codeFenceLen(trimmed); n >= 3 {
+				if inCodeBlock && n >= openFenceLen {
+					inCodeBlock = false
+					openFenceLen = 0
+				} else if !inCodeBlock {
+					inCodeBlock = true
+					openFenceLen = n
+				}
 				continue
 			}
 
@@ -183,25 +203,39 @@ func ValidateCodeBlocks(docs []docscan.DocumentFile, expectedLang string) []Code
 	for _, doc := range docs {
 		lines := strings.Split(doc.Content, "\n")
 		inCodeBlock := false
+		openFenceLen := 0
 
 		for lineIdx, line := range lines {
 			trimmed := strings.TrimSpace(line)
 
-			if !strings.HasPrefix(trimmed, "```") {
+			n := codeFenceLen(trimmed)
+			if n < 3 {
 				continue
 			}
 
 			// Toggle code block state. Opening fences may have a
-			// language tag; closing fences do not.
+			// language tag; closing fences do not. A fence only closes
+			// the block if it is at least as long as the opening fence.
 			if inCodeBlock {
+				if n < openFenceLen {
+					continue
+				}
 				inCodeBlock = false
+				openFenceLen = 0
 				continue
 			}
 
 			inCodeBlock = true
+			openFenceLen = n
 
-			// Extract the language tag after the triple backticks.
-			lang := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+			// Extract the language tag after the backtick fence,
+			// taking only the first whitespace-delimited field so a
+			// trailing filename hint is not mistaken for a language.
+			rest := strings.TrimSpace(trimmed[n:])
+			lang := rest
+			if idx := strings.IndexAny(rest, " \t"); idx >= 0 {
+				lang = rest[:idx]
+			}
 			if lang == "" {
 				// Untagged code block — skip.
 				continue

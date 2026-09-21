@@ -467,7 +467,7 @@ type DocCoverageResult struct {
 // SymbolDocStatus represents the documentation status of a single
 // public symbol as reported by an external analyzer.
 type SymbolDocStatus struct {
-	// Name is the fully qualified symbol name.
+	// Name is the unqualified symbol name (e.g., "ProcessData").
 	Name string `json:"name"`
 
 	// Package is the package/module path.
