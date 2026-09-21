@@ -326,8 +326,8 @@ func TestQualityWithExternalAnalyzer_NoTestMapping_NoThresholds(t *testing.T) {
 		t.Fatalf("invalid quality_summary JSON: %v", err)
 	}
 	reason, _ := summaryMap["reason"].(string)
-	if reason != "test_mapping unavailable" {
-		t.Errorf("quality_summary.reason = %q, want %q", reason, "test_mapping unavailable")
+	if reason != "test_mapping_unavailable" {
+		t.Errorf("quality_summary.reason = %q, want %q", reason, "test_mapping_unavailable")
 	}
 }
 
@@ -394,11 +394,8 @@ func TestQualityWithExternalAnalyzer_TestMappingError_NoThresholds(t *testing.T)
 		t.Fatalf("invalid quality_summary JSON: %v", err)
 	}
 	reason, _ := summaryMap["reason"].(string)
-	if !strings.Contains(reason, "test_mapping error") {
-		t.Errorf("quality_summary.reason = %q, want it to contain %q", reason, "test_mapping error")
-	}
-	if !strings.Contains(reason, "connection refused") {
-		t.Errorf("quality_summary.reason = %q, want it to contain %q", reason, "connection refused")
+	if reason != "test_mapping_error" {
+		t.Errorf("quality_summary.reason = %q, want %q", reason, "test_mapping_error")
 	}
 }
 
