@@ -274,6 +274,7 @@ The CRAP JSON output is not covered by a formal embedded schema but follows a st
 | `worst_coverage_tests` | `QualityReport[]?` | No | Bottom 5 tests by coverage |
 | `ssa_degraded` | `bool` | No | `true` when SSA construction failed (partial results) |
 | `ssa_degraded_packages` | `string[]` | No | Package paths where SSA construction failed |
+| `reason` | `string` | No | Stable degradation identifier when metrics are unavailable (`test_mapping_unavailable` or `test_mapping_error`) |
 
 ### Annotated Example
 
