@@ -348,6 +348,67 @@ func TestCompactForAI_DocscanContentStripped(t *testing.T) {
 	}
 }
 
+func TestCompactForAI_DocscanAPICoveragePassthrough(t *testing.T) {
+	bigContent := strings.Repeat("x", 10*1024)
+	docscanJSON := mustMarshal(t, map[string]interface{}{
+		"documents": []map[string]interface{}{
+			{"path": "README.md", "content": bigContent, "priority": 2},
+		},
+		"api_coverage": map[string]interface{}{
+			"total_symbols":      3,
+			"documented_symbols": 2,
+			"coverage_percent":   66.67,
+			"source":             "doc_coverage",
+			"undocumented": []map[string]interface{}{
+				{"name": "add", "package": "math_utils"},
+			},
+			"stale_references":  []interface{}{},
+			"code_block_issues": []interface{}{},
+		},
+	})
+
+	payload := &ReportPayload{
+		Docscan: docscanJSON,
+		Errors:  PayloadErrors{},
+	}
+
+	data, err := payload.CompactForAI()
+	if err != nil {
+		t.Fatalf("CompactForAI: %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	var docscanEnv map[string]json.RawMessage
+	if err := json.Unmarshal(m["docscan"], &docscanEnv); err != nil {
+		t.Fatalf("Unmarshal docscan envelope: %v", err)
+	}
+
+	if _, ok := docscanEnv["api_coverage"]; !ok {
+		t.Fatal("api_coverage field missing from compact docscan envelope")
+	}
+
+	// api_coverage must round-trip unchanged (raw passthrough).
+	var cov map[string]interface{}
+	if err := json.Unmarshal(docscanEnv["api_coverage"], &cov); err != nil {
+		t.Fatalf("Unmarshal api_coverage: %v", err)
+	}
+	if cov["total_symbols"] != float64(3) {
+		t.Errorf("api_coverage total_symbols = %v, want 3", cov["total_symbols"])
+	}
+	if cov["source"] != "doc_coverage" {
+		t.Errorf("api_coverage source = %v, want doc_coverage", cov["source"])
+	}
+
+	// documents content must still be stripped.
+	if strings.Contains(string(docscanEnv["documents"]), bigContent[:100]) {
+		t.Error("compact output still contains docscan content")
+	}
+}
+
 // TestCompactForAI_DocscanEmpty verifies that an empty docscan array
 // stays [] (not null) in compact output.
 func TestCompactForAI_DocscanEmpty(t *testing.T) {
