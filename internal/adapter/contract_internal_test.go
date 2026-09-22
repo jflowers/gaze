@@ -293,3 +293,26 @@ func TestMappingClassificationConfidence(t *testing.T) {
 		}
 	})
 }
+
+// TestBuild_ResetsClassificationConfidence verifies that a degraded Build
+// (test_mapping unsupported) clears any confidence cached by a prior
+// successful build, so MappingClassificationConfidence never returns stale
+// values on a subsequent lookup.
+func TestBuild_ResetsClassificationConfidence(t *testing.T) {
+	p := &ExternalContractCoverageProvider{
+		caps:                     protocol.Capabilities{TestMapping: false},
+		classificationConfidence: map[string]int{"pkg/Foo": 75},
+	}
+
+	lookup, _, err := p.Build(nil, "")
+	if err != nil {
+		t.Fatalf("Build() unexpected error: %v", err)
+	}
+	if lookup == nil {
+		t.Fatal("Build() returned nil lookup")
+	}
+
+	if got := p.MappingClassificationConfidence("pkg", "Foo"); got != 0 {
+		t.Errorf("MappingClassificationConfidence after degraded Build = %d, want 0", got)
+	}
+}
