@@ -25,6 +25,8 @@ At least one package argument is required. Wildcard patterns like `./...` are ex
 | Flag | Short | Type | Default | Description |
 |------|-------|------|---------|-------------|
 | `--format` | | `string` | `text` | Output format: `text` or `json` |
+| `--analyzer` | | `string` | `""` | External analyzer binary (e.g., `snake-eyes`) for language-neutral test-to-target mapping |
+| `--language` | | `string` | `""` | Target language for analyzer discovery (e.g., `python`) |
 | `--target` | | `string` | `""` (all) | Restrict analysis to tests that exercise this specific function |
 | `--verbose` | `-v` | `bool` | `false` | Show detailed assertion and mapping information |
 | `--include-unexported` | | `bool` | `false` | Include unexported functions (auto-enabled for `package main`) |
@@ -35,6 +37,10 @@ At least one package argument is required. Wildcard patterns like `./...` are ex
 | `--max-over-specification` | | `int` | `0` (no limit) | CI gate: fail if any test's over-specification count exceeds this value |
 | `--ai-mapper` | | `string` | `""` | AI backend for assertion mapping fallback: `claude`, `gemini`, `ollama`, or `opencode` |
 | `--ai-mapper-model` | | `string` | `""` | Model name for AI mapper (required for `ollama`) |
+
+> **Note**: Go-specific flags (`--target`, `--ai-mapper`, `--include-unexported`) are rejected when `--analyzer` is set. The external analyzer provides its own test-to-target mapping and assertion detection, so those Go-only analysis features do not apply.
+
+When the external analyzer does not support `test_mapping` (or the call fails), `gaze quality` degrades gracefully: it reports zero contract coverage and sets a stable `reason` field in the JSON summary (`test_mapping_unavailable` or `test_mapping_error`) instead of failing.
 
 ## Configuration Interaction
 

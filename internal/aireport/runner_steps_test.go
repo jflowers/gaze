@@ -1,15 +1,22 @@
 package aireport
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
 
+	"github.com/unbound-force/gaze/internal/adapter"
 	"github.com/unbound-force/gaze/internal/analysis"
 	"github.com/unbound-force/gaze/internal/config"
 	"github.com/unbound-force/gaze/internal/quality"
@@ -43,7 +50,7 @@ func TestRunCRAPStep_RealPackage(t *testing.T) {
 	}
 }
 
-// TestRunDocscanStep_RealModuleDir verifies that runDocscanStep runs without
+// TestRunDocscanStep_RealModuleDir verifies that RunDocscanStep runs without
 // error on the module root and returns a non-nil JSON payload.
 // Guarded by testing.Short().
 func TestRunDocscanStep_RealModuleDir(t *testing.T) {
@@ -51,12 +58,12 @@ func TestRunDocscanStep_RealModuleDir(t *testing.T) {
 		t.Skip("skipping: runs real docscan pipeline")
 	}
 	modRoot := findModuleRoot(t)
-	raw, err := runDocscanStep(modRoot, io.Discard)
+	raw, err := RunDocscanStep(context.Background(), modRoot, nil, io.Discard)
 	if err != nil {
-		t.Fatalf("runDocscanStep: %v", err)
+		t.Fatalf("RunDocscanStep: %v", err)
 	}
 	if raw == nil {
-		t.Error("expected non-nil JSON from runDocscanStep")
+		t.Error("expected non-nil JSON from RunDocscanStep")
 	}
 }
 
@@ -102,6 +109,7 @@ func TestRunProductionPipeline_RealPackage(t *testing.T) {
 	}
 	modRoot := findModuleRoot(t)
 	payload, err := runProductionPipeline(
+		context.Background(),
 		[]string{"github.com/unbound-force/gaze/internal/config"},
 		modRoot,
 		"",    // no pre-generated profile — use internal generation
@@ -577,5 +585,112 @@ func TestRunClassifyStep_DI_ClassifyErrorSkip(t *testing.T) {
 	// Only fake/good's results should contribute.
 	if result.Contractual != 1 {
 		t.Errorf("expected Contractual=1 (from good only), got %d", result.Contractual)
+	}
+}
+
+var (
+	docscanTestBinaryPath string
+	docscanTestBuildOnce  sync.Once
+	docscanTestBuildErr   error
+)
+
+// buildDocscanTestFakeAnalyzer lazily builds the fake analyzer binary and
+// returns its path. The build is shared across tests via sync.Once.
+func buildDocscanTestFakeAnalyzer(t *testing.T) string {
+	t.Helper()
+	docscanTestBuildOnce.Do(func() {
+		tmpDir, err := os.MkdirTemp("", "gaze-docscan-test-*")
+		if err != nil {
+			docscanTestBuildErr = err
+			return
+		}
+		binPath := filepath.Join(tmpDir, "fake_analyzer")
+		cmd := exec.Command("go", "build", "-o", binPath, "./testdata/fake_analyzer/")
+		cmd.Dir = filepath.Join("..", "protocol")
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			docscanTestBuildErr = err
+			return
+		}
+		docscanTestBinaryPath = binPath
+	})
+	if docscanTestBuildErr != nil {
+		t.Fatalf("building fake_analyzer: %v", docscanTestBuildErr)
+	}
+	return docscanTestBinaryPath
+}
+
+// TestRunDocscanStep_WithSession verifies that a non-nil analyzer session
+// yields a populated api_coverage section in the docscan envelope.
+func TestRunDocscanStep_WithSession(t *testing.T) {
+	bin := buildDocscanTestFakeAnalyzer(t)
+	moduleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	sess := adapter.NewSession(bin, []string{"--stdio"}, moduleDir, []string{"./..."}, &stderr, config.DefaultConfig())
+	if _, err := sess.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	raw, err := RunDocscanStep(context.Background(), moduleDir, sess, &stderr)
+	if err != nil {
+		t.Fatalf("RunDocscanStep: %v", err)
+	}
+
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+
+	var cov map[string]interface{}
+	if err := json.Unmarshal(env["api_coverage"], &cov); err != nil {
+		t.Fatalf("unmarshal api_coverage: %v", err)
+	}
+	if cov["source"] != "doc_coverage" {
+		t.Errorf("api_coverage source = %v, want doc_coverage", cov["source"])
+	}
+	if cov["total_symbols"] != float64(3) {
+		t.Errorf("api_coverage total_symbols = %v, want 3", cov["total_symbols"])
+	}
+	if cov["documented_symbols"] != float64(2) {
+		t.Errorf("api_coverage documented_symbols = %v, want 2", cov["documented_symbols"])
+	}
+}
+
+// TestRunDocscanStep_GracefulDegradation verifies that a doc_coverage fetch
+// failure degrades to a null api_coverage with a warning, not a hard error.
+func TestRunDocscanStep_GracefulDegradation(t *testing.T) {
+	bin := buildDocscanTestFakeAnalyzer(t)
+	moduleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	sess := adapter.NewSession(bin, []string{"--stdio", "--crash-after=doc_coverage"}, moduleDir, []string{"./..."}, &stderr, config.DefaultConfig())
+	if _, err := sess.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	raw, err := RunDocscanStep(context.Background(), moduleDir, sess, &stderr)
+	if err != nil {
+		t.Fatalf("RunDocscanStep: %v", err)
+	}
+
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+
+	if string(env["api_coverage"]) != "null" {
+		t.Errorf("api_coverage = %s, want null (graceful degradation)", string(env["api_coverage"]))
+	}
+	if !strings.Contains(stderr.String(), "skipping API coverage") {
+		t.Errorf("stderr = %q, want it to contain %q", stderr.String(), "skipping API coverage")
 	}
 }

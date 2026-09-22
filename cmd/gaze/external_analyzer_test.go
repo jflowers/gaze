@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,24 +190,21 @@ func TestRunCrap_GoNativePath_FindModuleRootFailure(t *testing.T) {
 	}
 }
 
-// TestQualityWithExternalAnalyzer verifies the full external analyzer
-// quality path: session init → analyze → classify_signals → test_mapping
-// → contract coverage report. The fake analyzer provides:
+// TestQualityWithExternalAnalyzer_HappyPath verifies the full quality
+// pipeline with an external analyzer that supports test_mapping.
+// The fake analyzer provides:
+//   - analyze: divide (ReturnValue+ErrorReturn), multiply (ReturnValue), add (no effects)
+//   - test_mapping: test_multiply → multiply:ReturnValue, test_divide_basic → divide:ReturnValue,
+//     test_divide_error → divide:ErrorReturn
 //
-//   - 3 functions: add, multiply, divide (from analyze response)
-//   - classify_signals: signals for divide/ErrorReturn and multiply/ReturnValue
-//   - test_mapping: maps test_multiply → multiply/ReturnValue
-//
-// The quality report should contain entries for each analyzed function
-// with contract coverage data.
-func TestQualityWithExternalAnalyzer(t *testing.T) {
+// Expected quality report: 3 test functions. Per-test assertion-detection
+// confidence is the fraction of that test's mapping rows with a recognized
+// (non-empty) assertion_type: test_multiply=100, test_divide_basic=100,
+// test_divide_error=0. Summary confidence is the arithmetic mean = 67.
+func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	// Use a temp directory as the "module root" — the external
-	// analyzer doesn't need a real Go module.
 	moduleDir := t.TempDir()
-
-	// Create a minimal go.mod so pattern resolution works.
 	goMod := filepath.Join(moduleDir, "go.mod")
 	if err := os.WriteFile(goMod, []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
 		t.Fatalf("writing go.mod: %v", err)
@@ -222,131 +221,248 @@ func TestQualityWithExternalAnalyzer(t *testing.T) {
 		t.Fatalf("runQuality with external analyzer: %v\nstderr: %s", err, stderr.String())
 	}
 
-	// Parse the JSON output to verify quality report structure.
-	var result struct {
-		Reports []json.RawMessage      `json:"quality_reports"`
-		Summary map[string]interface{} `json:"quality_summary"`
+	// Parse JSON output.
+	var output struct {
+		QualityReports []struct {
+			TestFunction                 string `json:"test_function"`
+			AssertionCount               int    `json:"assertion_count"`
+			AssertionDetectionConfidence int    `json:"assertion_detection_confidence"`
+			ContractCoverage             struct {
+				Percentage       float64 `json:"percentage"`
+				CoveredCount     int     `json:"covered_count"`
+				TotalContractual int     `json:"total_contractual"`
+			} `json:"contract_coverage"`
+		} `json:"quality_reports"`
+		Summary struct {
+			TotalTests                   int     `json:"total_tests"`
+			AverageContractCoverage      float64 `json:"average_contract_coverage"`
+			AssertionDetectionConfidence int     `json:"assertion_detection_confidence"`
+		} `json:"quality_summary"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatalf("parsing JSON output: %v\nraw: %s", err, stdout.String())
 	}
 
-	// Should have reports (one per analyzed function from the external analyzer).
-	if len(result.Reports) == 0 {
-		t.Fatal("no reports in quality output")
+	if len(output.QualityReports) != 3 {
+		t.Fatalf("got %d quality reports, want 3", len(output.QualityReports))
 	}
 
-	// Summary should have average_contract_coverage.
-	if result.Summary == nil {
-		t.Fatal("missing summary in quality output")
+	// Per-test-function confidence: fraction of that test's mapping rows
+	// with a recognized (non-empty) assertion_type.
+	wantConfidence := map[string]int{
+		"test_multiply":     100,
+		"test_divide_basic": 100,
+		"test_divide_error": 0,
 	}
-
-	// TotalTests should be 0 (external analyzers don't provide test function data).
-	totalTests, _ := result.Summary["total_tests"].(float64)
-	if totalTests != 0 {
-		t.Errorf("total_tests = %g, want 0 (external analyzers don't provide test data)", totalTests)
-	}
-
-	// Average contract coverage should be > 0 because the fake analyzer
-	// maps test_multiply → multiply/ReturnValue, giving multiply non-zero
-	// contract coverage.
-	avgCoverage, _ := result.Summary["average_contract_coverage"].(float64)
-	if avgCoverage <= 0 {
-		t.Errorf("average_contract_coverage = %g, want > 0 (multiply has test coverage)", avgCoverage)
-	}
-
-	// Summary assertion-detection confidence is the arithmetic mean of
-	// per-report values: add=0, multiply=100, divide=50 → 50.
-	avgDetectionConf, _ := result.Summary["assertion_detection_confidence"].(float64)
-	if avgDetectionConf != 50 {
-		t.Errorf("summary assertion_detection_confidence = %g, want 50", avgDetectionConf)
-	}
-
-	// Inspect individual reports: each should have a target function and
-	// contract coverage. Find the multiply function which should have
-	// non-zero coverage from the test_mapping.
-	type reportEntry struct {
-		TargetFunction struct {
-			Function string `json:"function"`
-			Package  string `json:"package"`
-		} `json:"target_function"`
-		ContractCoverage struct {
-			Percentage float64 `json:"percentage"`
-		} `json:"contract_coverage"`
-		AssertionDetectionConfidence int `json:"assertion_detection_confidence"`
-	}
-	var foundMultiply bool
-	var foundDivide bool
-	for _, raw := range result.Reports {
-		var entry reportEntry
-		if err := json.Unmarshal(raw, &entry); err != nil {
-			t.Fatalf("parsing report entry: %v", err)
+	seen := make(map[string]bool)
+	for _, r := range output.QualityReports {
+		want, ok := wantConfidence[r.TestFunction]
+		if !ok {
+			t.Errorf("unexpected test function %q in report", r.TestFunction)
+			continue
 		}
-		if entry.TargetFunction.Function == "" {
-			t.Error("report entry has empty target_function.function")
+		seen[r.TestFunction] = true
+		if r.AssertionCount != 1 {
+			t.Errorf("%s AssertionCount = %d, want 1", r.TestFunction, r.AssertionCount)
 		}
-		if entry.TargetFunction.Function == "multiply" {
-			foundMultiply = true
-			if entry.ContractCoverage.Percentage <= 0 {
-				t.Errorf("multiply contract_coverage.percentage = %g, want > 0",
-					entry.ContractCoverage.Percentage)
-			}
-			// 1 mapping, recognized (equality) → 100.
-			if entry.AssertionDetectionConfidence != 100 {
-				t.Errorf("multiply assertion_detection_confidence = %d, want 100",
-					entry.AssertionDetectionConfidence)
-			}
-		}
-		if entry.TargetFunction.Function == "divide" {
-			foundDivide = true
-			// 2 mappings, 1 recognized (equality) + 1 empty → 50.
-			if entry.AssertionDetectionConfidence != 50 {
-				t.Errorf("divide assertion_detection_confidence = %d, want 50",
-					entry.AssertionDetectionConfidence)
-			}
+		if r.AssertionDetectionConfidence != want {
+			t.Errorf("%s AssertionDetectionConfidence = %d, want %d",
+				r.TestFunction, r.AssertionDetectionConfidence, want)
 		}
 	}
-	if !foundMultiply {
-		t.Error("no report entry found for function 'multiply'")
-	}
-	if !foundDivide {
-		t.Error("no report entry found for function 'divide'")
+	if len(seen) != 3 {
+		t.Errorf("got %d distinct test functions, want 3", len(seen))
 	}
 
-	// Stderr should mention the reduced report note.
+	// test_multiply targets multiply, which has 1 contractual effect
+	// (ReturnValue) covered by 1 mapping → 100% contract coverage.
+	for _, r := range output.QualityReports {
+		if r.TestFunction != "test_multiply" {
+			continue
+		}
+		if r.ContractCoverage.Percentage != 100 {
+			t.Errorf("test_multiply ContractCoverage.Percentage = %g, want 100",
+				r.ContractCoverage.Percentage)
+		}
+		if r.ContractCoverage.CoveredCount != 1 {
+			t.Errorf("test_multiply CoveredCount = %d, want 1", r.ContractCoverage.CoveredCount)
+		}
+		if r.ContractCoverage.TotalContractual != 1 {
+			t.Errorf("test_multiply TotalContractual = %d, want 1",
+				r.ContractCoverage.TotalContractual)
+		}
+	}
+
+	if output.Summary.TotalTests != 3 {
+		t.Errorf("Summary.TotalTests = %d, want 3", output.Summary.TotalTests)
+	}
+	// Average over 3 reports: (100 + 50 + 50) / 3 ≈ 66.67.
+	wantAvgCoverage := (100.0 + 50.0 + 50.0) / 3.0
+	if output.Summary.AverageContractCoverage != wantAvgCoverage {
+		t.Errorf("Summary.AverageContractCoverage = %g, want %g",
+			output.Summary.AverageContractCoverage, wantAvgCoverage)
+	}
+	// Mean of per-report confidence: (100 + 100 + 0) / 3 → 67 (round half up).
+	if output.Summary.AssertionDetectionConfidence != 67 {
+		t.Errorf("Summary.AssertionDetectionConfidence = %d, want 67",
+			output.Summary.AssertionDetectionConfidence)
+	}
+
+	// Verify stderr mentions the external analyzer.
 	stderrStr := stderr.String()
-	if !strings.Contains(stderrStr, "contract coverage only") {
-		t.Errorf("stderr should mention reduced report, got: %s", stderrStr)
-	}
-
-	// Stderr should mention the external analyzer.
 	if !strings.Contains(stderrStr, "fake-analyzer") {
 		t.Errorf("stderr should mention analyzer name, got: %s", stderrStr)
 	}
 }
 
-// TestBuildExternalQualityReports_NilSideEffects verifies that
-// buildExternalQualityReports returns empty reports and an empty summary
-// when the providers have no SideEffects analyzer (nil).
-func TestBuildExternalQualityReports_NilSideEffects(t *testing.T) {
-	var stderr bytes.Buffer
-	providers := &adapter.Providers{
-		// SideEffects is nil — no side effect data available.
+// TestQualityWithExternalAnalyzer_NoTestMapping_NoThresholds verifies
+// that when the analyzer doesn't support test_mapping and no thresholds
+// are set, the command succeeds with a zero-coverage report.
+func TestQualityWithExternalAnalyzer_NoTestMapping_NoThresholds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	moduleDir := t.TempDir()
+	goMod := filepath.Join(moduleDir, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
 	}
-	reports, summary := buildExternalQualityReports(nil, providers, qualityParams{
+
+	// Use --crash-after=test_mapping so the fake analyzer supports
+	// test_mapping in capabilities but crashes if called. We need
+	// to test the "no test_mapping capability" path, which requires
+	// a fake that declares test_mapping: false.
+	// Since we can't easily change the fake's capabilities, we test
+	// the handler function directly.
+	err := handleQualityNoTestMapping(qualityParams{
+		stdout: &stdout,
 		stderr: &stderr,
-	})
-	if len(reports) != 0 {
-		t.Errorf("expected 0 reports, got %d", len(reports))
+		format: "json",
+	}, &adapter.Providers{AnalyzerName: "test-analyzer"})
+
+	if err != nil {
+		t.Fatalf("expected nil error with no thresholds, got: %v", err)
 	}
-	if summary == nil {
-		t.Fatal("expected non-nil summary")
+
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "does not support test_mapping") {
+		t.Errorf("expected test_mapping warning in stderr, got: %s", stderrStr)
 	}
-	if summary.TotalTests != 0 {
-		t.Errorf("TotalTests = %d, want 0", summary.TotalTests)
+	if !strings.Contains(stderrStr, "test-analyzer") {
+		t.Errorf("expected analyzer name in stderr, got: %s", stderrStr)
 	}
-	if summary.AverageContractCoverage != 0 {
-		t.Errorf("AverageContractCoverage = %g, want 0", summary.AverageContractCoverage)
+
+	// Verify JSON output contains the reason field.
+	if stdout.Len() == 0 {
+		t.Fatal("expected non-empty stdout")
+	}
+	var jsonOutput map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &jsonOutput); err != nil {
+		t.Fatalf("invalid JSON output: %v", err)
+	}
+	summaryRaw, ok := jsonOutput["quality_summary"]
+	if !ok {
+		t.Fatal("JSON output missing 'quality_summary' key")
+	}
+	var summaryMap map[string]any
+	if err := json.Unmarshal(summaryRaw, &summaryMap); err != nil {
+		t.Fatalf("invalid quality_summary JSON: %v", err)
+	}
+	reason, _ := summaryMap["reason"].(string)
+	if reason != "test_mapping_unavailable" {
+		t.Errorf("quality_summary.reason = %q, want %q", reason, "test_mapping_unavailable")
+	}
+}
+
+// TestQualityWithExternalAnalyzer_NoTestMapping_WithThresholds verifies
+// that when the analyzer doesn't support test_mapping and thresholds
+// are set, the command returns an error.
+func TestQualityWithExternalAnalyzer_NoTestMapping_WithThresholds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := handleQualityNoTestMapping(qualityParams{
+		stdout:              &stdout,
+		stderr:              &stderr,
+		format:              "json",
+		minContractCoverage: 50,
+	}, &adapter.Providers{AnalyzerName: "test-analyzer"})
+
+	if err == nil {
+		t.Fatal("expected error when thresholds are set but test_mapping unavailable")
+	}
+	if !strings.Contains(err.Error(), "quality thresholds cannot be evaluated") {
+		t.Errorf("expected threshold evaluation error, got: %s", err.Error())
+	}
+}
+
+// TestQualityWithExternalAnalyzer_TestMappingError_NoThresholds verifies
+// that when test_mapping fails and no thresholds are set, the command
+// succeeds with a zero-coverage report.
+func TestQualityWithExternalAnalyzer_TestMappingError_NoThresholds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	fetchErr := fmt.Errorf("connection refused")
+	err := handleQualityTestMappingError(qualityParams{
+		stdout: &stdout,
+		stderr: &stderr,
+		format: "json",
+	}, &adapter.Providers{AnalyzerName: "test-analyzer"}, fetchErr)
+
+	if err != nil {
+		t.Fatalf("expected nil error with no thresholds, got: %v", err)
+	}
+
+	stderrStr := stderr.String()
+	if !strings.Contains(stderrStr, "test_mapping failed") {
+		t.Errorf("expected test_mapping failure warning in stderr, got: %s", stderrStr)
+	}
+	if !strings.Contains(stderrStr, "connection refused") {
+		t.Errorf("expected underlying error in stderr, got: %s", stderrStr)
+	}
+
+	// Verify JSON output contains the reason field with error details.
+	if stdout.Len() == 0 {
+		t.Fatal("expected non-empty stdout")
+	}
+	var jsonOutput map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &jsonOutput); err != nil {
+		t.Fatalf("invalid JSON output: %v", err)
+	}
+	summaryRaw, ok := jsonOutput["quality_summary"]
+	if !ok {
+		t.Fatal("JSON output missing 'quality_summary' key")
+	}
+	var summaryMap map[string]any
+	if err := json.Unmarshal(summaryRaw, &summaryMap); err != nil {
+		t.Fatalf("invalid quality_summary JSON: %v", err)
+	}
+	reason, _ := summaryMap["reason"].(string)
+	if reason != "test_mapping_error" {
+		t.Errorf("quality_summary.reason = %q, want %q", reason, "test_mapping_error")
+	}
+}
+
+// TestQualityWithExternalAnalyzer_TestMappingError_WithThresholds verifies
+// that when test_mapping fails and thresholds are set, the command
+// returns an error wrapping the original fetch error.
+func TestQualityWithExternalAnalyzer_TestMappingError_WithThresholds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	fetchErr := fmt.Errorf("connection refused")
+	err := handleQualityTestMappingError(qualityParams{
+		stdout:               &stdout,
+		stderr:               &stderr,
+		format:               "json",
+		maxOverSpecification: 10,
+	}, &adapter.Providers{AnalyzerName: "test-analyzer"}, fetchErr)
+
+	if err == nil {
+		t.Fatal("expected error when thresholds are set but test_mapping failed")
+	}
+	if !strings.Contains(err.Error(), "test_mapping failed") {
+		t.Errorf("expected test_mapping failed error, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("expected underlying error in wrapped message, got: %s", err.Error())
 	}
 }
 
@@ -364,16 +480,58 @@ func TestQualityWithExternalAnalyzer_BinaryNotFound(t *testing.T) {
 		stderr:       &stderr,
 	})
 	if err == nil {
-		t.Fatal("expected error when analyzer binary not found")
+		t.Fatal("expected error for nonexistent analyzer binary")
 	}
-	// The external analyzer path is now supported; error should be about
-	// the binary not being found, not about the feature being unsupported.
+	// The error should be about the analyzer not being found, NOT
+	// about the flag being unsupported.
 	errMsg := err.Error()
-	if bytes.Contains([]byte(errMsg), []byte("not yet supported")) {
-		t.Errorf("quality --analyzer should no longer be rejected; got: %s", errMsg)
+	if strings.Contains(errMsg, "not yet supported") {
+		t.Errorf("--analyzer should be accepted for quality now, got: %s", errMsg)
 	}
-	if !strings.Contains(errMsg, "analyzer") {
-		t.Errorf("error should mention analyzer, got: %s", errMsg)
+	if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "spawning") {
+		t.Errorf("expected discovery/spawn error, got: %s", errMsg)
+	}
+}
+
+// TestQualityWithExternalAnalyzer_RejectsTarget verifies that --target
+// is rejected when used with --analyzer (Go-specific SSA feature).
+func TestQualityWithExternalAnalyzer_RejectsTarget(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := runQuality(qualityParams{
+		patterns:     []string{"./..."},
+		format:       "text",
+		analyzerFlag: "some-analyzer",
+		targetFunc:   "SomeFunc",
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error for --target with --analyzer")
+	}
+	if !strings.Contains(err.Error(), "--target is not supported with --analyzer") {
+		t.Errorf("expected target rejection error, got: %s", err.Error())
+	}
+}
+
+// TestQualityWithExternalAnalyzer_RejectsAIMapper verifies that
+// --ai-mapper is rejected when used with --analyzer.
+func TestQualityWithExternalAnalyzer_RejectsAIMapper(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := runQuality(qualityParams{
+		patterns:     []string{"./..."},
+		format:       "text",
+		analyzerFlag: "some-analyzer",
+		aiMapper:     "claude",
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error for --ai-mapper with --analyzer")
+	}
+	if !strings.Contains(err.Error(), "--ai-mapper is not supported with --analyzer") {
+		t.Errorf("expected ai-mapper rejection error, got: %s", err.Error())
 	}
 }
 
@@ -436,5 +594,52 @@ func TestRunReport_GoNativePath_FindModuleRootFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "finding module root") {
 		t.Errorf("error should contain 'finding module root', got: %s", err)
+	}
+}
+
+// TestReportWithExternalAnalyzer_DocscanPopulated verifies that the external
+// report path wires the analyzer session into the docscan step so the payload
+// carries a populated api_coverage section.
+func TestReportWithExternalAnalyzer_DocscanPopulated(t *testing.T) {
+	moduleDir := t.TempDir()
+	goMod := filepath.Join(moduleDir, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module fake\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	analyzeFunc, cleanup, err := buildExternalReportAnalyzeFunc(
+		context.Background(), fakeBinaryPath, "python", moduleDir, []string{"./..."}, &stderr)
+	if err != nil {
+		t.Fatalf("buildExternalReportAnalyzeFunc: %v", err)
+	}
+	defer cleanup()
+
+	payload, err := analyzeFunc([]string{"./..."}, moduleDir)
+	if err != nil {
+		t.Fatalf("analyzeFunc: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if payload.Docscan == nil {
+		t.Fatal("payload.Docscan is nil, expected docscan envelope")
+	}
+
+	var env struct {
+		APICoverage map[string]interface{} `json:"api_coverage"`
+	}
+	if err := json.Unmarshal(payload.Docscan, &env); err != nil {
+		t.Fatalf("unmarshal docscan envelope: %v\nraw: %s", err, string(payload.Docscan))
+	}
+	if env.APICoverage == nil {
+		t.Fatal("api_coverage is null, expected populated")
+	}
+	if env.APICoverage["source"] != "doc_coverage" {
+		t.Errorf("api_coverage source = %v, want doc_coverage", env.APICoverage["source"])
+	}
+	if env.APICoverage["total_symbols"] != float64(3) {
+		t.Errorf("api_coverage total_symbols = %v, want 3", env.APICoverage["total_symbols"])
+	}
+	if env.APICoverage["documented_symbols"] != float64(2) {
+		t.Errorf("api_coverage documented_symbols = %v, want 2", env.APICoverage["documented_symbols"])
 	}
 }

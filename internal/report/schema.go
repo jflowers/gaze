@@ -412,6 +412,10 @@ const QualitySchema = `{
         "total_over_specifications", "assertion_detection_confidence"
       ],
       "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Stable machine-readable degradation identifier when quality metrics are unavailable (e.g., \"test_mapping_unavailable\" or \"test_mapping_error\")"
+        },
         "total_tests": { "type": "integer" },
         "average_contract_coverage": {
           "type": "number",

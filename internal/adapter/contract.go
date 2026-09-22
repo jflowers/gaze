@@ -33,14 +33,6 @@ type ExternalContractCoverageProvider struct {
 	rootDir     string
 	patterns    []string
 	stderr      io.Writer
-
-	// classificationConfidence stores per-target-function mapping
-	// classification confidence, computed during Build. Keyed by
-	// pkg + "/" + function. This is the fraction of emitted mapping
-	// rows whose AssertionType is recognized (non-empty) — NOT the
-	// same as assertion-detection confidence on the Go-native path,
-	// which uses all detected assertion sites as the denominator.
-	classificationConfidence map[string]int
 }
 
 // NewExternalContractCoverageProvider creates a contract coverage
@@ -68,11 +60,6 @@ func NewExternalContractCoverageProvider(
 // is supported, it fetches assertion mappings and computes contract
 // coverage per function. When not supported, returns a no-op lookup.
 func (p *ExternalContractCoverageProvider) Build(patterns []string, rootDir string) (func(pkg, function string) (crap.ContractCoverageInfo, bool), []string, error) {
-	// Reset cached confidence so degraded Build paths (TestMapping
-	// unsupported, or fetchTestMappings failure) never return stale
-	// values from a prior successful build.
-	p.classificationConfidence = nil
-
 	if !p.caps.TestMapping {
 		return noopLookup(), nil, nil
 	}
@@ -91,22 +78,6 @@ func (p *ExternalContractCoverageProvider) Build(patterns []string, rootDir stri
 
 	lookup := buildContractLookup(allResults, mappings)
 
-	// Compute and store per-target-function mapping classification
-	// confidence. Iterate unique (TargetPackage, TargetFunction) pairs
-	// and call computeMappingClassificationConfidence for each.
-	type targetKey struct{ pkg, fn string }
-	seen := make(map[targetKey]bool)
-	p.classificationConfidence = make(map[string]int)
-	for _, m := range mappings {
-		tk := targetKey{m.TargetPackage, m.TargetFunction}
-		if seen[tk] {
-			continue
-		}
-		seen[tk] = true
-		conf := computeMappingClassificationConfidence(mappings, m.TargetPackage, m.TargetFunction)
-		p.classificationConfidence[m.TargetPackage+"/"+m.TargetFunction] = conf
-	}
-
 	return lookup, nil, nil
 }
 
@@ -120,6 +91,11 @@ func noopLookup() func(pkg, function string) (crap.ContractCoverageInfo, bool) {
 
 // fetchTestMappings calls the test_mapping protocol method and parses
 // the response. Returns nil on any failure (graceful degradation per D7).
+//
+// This is the crap/contract-coverage provider path. The quality CLI
+// path uses the standalone FetchTestMappings function in quality.go
+// instead, which returns errors rather than warning internally. Keep
+// both in sync when the test_mapping protocol changes.
 func (p *ExternalContractCoverageProvider) fetchTestMappings(patterns []string, rootDir string) ([]protocol.AssertionMappingData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), protocol.AnalysisTimeout)
 	defer cancel()
@@ -143,21 +119,6 @@ func (p *ExternalContractCoverageProvider) fetchTestMappings(patterns []string, 
 		return nil, err
 	}
 	return result.Mappings, nil
-}
-
-// MappingClassificationConfidence returns the mapping classification
-// confidence for a specific target function, as computed during Build.
-// This is the fraction of emitted mapping rows whose AssertionType is
-// recognized (non-empty) — a proxy for assertion-detection confidence
-// on the external analyzer path, which does not expose total detected
-// assertion sites. Returns 0 if the function is not found or if Build
-// has not been called (nil map). The pkg and function parameters refer
-// to the target package and target function.
-func (p *ExternalContractCoverageProvider) MappingClassificationConfidence(pkg, function string) int {
-	if p.classificationConfidence == nil {
-		return 0
-	}
-	return p.classificationConfidence[pkg+"/"+function]
 }
 
 // warn emits a warning to stderr if a writer is configured.
@@ -265,40 +226,16 @@ func confidenceRange(effects []taxonomy.SideEffect) (minConf, maxConf int, found
 	return minConf, maxConf, true
 }
 
-// computeMappingClassificationConfidence computes the mapping
-// classification confidence for a specific target function. It
-// filters mappings to those targeting the given (pkg, fn) pair,
-// counts total and recognized (where AssertionType is non-empty),
-// and returns recognized * 100 / total. Returns 0 when no mappings
-// match the target.
-//
-// This is the fraction of emitted mapping rows with a recognized
-// assertion type — NOT assertion-detection confidence, which uses
-// all detected assertion sites as the denominator. The external
-// analyzer protocol does not expose total assertion-site counts, so
-// this mapping-row ratio is the closest available proxy.
-func computeMappingClassificationConfidence(mappings []protocol.AssertionMappingData, pkg, fn string) int {
-	total := 0
-	recognized := 0
-	for _, m := range mappings {
-		if m.TargetPackage != pkg || m.TargetFunction != fn {
-			continue
-		}
-		total++
-		if m.AssertionType != "" {
-			recognized++
-		}
-	}
-	if total == 0 {
-		return 0
-	}
-	return recognized * 100 / total
-}
-
 // findSideEffectID finds the ID of the first side effect matching
 // the given type in the effects slice. Returns empty string if not
 // found. This bridges the protocol's type-based mapping to the
 // taxonomy's ID-based mapping.
+//
+// The first match is deterministic (slice order), so when a function
+// emits multiple effects of the same type (e.g., two ReturnValue
+// effects) the mapping resolves to the earliest one. This mirrors the
+// pre-existing type-first behavior in the contract coverage path and
+// is asserted by TestFindSideEffectID.
 func findSideEffectID(effects []taxonomy.SideEffect, sideEffectType string) string {
 	for _, e := range effects {
 		if string(e.Type) == sideEffectType {
