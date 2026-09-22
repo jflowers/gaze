@@ -255,6 +255,13 @@ func TestQualityWithExternalAnalyzer(t *testing.T) {
 		t.Errorf("average_contract_coverage = %g, want > 0 (multiply has test coverage)", avgCoverage)
 	}
 
+	// Summary assertion-detection confidence is the arithmetic mean of
+	// per-report values: add=0, multiply=100, divide=50 → 50.
+	avgDetectionConf, _ := result.Summary["assertion_detection_confidence"].(float64)
+	if avgDetectionConf != 50 {
+		t.Errorf("summary assertion_detection_confidence = %g, want 50", avgDetectionConf)
+	}
+
 	// Inspect individual reports: each should have a target function and
 	// contract coverage. Find the multiply function which should have
 	// non-zero coverage from the test_mapping.
@@ -266,8 +273,10 @@ func TestQualityWithExternalAnalyzer(t *testing.T) {
 		ContractCoverage struct {
 			Percentage float64 `json:"percentage"`
 		} `json:"contract_coverage"`
+		AssertionDetectionConfidence int `json:"assertion_detection_confidence"`
 	}
 	var foundMultiply bool
+	var foundDivide bool
 	for _, raw := range result.Reports {
 		var entry reportEntry
 		if err := json.Unmarshal(raw, &entry); err != nil {
@@ -282,10 +291,26 @@ func TestQualityWithExternalAnalyzer(t *testing.T) {
 				t.Errorf("multiply contract_coverage.percentage = %g, want > 0",
 					entry.ContractCoverage.Percentage)
 			}
+			// 1 mapping, recognized (equality) → 100.
+			if entry.AssertionDetectionConfidence != 100 {
+				t.Errorf("multiply assertion_detection_confidence = %d, want 100",
+					entry.AssertionDetectionConfidence)
+			}
+		}
+		if entry.TargetFunction.Function == "divide" {
+			foundDivide = true
+			// 2 mappings, 1 recognized (equality) + 1 empty → 50.
+			if entry.AssertionDetectionConfidence != 50 {
+				t.Errorf("divide assertion_detection_confidence = %d, want 50",
+					entry.AssertionDetectionConfidence)
+			}
 		}
 	}
 	if !foundMultiply {
 		t.Error("no report entry found for function 'multiply'")
+	}
+	if !foundDivide {
+		t.Error("no report entry found for function 'divide'")
 	}
 
 	// Stderr should mention the reduced report note.
