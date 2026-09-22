@@ -1281,12 +1281,15 @@ func buildExternalQualityReports(
 			Metadata:         meta,
 		}
 
-		// COUPLING: Detection confidence is computed and stored in
-		// internal/adapter/contract.go during Build. If QualityReport
-		// construction changes for external analyzers, this must be
-		// updated. See design.md R2.
+		// COUPLING: Mapping classification confidence is computed and
+		// stored in internal/adapter/contract.go during Build. If
+		// QualityReport construction changes for external analyzers,
+		// this must be updated. See design.md R2. The value is a proxy
+		// for assertion-detection confidence (fraction of emitted
+		// mapping rows with a recognized AssertionType), since external
+		// analyzers do not expose total assertion-site counts.
 		if ecp, ok := providers.ContractCoverage.(*adapter.ExternalContractCoverageProvider); ok {
-			report.AssertionDetectionConfidence = ecp.DetectionConfidence(
+			report.AssertionDetectionConfidence = ecp.MappingClassificationConfidence(
 				result.Target.Package, result.Target.Function,
 			)
 		}

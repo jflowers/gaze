@@ -657,11 +657,12 @@ func TestExternalSideEffectAnalyzer_Streaming(t *testing.T) {
 	}
 }
 
-// TestDetectionConfidence_Integration verifies that
+// TestMappingClassificationConfidence_Integration verifies that
 // ExternalContractCoverageProvider.Build computes and stores
-// per-target-function detection confidence from mapping data, and
-// that the values are accessible via DetectionConfidence.
-func TestDetectionConfidence_Integration(t *testing.T) {
+// per-target-function mapping classification confidence from mapping
+// data, and that the values are accessible via
+// MappingClassificationConfidence.
+func TestMappingClassificationConfidence_Integration(t *testing.T) {
 	client := mustNewClient(t)
 	defer func() { _ = client.Close() }()
 
@@ -684,16 +685,16 @@ func TestDetectionConfidence_Integration(t *testing.T) {
 	// The fake analyzer returns 3 mappings:
 	//   multiply: 1 mapping with assertion_type="equality" → 100%
 	//   divide:   2 mappings, 1 with assertion_type="equality", 1 with "" → 50%
-	if got := provider.DetectionConfidence("math_utils", "multiply"); got != 100 {
-		t.Errorf("multiply DetectionConfidence = %d, want 100", got)
+	if got := provider.MappingClassificationConfidence("math_utils", "multiply"); got != 100 {
+		t.Errorf("multiply MappingClassificationConfidence = %d, want 100", got)
 	}
-	if got := provider.DetectionConfidence("math_utils", "divide"); got != 50 {
-		t.Errorf("divide DetectionConfidence = %d, want 50", got)
+	if got := provider.MappingClassificationConfidence("math_utils", "divide"); got != 50 {
+		t.Errorf("divide MappingClassificationConfidence = %d, want 50", got)
 	}
 
 	// Unknown function returns 0.
-	if got := provider.DetectionConfidence("math_utils", "unknown"); got != 0 {
-		t.Errorf("unknown DetectionConfidence = %d, want 0", got)
+	if got := provider.MappingClassificationConfidence("math_utils", "unknown"); got != 0 {
+		t.Errorf("unknown MappingClassificationConfidence = %d, want 0", got)
 	}
 }
 

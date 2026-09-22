@@ -152,10 +152,10 @@ func TestDeriveCoverageReason(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// computeDetectionConfidenceFromMappings tests (table-driven)
+// computeMappingClassificationConfidence tests (table-driven)
 // ---------------------------------------------------------------------------
 
-func TestComputeDetectionConfidenceFromMappings(t *testing.T) {
+func TestComputeMappingClassificationConfidence(t *testing.T) {
 	tests := []struct {
 		name     string
 		mappings []protocol.AssertionMappingData
@@ -245,51 +245,51 @@ func TestComputeDetectionConfidenceFromMappings(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := computeDetectionConfidenceFromMappings(tt.mappings, tt.pkg, tt.fn)
+			got := computeMappingClassificationConfidence(tt.mappings, tt.pkg, tt.fn)
 			if got != tt.want {
-				t.Errorf("computeDetectionConfidenceFromMappings() = %d, want %d", got, tt.want)
+				t.Errorf("computeMappingClassificationConfidence() = %d, want %d", got, tt.want)
 			}
 		})
 	}
 }
 
 // ---------------------------------------------------------------------------
-// DetectionConfidence method tests
+// MappingClassificationConfidence method tests
 // ---------------------------------------------------------------------------
 
-func TestDetectionConfidence(t *testing.T) {
+func TestMappingClassificationConfidence(t *testing.T) {
 	t.Run("before Build (nil map)", func(t *testing.T) {
 		p := &ExternalContractCoverageProvider{}
-		got := p.DetectionConfidence("pkg", "Foo")
+		got := p.MappingClassificationConfidence("pkg", "Foo")
 		if got != 0 {
-			t.Errorf("DetectionConfidence before Build = %d, want 0", got)
+			t.Errorf("MappingClassificationConfidence before Build = %d, want 0", got)
 		}
 	})
 
 	t.Run("returns stored value", func(t *testing.T) {
 		p := &ExternalContractCoverageProvider{
-			detectionConfidence: map[string]int{
+			classificationConfidence: map[string]int{
 				"pkg/Foo": 75,
 				"pkg/Bar": 100,
 			},
 		}
-		if got := p.DetectionConfidence("pkg", "Foo"); got != 75 {
-			t.Errorf("DetectionConfidence(pkg, Foo) = %d, want 75", got)
+		if got := p.MappingClassificationConfidence("pkg", "Foo"); got != 75 {
+			t.Errorf("MappingClassificationConfidence(pkg, Foo) = %d, want 75", got)
 		}
-		if got := p.DetectionConfidence("pkg", "Bar"); got != 100 {
-			t.Errorf("DetectionConfidence(pkg, Bar) = %d, want 100", got)
+		if got := p.MappingClassificationConfidence("pkg", "Bar"); got != 100 {
+			t.Errorf("MappingClassificationConfidence(pkg, Bar) = %d, want 100", got)
 		}
 	})
 
 	t.Run("unknown function returns 0", func(t *testing.T) {
 		p := &ExternalContractCoverageProvider{
-			detectionConfidence: map[string]int{
+			classificationConfidence: map[string]int{
 				"pkg/Foo": 75,
 			},
 		}
-		got := p.DetectionConfidence("pkg", "Unknown")
+		got := p.MappingClassificationConfidence("pkg", "Unknown")
 		if got != 0 {
-			t.Errorf("DetectionConfidence(pkg, Unknown) = %d, want 0", got)
+			t.Errorf("MappingClassificationConfidence(pkg, Unknown) = %d, want 0", got)
 		}
 	})
 }

@@ -46,9 +46,9 @@ the mappings — but `Build`'s interface contract (`crap.ContractCoverageProvide
 returns only the lookup function and degraded packages. The confidence data
 needs to flow through a different channel to reach `QualityReport` construction.
 
-### D2: New `detectionConfidence` field on provider struct
+### D2: New `classificationConfidence` field on provider struct
 
-Store the per-function detection confidence map on
+Store the per-function mapping classification confidence map on
 `ExternalContractCoverageProvider` as a computed field populated during
 `Build`. The `buildExternalQualityReports` function in `cmd/gaze/main.go`
 (which has access to the provider via `providers.ContractCoverage`) reads
@@ -60,13 +60,13 @@ is shared by `goprovider` and `mockprovider`) and avoids protocol changes.
 ```go
 type ExternalContractCoverageProvider struct {
     // ... existing fields ...
-    // detectionConfidence holds per-target-function assertion detection
-    // confidence computed during Build from mapping data.
-    detectionConfidence map[string]int // keyed by "pkg/function"
+    // classificationConfidence holds per-target-function mapping
+    // classification confidence computed during Build from mapping data.
+    classificationConfidence map[string]int // keyed by "pkg/function"
 }
 ```
 
-Expose a `DetectionConfidence(pkg, function string) int` method. The method
+Expose a `MappingClassificationConfidence(pkg, function string) int` method. The method
 returns 0 when the map is nil (before `Build` is called) or when the
 function is not found. The caller must use the comma-ok type assertion from
 `crap.ContractCoverageProvider` to `*ExternalContractCoverageProvider` to
@@ -74,14 +74,22 @@ access this method. If the type assertion fails (e.g., provider is a mock
 in tests), confidence remains at the default 0 — safe because the assertion
 can only fail in test scenarios, never in the `--analyzer` production path.
 
+The name "mapping classification confidence" (rather than "assertion
+detection confidence") is deliberate: the value is the fraction of emitted
+`AssertionMappingData` rows with a recognized (non-empty) `AssertionType`,
+not the fraction of all detected assertion sites (the Go-native meaning).
+External analyzers do not expose total assertion-site counts, so the
+mapping-row ratio is the closest available proxy. See R1.
+
 ### D3: Confidence computation logic
 
 ```go
-// computeDetectionConfidenceFromMappings computes the assertion detection
-// confidence for a specific target function from external analyzer mapping data.
-// It counts all mappings targeting (pkg, fn) across all test functions,
-// and returns recognized * 100 / total (0 when total is 0).
-func computeDetectionConfidenceFromMappings(mappings []protocol.AssertionMappingData, pkg, fn string) int {
+// computeMappingClassificationConfidence computes the mapping
+// classification confidence for a specific target function from external
+// analyzer mapping data. It counts all mappings targeting (pkg, fn) across
+// all test functions, and returns recognized * 100 / total (0 when total
+// is 0). "recognized" means AssertionType is non-empty.
+func computeMappingClassificationConfidence(mappings []protocol.AssertionMappingData, pkg, fn string) int {
     total := 0
     recognized := 0
     for _, m := range mappings {
@@ -100,11 +108,17 @@ func computeDetectionConfidenceFromMappings(mappings []protocol.AssertionMapping
 }
 ```
 
-This mirrors the Go-native `computeDetectionConfidence` — same ratio, same
-integer truncation, same 0-when-empty behavior. The function computes confidence
-per **target function** (aggregating across all test functions mapping to that
-target), which matches how `QualityReport` entries are keyed in the external
-analyzer path (one report per target function).
+This computes confidence per **target function** (aggregating across all
+test functions mapping to that target), which matches how `QualityReport`
+entries are keyed in the external analyzer path (one report per target
+function).
+
+Note the denominator is mapping rows, not assertion sites. The Go-native
+`computeDetectionConfidence` uses all detected assertion sites as its
+denominator; the external path can only see mapping rows (which are
+already-mapped assertions), so the two metrics are NOT identical. This
+mapping-row ratio is documented as "mapping classification confidence" and
+treated as a proxy for assertion-detection confidence. See R1.
 
 ### D4: Integration point — `buildExternalQualityReports`
 
@@ -114,7 +128,7 @@ directly — it does NOT call `quality.Assess`. The `AssertionDetectionConfidenc
 field is currently omitted from the struct literal (defaulting to 0).
 
 The fix populates `AssertionDetectionConfidence` directly during report
-construction by calling `DetectionConfidence(pkg, function)` on the provider
+construction by calling `MappingClassificationConfidence(pkg, function)` on the provider
 (via comma-ok type assertion). Summary-level confidence uses arithmetic mean
 of per-report values, matching the Go-native aggregation in `quality.Assess`.
 
@@ -125,36 +139,42 @@ is not affected since it only uses `goprovider`.
 
 ### D5: Test strategy
 
-1. Unit test `computeDetectionConfidenceFromMappings` — table-driven with:
+1. Unit test `computeMappingClassificationConfidence` — table-driven with:
    - Nil/empty mappings → 0
    - All recognized → 100
    - None recognized → 0
    - Mixed recognized/unknown → correct ratio (including integer truncation, e.g. 1/3 = 33)
    - Multiple test functions, filter by name
    - Empty `AssertionType` counts as unrecognized
-2. Unit test `DetectionConfidence` method on the provider struct
+2. Unit test `MappingClassificationConfidence` method on the provider struct
    - Stored value lookup
    - Unknown function → 0
    - Before `Build` (nil map) → 0 (no panic)
 3. Integration test via fake analyzer binary — verify `QualityReport` entries
-   have specific expected `AssertionDetectionConfidence` values (not just != 0)
+   have specific expected `AssertionDetectionConfidence` values (not just != 0),
+   through `buildExternalQualityReports`, asserting BOTH per-report and summary
+   `AssertionDetectionConfidence`.
 
-Coverage target: 100% branch coverage for `computeDetectionConfidenceFromMappings`
-and `DetectionConfidence`. Integration test validates end-to-end flow through
+Coverage target: 100% branch coverage for `computeMappingClassificationConfidence`
+and `MappingClassificationConfidence`. Integration test validates end-to-end flow through
 `buildExternalQualityReports`.
 
 ## Risks / Trade-offs
 
-### R1: Semantic parity between Go-native and external confidence
+### R1: Semantic difference between Go-native and external confidence
 
 Go-native confidence measures fraction of AST assertion sites with a recognized
 pattern kind. External confidence measures fraction of protocol mappings with a
-non-empty `AssertionType`. Both answer "what fraction of assertions were
-classified?" but use different taxonomies.
+non-empty `AssertionType`. These are NOT identical: the external denominator is
+mapping rows (already-mapped assertions), while the native denominator is all
+detected assertion sites. An analyzer that detects N assertions but emits M < N
+mappings reports the M-row ratio, which can overstate detection confidence.
 
-**Mitigation**: Acceptable — the values are directly comparable in meaning even
-if the underlying classification methods differ. Both produce 0-100 integers with
-the same semantics.
+**Mitigation**: The external metric is named and documented as "mapping
+classification confidence" (a proxy), not asserted to be identical to the
+native assertion-detection confidence. A protocol extension to expose total
+assertion-site counts was explicitly rejected in the proposal (Option B), so
+the proxy semantics are documented rather than changed.
 
 ### R2: Maintenance coupling with `buildExternalQualityReports`
 

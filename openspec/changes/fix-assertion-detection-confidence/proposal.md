@@ -23,9 +23,8 @@ Reported in #251.
 
 ### Gaze-side computation from mapping data (Option A — no protocol change)
 
-Add a `computeDetectionConfidenceFromMappings` function to `internal/adapter/contract.go`
-that computes assertion detection confidence from `protocol.AssertionMappingData` entries.
-The logic mirrors `computeDetectionConfidence`:
+Add a `computeMappingClassificationConfidence` function to `internal/adapter/contract.go`
+that computes mapping classification confidence from `protocol.AssertionMappingData` entries:
 
 - Total = count of mappings for a given target function
 - Recognized = count of mappings where `AssertionType` is non-empty (the external
@@ -61,8 +60,8 @@ The computation is trivial and should live in gaze.
 ## Capabilities
 
 ### New Capabilities
-- `computeDetectionConfidenceFromMappings` function in `internal/adapter/contract.go`
-- `DetectionConfidence(pkg, function string) int` method on `ExternalContractCoverageProvider`
+- `computeMappingClassificationConfidence` function in `internal/adapter/contract.go`
+- `MappingClassificationConfidence(pkg, function string) int` method on `ExternalContractCoverageProvider`
 - Accurate `AssertionDetectionConfidence` for external analyzer quality reports
 
 ### Modified Capabilities
@@ -76,10 +75,12 @@ The computation is trivial and should live in gaze.
 
 ### Low
 - Semantic mismatch: Go-native `AssertionDetectionConfidence` measures how many
-  assertion *patterns* were recognized by Go AST analysis. External analyzer
-  confidence measures how many mappings have a non-empty `AssertionType`. The metrics
-  are semantically comparable (both answer "what fraction of assertions were
-  classified?") but use different classification taxonomies.
+  assertion *patterns* were recognized by Go AST analysis (denominator: all
+  detected assertion sites). External analyzer confidence measures how many
+  mappings have a non-empty `AssertionType` (denominator: emitted mapping rows,
+  which are already-mapped assertions). The external value is a proxy and is
+  documented as "mapping classification confidence" rather than identical to the
+  native metric.
 
 ### Mitigated
 - The fix is purely additive — no existing behavior changes when `--analyzer` is not

@@ -1,12 +1,16 @@
 ## ADDED Requirements
 
-### Requirement: Gaze-side assertion detection confidence for external analyzers
+### Requirement: Gaze-side mapping classification confidence for external analyzers
 
 The `internal/adapter` package MUST compute `AssertionDetectionConfidence` from
 external analyzer `test_mapping` response data, without requiring protocol changes.
 
-The computation MUST mirror the Go-native `computeDetectionConfidence` semantics:
-ratio of recognized assertions to total assertions, as an integer 0-100.
+The computation MUST produce the ratio of recognized mappings to total mappings
+for the target function, as an integer 0-100. The denominator is the count of
+emitted `AssertionMappingData` rows targeting the function (NOT the total number
+of detected assertion sites, which the external protocol does not expose). This
+value is therefore a "mapping classification confidence" — a proxy for the
+Go-native assertion-detection confidence.
 
 An assertion MUST be considered "recognized" when its `AssertionType` field in
 `protocol.AssertionMappingData` is non-empty. An empty `AssertionType` indicates
@@ -58,10 +62,10 @@ external analyzer path.
 - **WHEN** detection confidence is computed for target `(pkg, Foo)`
 - **THEN** the result MUST be 66 (2 * 100 / 3, aggregated across all test functions)
 
-### Requirement: Detection confidence exposed via provider method
+### Requirement: Mapping classification confidence exposed via provider method
 
-`ExternalContractCoverageProvider` MUST expose a `DetectionConfidence(pkg, function string) int`
-method that returns the per-function assertion detection confidence computed during `Build`.
+`ExternalContractCoverageProvider` MUST expose a `MappingClassificationConfidence(pkg, function string) int`
+method that returns the per-function mapping classification confidence computed during `Build`.
 
 The method MUST return 0 for functions not present in the mapping data.
 The method MUST NOT panic when called before `Build` (nil map guard).
