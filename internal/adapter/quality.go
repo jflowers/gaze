@@ -20,9 +20,12 @@ import (
 // directly, reusing quality.ComputeContractCoverage for the metric
 // computation.
 //
-// AssertionDetectionConfidence is set to 0 for all reports because
-// external analyzers provide per-mapping confidence but no aggregate
-// detection confidence metric.
+// AssertionDetectionConfidence is computed as a proxy: the fraction of
+// this test's emitted mapping rows with a recognized (non-empty)
+// AssertionType. This is NOT identical to the Go-native
+// quality.computeDetectionConfidence denominator, which counts all
+// detected assertion sites (the external protocol does not expose that
+// count). See classificationConfidence.
 func BuildQualityFromMappings(
 	mappings []protocol.AssertionMappingData,
 	results []taxonomy.AnalysisResult,
@@ -135,7 +138,7 @@ func BuildQualityFromMappings(
 			AmbiguousEffects:             ambiguousEffects,
 			UnmappedAssertions:           unmapped,
 			AssertionCount:               len(testMappings),
-			AssertionDetectionConfidence: 0, // External analyzers don't provide aggregate detection confidence
+			AssertionDetectionConfidence: classificationConfidence(testMappings),
 		}
 		reports = append(reports, report)
 	}
@@ -200,11 +203,14 @@ func buildQualitySummary(reports []taxonomy.QualityReport) *taxonomy.PackageSumm
 	}
 
 	var totalCoverage float64
+	var totalConfidence int
 	for _, r := range reports {
 		totalCoverage += r.ContractCoverage.Percentage
 		summary.TotalOverSpecifications += r.OverSpecification.Count
+		totalConfidence += r.AssertionDetectionConfidence
 	}
 	summary.AverageContractCoverage = totalCoverage / float64(len(reports))
+	summary.AssertionDetectionConfidence = int(float64(totalConfidence)/float64(len(reports)) + 0.5)
 
 	// Worst coverage tests: bottom 5 by contract coverage percentage.
 	sorted := make([]taxonomy.QualityReport, len(reports))
@@ -219,6 +225,27 @@ func buildQualitySummary(reports []taxonomy.QualityReport) *taxonomy.PackageSumm
 	summary.WorstCoverageTests = sorted[:limit]
 
 	return summary
+}
+
+// classificationConfidence computes a proxy for assertion-detection
+// confidence: the percentage of emitted mapping rows whose AssertionType
+// is non-empty (recognized). This is NOT identical to the Go-native
+// quality.computeDetectionConfidence denominator, which counts all
+// detected assertion sites; the external protocol only exposes the
+// mappings an analyzer chose to emit, so the closest available proxy is
+// the recognized/total ratio over those emitted rows. Returns 0 when
+// there are no mappings.
+func classificationConfidence(mappings []protocol.AssertionMappingData) int {
+	if len(mappings) == 0 {
+		return 0
+	}
+	recognized := 0
+	for _, m := range mappings {
+		if m.AssertionType != "" {
+			recognized++
+		}
+	}
+	return recognized * 100 / len(mappings)
 }
 
 // FetchTestMappings calls the test_mapping protocol method on the

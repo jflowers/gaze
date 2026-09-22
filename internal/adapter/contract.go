@@ -77,6 +77,7 @@ func (p *ExternalContractCoverageProvider) Build(patterns []string, rootDir stri
 	}
 
 	lookup := buildContractLookup(allResults, mappings)
+
 	return lookup, nil, nil
 }
 

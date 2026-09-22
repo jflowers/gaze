@@ -194,10 +194,13 @@ func TestRunCrap_GoNativePath_FindModuleRootFailure(t *testing.T) {
 // pipeline with an external analyzer that supports test_mapping.
 // The fake analyzer provides:
 //   - analyze: divide (ReturnValue+ErrorReturn), multiply (ReturnValue), add (no effects)
-//   - test_mapping: test_multiply → multiply:ReturnValue (confidence 80)
+//   - test_mapping: test_multiply → multiply:ReturnValue, test_divide_basic → divide:ReturnValue,
+//     test_divide_error → divide:ErrorReturn
 //
-// Expected quality report: 1 test function (test_multiply), targeting
-// multiply which has 1 contractual effect (ReturnValue). Coverage = 100%.
+// Expected quality report: 3 test functions. Per-test assertion-detection
+// confidence is the fraction of that test's mapping rows with a recognized
+// (non-empty) assertion_type: test_multiply=100, test_divide_basic=100,
+// test_divide_error=0. Summary confidence is the arithmetic mean = 67.
 func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -221,50 +224,88 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 	// Parse JSON output.
 	var output struct {
 		QualityReports []struct {
-			TestFunction     string `json:"test_function"`
-			AssertionCount   int    `json:"assertion_count"`
-			ContractCoverage struct {
+			TestFunction                 string `json:"test_function"`
+			AssertionCount               int    `json:"assertion_count"`
+			AssertionDetectionConfidence int    `json:"assertion_detection_confidence"`
+			ContractCoverage             struct {
 				Percentage       float64 `json:"percentage"`
 				CoveredCount     int     `json:"covered_count"`
 				TotalContractual int     `json:"total_contractual"`
 			} `json:"contract_coverage"`
 		} `json:"quality_reports"`
 		Summary struct {
-			TotalTests              int     `json:"total_tests"`
-			AverageContractCoverage float64 `json:"average_contract_coverage"`
+			TotalTests                   int     `json:"total_tests"`
+			AverageContractCoverage      float64 `json:"average_contract_coverage"`
+			AssertionDetectionConfidence int     `json:"assertion_detection_confidence"`
 		} `json:"quality_summary"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatalf("parsing JSON output: %v\nraw: %s", err, stdout.String())
 	}
 
-	if len(output.QualityReports) != 1 {
-		t.Fatalf("got %d quality reports, want 1", len(output.QualityReports))
+	if len(output.QualityReports) != 3 {
+		t.Fatalf("got %d quality reports, want 3", len(output.QualityReports))
 	}
 
-	r := output.QualityReports[0]
-	if r.TestFunction != "test_multiply" {
-		t.Errorf("TestFunction = %q, want %q", r.TestFunction, "test_multiply")
+	// Per-test-function confidence: fraction of that test's mapping rows
+	// with a recognized (non-empty) assertion_type.
+	wantConfidence := map[string]int{
+		"test_multiply":     100,
+		"test_divide_basic": 100,
+		"test_divide_error": 0,
 	}
-	if r.AssertionCount != 1 {
-		t.Errorf("AssertionCount = %d, want 1", r.AssertionCount)
+	seen := make(map[string]bool)
+	for _, r := range output.QualityReports {
+		want, ok := wantConfidence[r.TestFunction]
+		if !ok {
+			t.Errorf("unexpected test function %q in report", r.TestFunction)
+			continue
+		}
+		seen[r.TestFunction] = true
+		if r.AssertionCount != 1 {
+			t.Errorf("%s AssertionCount = %d, want 1", r.TestFunction, r.AssertionCount)
+		}
+		if r.AssertionDetectionConfidence != want {
+			t.Errorf("%s AssertionDetectionConfidence = %d, want %d",
+				r.TestFunction, r.AssertionDetectionConfidence, want)
+		}
 	}
-	// multiply has 1 contractual effect (ReturnValue), 1 mapping covers it → 100%.
-	if r.ContractCoverage.Percentage != 100 {
-		t.Errorf("ContractCoverage.Percentage = %g, want 100", r.ContractCoverage.Percentage)
-	}
-	if r.ContractCoverage.CoveredCount != 1 {
-		t.Errorf("CoveredCount = %d, want 1", r.ContractCoverage.CoveredCount)
-	}
-	if r.ContractCoverage.TotalContractual != 1 {
-		t.Errorf("TotalContractual = %d, want 1", r.ContractCoverage.TotalContractual)
+	if len(seen) != 3 {
+		t.Errorf("got %d distinct test functions, want 3", len(seen))
 	}
 
-	if output.Summary.TotalTests != 1 {
-		t.Errorf("Summary.TotalTests = %d, want 1", output.Summary.TotalTests)
+	// test_multiply targets multiply, which has 1 contractual effect
+	// (ReturnValue) covered by 1 mapping → 100% contract coverage.
+	for _, r := range output.QualityReports {
+		if r.TestFunction != "test_multiply" {
+			continue
+		}
+		if r.ContractCoverage.Percentage != 100 {
+			t.Errorf("test_multiply ContractCoverage.Percentage = %g, want 100",
+				r.ContractCoverage.Percentage)
+		}
+		if r.ContractCoverage.CoveredCount != 1 {
+			t.Errorf("test_multiply CoveredCount = %d, want 1", r.ContractCoverage.CoveredCount)
+		}
+		if r.ContractCoverage.TotalContractual != 1 {
+			t.Errorf("test_multiply TotalContractual = %d, want 1",
+				r.ContractCoverage.TotalContractual)
+		}
 	}
-	if output.Summary.AverageContractCoverage != 100 {
-		t.Errorf("Summary.AverageContractCoverage = %g, want 100", output.Summary.AverageContractCoverage)
+
+	if output.Summary.TotalTests != 3 {
+		t.Errorf("Summary.TotalTests = %d, want 3", output.Summary.TotalTests)
+	}
+	// Average over 3 reports: (100 + 50 + 50) / 3 ≈ 66.67.
+	wantAvgCoverage := (100.0 + 50.0 + 50.0) / 3.0
+	if output.Summary.AverageContractCoverage != wantAvgCoverage {
+		t.Errorf("Summary.AverageContractCoverage = %g, want %g",
+			output.Summary.AverageContractCoverage, wantAvgCoverage)
+	}
+	// Mean of per-report confidence: (100 + 100 + 0) / 3 → 67 (round half up).
+	if output.Summary.AssertionDetectionConfidence != 67 {
+		t.Errorf("Summary.AssertionDetectionConfidence = %d, want 67",
+			output.Summary.AssertionDetectionConfidence)
 	}
 
 	// Verify stderr mentions the external analyzer.

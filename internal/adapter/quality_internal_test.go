@@ -114,8 +114,8 @@ func TestBuildQualityFromMappings(t *testing.T) {
 		if r.AssertionCount != 2 {
 			t.Errorf("AssertionCount = %d, want 2", r.AssertionCount)
 		}
-		if r.AssertionDetectionConfidence != 0 {
-			t.Errorf("AssertionDetectionConfidence = %d, want 0", r.AssertionDetectionConfidence)
+		if r.AssertionDetectionConfidence != 100 {
+			t.Errorf("AssertionDetectionConfidence = %d, want 100", r.AssertionDetectionConfidence)
 		}
 
 		// Summary
@@ -703,4 +703,68 @@ func TestComputeOverSpecification(t *testing.T) {
 			t.Errorf("Count = %d, want 0 (empty SideEffectID should be skipped)", os.Count)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// classificationConfidence tests (table-driven)
+// ---------------------------------------------------------------------------
+
+func TestClassificationConfidence(t *testing.T) {
+	tests := []struct {
+		name     string
+		mappings []protocol.AssertionMappingData
+		want     int
+	}{
+		{
+			name:     "nil mappings",
+			mappings: nil,
+			want:     0,
+		},
+		{
+			name:     "empty mappings",
+			mappings: []protocol.AssertionMappingData{},
+			want:     0,
+		},
+		{
+			name: "all recognized",
+			mappings: []protocol.AssertionMappingData{
+				{AssertionType: "equality"},
+				{AssertionType: "error"},
+			},
+			want: 100,
+		},
+		{
+			name: "none recognized",
+			mappings: []protocol.AssertionMappingData{
+				{AssertionType: ""},
+				{AssertionType: ""},
+			},
+			want: 0,
+		},
+		{
+			name: "mixed recognized and unrecognized",
+			mappings: []protocol.AssertionMappingData{
+				{AssertionType: "equality"},
+				{AssertionType: ""},
+			},
+			want: 50,
+		},
+		{
+			name: "integer truncation one of three",
+			mappings: []protocol.AssertionMappingData{
+				{AssertionType: "equality"},
+				{AssertionType: ""},
+				{AssertionType: ""},
+			},
+			want: 33,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classificationConfidence(tt.mappings); got != tt.want {
+				t.Errorf("classificationConfidence() = %d, want %d", got, tt.want)
+			}
+		})
+	}
 }

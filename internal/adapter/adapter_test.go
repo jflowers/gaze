@@ -343,14 +343,15 @@ func TestContractCoverageProvider_WithTestMapping(t *testing.T) {
 		t.Errorf("multiply contract coverage = %g%%, want 100%%", info.Percentage)
 	}
 
-	// divide has 2 contractual effects but no test mappings target
-	// it, so contract coverage should be 0%.
+	// divide has 2 contractual effects (ReturnValue and ErrorReturn).
+	// The fake analyzer maps test_divide_basic → ReturnValue and
+	// test_divide_error → ErrorReturn, so both effects are covered → 100%.
 	info, ok = lookup("math_utils", "divide")
 	if !ok {
 		t.Fatal("lookup returned ok=false for divide")
 	}
-	if info.Percentage != 0.0 {
-		t.Errorf("divide contract coverage = %g%%, want 0%%", info.Percentage)
+	if info.Percentage != 100.0 {
+		t.Errorf("divide contract coverage = %g%%, want 100%%", info.Percentage)
 	}
 }
 

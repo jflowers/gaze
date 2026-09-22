@@ -1321,14 +1321,12 @@ func handleQualityNoTestMapping(p qualityParams, providers *adapter.Providers) e
 		"warning: analyzer %q does not support test_mapping — "+
 			"contract coverage and over-specification metrics are unavailable\n",
 		providers.AnalyzerName)
-
 	summary := &taxonomy.PackageSummary{
 		Reason: "test_mapping_unavailable",
 	}
 	if err := writeQualityEmptyOutput(p, summary); err != nil {
 		return err
 	}
-
 	if p.minContractCoverage > 0 || p.maxOverSpecification > 0 {
 		return fmt.Errorf("quality thresholds cannot be evaluated — " +
 			"analyzer does not support test_mapping")
