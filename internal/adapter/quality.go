@@ -149,6 +149,7 @@ func BuildQualityFromMappings(
 	})
 
 	summary := buildQualitySummary(reports)
+	summary.ClassificationCounts = countClassifications(results)
 	return reports, summary
 }
 
@@ -225,6 +226,45 @@ func buildQualitySummary(reports []taxonomy.QualityReport) *taxonomy.PackageSumm
 	summary.WorstCoverageTests = sorted[:limit]
 
 	return summary
+}
+
+// countClassifications tallies the module-wide distribution of side
+// effects by contractual classification label, de-duplicated by effect
+// ID. Effects without a classification (nil) are not counted in any
+// bucket. Returns nil when no effect was classified, preserving the
+// omitempty JSON behavior so the field stays absent for analyzers that
+// did not run classify_signals.
+func countClassifications(results []taxonomy.AnalysisResult) *taxonomy.ClassificationCounts {
+	counts := &taxonomy.ClassificationCounts{}
+	seen := make(map[string]bool)
+	classified := false
+	for _, r := range results {
+		for _, e := range r.SideEffects {
+			if e.Classification == nil {
+				continue
+			}
+			classified = true
+			if seen[e.ID] {
+				continue
+			}
+			seen[e.ID] = true
+			switch e.Classification.Label {
+			case taxonomy.Contractual:
+				counts.Contractual++
+			case taxonomy.Incidental:
+				counts.Incidental++
+			case taxonomy.Ambiguous:
+				counts.Ambiguous++
+				// No default: the classifier only emits the three canonical
+				// labels above, so an unknown/future label is intentionally
+				// not bucketed rather than silently counted.
+			}
+		}
+	}
+	if !classified {
+		return nil
+	}
+	return counts
 }
 
 // classificationConfidence computes a proxy for assertion-detection

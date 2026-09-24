@@ -447,6 +447,15 @@ const QualitySchema = `{
           "type": "array",
           "items": { "type": "string" },
           "description": "Names of test functions that were skipped (no target resolved)"
+        },
+        "classification_counts": {
+          "type": "object",
+          "description": "Module-wide distribution of side effects by contractual classification (external analyzers only)",
+          "properties": {
+            "contractual": { "type": "integer" },
+            "incidental": { "type": "integer" },
+            "ambiguous": { "type": "integer" }
+          }
         }
       }
     },

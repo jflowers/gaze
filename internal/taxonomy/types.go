@@ -486,6 +486,28 @@ type PackageSummary struct {
 	// is preserved for machine-readable consumption; display
 	// layers truncate to 20 names.
 	SkippedTestNames []string `json:"skipped_test_names,omitempty"`
+
+	// ClassificationCounts tallies the module-wide distribution of
+	// side effects by contractual classification, merged from the
+	// external analyzer's classify_signals results. Nil for Go-native
+	// analysis, which reports classification via `gaze analyze
+	// --classify` instead.
+	ClassificationCounts *ClassificationCounts `json:"classification_counts,omitempty"`
+}
+
+// ClassificationCounts tallies side effects by their contractual
+// classification label across an entire package/module. This is the
+// aggregate distribution surfaced by the external analyzer quality path
+// (classify_signals), distinct from the Go-native `gaze analyze
+// --classify` output.
+type ClassificationCounts struct {
+	// Contractual is the number of side effects classified contractual.
+	Contractual int `json:"contractual"`
+	// Incidental is the number of side effects classified incidental.
+	Incidental int `json:"incidental"`
+	// Ambiguous is the number of side effects whose classification
+	// could not be determined with confidence.
+	Ambiguous int `json:"ambiguous"`
 }
 
 // GenerateID produces a stable, deterministic ID for a side effect
