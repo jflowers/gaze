@@ -630,6 +630,12 @@ func TestWriteJSON_Structure(t *testing.T) {
 	if _, ok := output["quality_summary"]; !ok {
 		t.Error("expected 'quality_summary' key in JSON output")
 	}
+
+	// Go-native summaries never populate ClassificationCounts, so the
+	// classification_counts key MUST be absent from Go-native JSON output.
+	if bytes.Contains(buf.Bytes(), []byte("classification_counts")) {
+		t.Error("expected Go-native JSON output to omit 'classification_counts'")
+	}
 }
 
 func TestWriteText_Output(t *testing.T) {

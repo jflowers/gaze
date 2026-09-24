@@ -671,6 +671,103 @@ func TestQualitySchema_ValidatesWithoutSSADegradedField(t *testing.T) {
 	}
 }
 
+// TestQualitySchema_ValidatesClassificationCounts verifies that quality
+// JSON carrying a classification_counts object validates, and that JSON
+// omitting the field (Go-native output) still validates.
+func TestQualitySchema_ValidatesClassificationCounts(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(QualitySchema))
+	if err != nil {
+		t.Fatalf("failed to parse QualitySchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("quality-schema.json", sch); err != nil {
+		t.Fatalf("failed to add quality schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("quality-schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile QualitySchema: %v", err)
+	}
+
+	buildSummary := func(withCounts bool) map[string]interface{} {
+		summary := map[string]interface{}{
+			"total_tests":                    1,
+			"average_contract_coverage":      50.0,
+			"total_over_specifications":      0,
+			"assertion_detection_confidence": 90,
+		}
+		if withCounts {
+			summary["classification_counts"] = map[string]interface{}{
+				"contractual": 563,
+				"incidental":  342,
+				"ambiguous":   1186,
+			}
+		}
+		return summary
+	}
+
+	buildSample := func(withCounts bool) map[string]interface{} {
+		return map[string]interface{}{
+			"quality_reports": []map[string]interface{}{
+				{
+					"test_function": "TestFoo",
+					"test_location": "foo_test.go:10",
+					"target_function": map[string]interface{}{
+						"package":   "pkg",
+						"function":  "Foo",
+						"signature": "func Foo() int",
+						"location":  "foo.go:10",
+					},
+					"contract_coverage": map[string]interface{}{
+						"percentage":        50.0,
+						"covered_count":     1,
+						"total_contractual": 2,
+					},
+					"over_specification": map[string]interface{}{
+						"count": 0,
+						"ratio": 0.0,
+					},
+					"assertion_detection_confidence": 90,
+					"metadata": map[string]interface{}{
+						"gaze_version":     "0.1.0",
+						"language":         "python",
+						"language_version": "3.12",
+						"duration_ms":      5,
+					},
+				},
+			},
+			"quality_summary": buildSummary(withCounts),
+		}
+	}
+
+	t.Run("classification_counts present validates", func(t *testing.T) {
+		sampleJSON, err := json.Marshal(buildSample(true))
+		if err != nil {
+			t.Fatalf("failed to marshal sample: %v", err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+		if err != nil {
+			t.Fatalf("failed to parse sample JSON: %v", err)
+		}
+		if err := compiled.Validate(inst); err != nil {
+			t.Errorf("quality JSON with classification_counts does not conform to QualitySchema:\n%v", err)
+		}
+	})
+
+	t.Run("classification_counts omitted validates", func(t *testing.T) {
+		sampleJSON, err := json.Marshal(buildSample(false))
+		if err != nil {
+			t.Fatalf("failed to marshal sample: %v", err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+		if err != nil {
+			t.Fatalf("failed to parse sample JSON: %v", err)
+		}
+		if err := compiled.Validate(inst); err != nil {
+			t.Errorf("quality JSON without classification_counts does not conform to QualitySchema:\n%v", err)
+		}
+	})
+}
+
 // TestTierStyle_AllTiers verifies that TierStyle returns the correct
 // style for each tier string and the default for unknown tiers.
 // Lipgloss degrades to no-color in non-TTY mode, so we compare style

@@ -574,6 +574,41 @@ func TestReportWithExternalAnalyzer_BypassesFindModuleRoot(t *testing.T) {
 	}
 }
 
+// TestCrapWithLanguageOnly_TriggersExternalPath verifies that runCrap
+// with only --language set (no --analyzer) dispatches to the external
+// analyzer path rather than silently falling through to Go-native
+// analysis. This is the regression test for the --language-only
+// dispatch inconsistency fixed alongside issue #278.
+func TestCrapWithLanguageOnly_TriggersExternalPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	opts := crap.DefaultOptions()
+	opts.Stderr = &stderr
+
+	err := runCrap(crapParams{
+		patterns:     []string{"."},
+		format:       "text",
+		opts:         opts,
+		moduleDir:    t.TempDir(), // no go.mod — Go-native path would fail differently
+		languageFlag: "zz-nodiscover-test-language",
+		stdout:       &stdout,
+		stderr:       &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error when --language resolves to no analyzer")
+	}
+	errMsg := err.Error()
+	// The error must NOT be about FindModuleRoot — that would prove the
+	// Go-native path was (incorrectly) taken.
+	if strings.Contains(errMsg, "finding module root") {
+		t.Errorf("error should not mention FindModuleRoot, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "no analyzer found for language") {
+		t.Errorf("error should be about language discovery, got: %s", errMsg)
+	}
+}
+
 // TestRunReport_GoNativePath_FindModuleRootFailure verifies that
 // runReport without --analyzer, called from a directory without
 // go.mod, returns an error with the "finding module root" wrapping

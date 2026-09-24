@@ -128,6 +128,14 @@ func TestBuildQualityFromMappings(t *testing.T) {
 		if summary.TotalOverSpecifications != 1 {
 			t.Errorf("summary.TotalOverSpecifications = %d, want 1", summary.TotalOverSpecifications)
 		}
+		if summary.ClassificationCounts == nil {
+			t.Fatal("summary.ClassificationCounts = nil, want non-nil")
+		}
+		if summary.ClassificationCounts.Contractual != 2 ||
+			summary.ClassificationCounts.Incidental != 1 ||
+			summary.ClassificationCounts.Ambiguous != 0 {
+			t.Errorf("summary.ClassificationCounts = %+v, want 2/1/0", summary.ClassificationCounts)
+		}
 	})
 
 	t.Run("no mappings produces empty report", func(t *testing.T) {
@@ -767,4 +775,64 @@ func TestClassificationConfidence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// countClassifications tests (table-driven)
+// ---------------------------------------------------------------------------
+
+func TestCountClassifications(t *testing.T) {
+	mk := func(label taxonomy.ClassificationLabel) *taxonomy.Classification {
+		return &taxonomy.Classification{Label: label}
+	}
+
+	t.Run("counts each label and dedupes by ID", func(t *testing.T) {
+		results := []taxonomy.AnalysisResult{
+			{
+				SideEffects: []taxonomy.SideEffect{
+					{ID: "a", Classification: mk(taxonomy.Contractual)},
+					{ID: "b", Classification: mk(taxonomy.Incidental)},
+					{ID: "c", Classification: mk(taxonomy.Ambiguous)},
+					{ID: "a", Classification: mk(taxonomy.Contractual)}, // duplicate
+				},
+			},
+		}
+		got := countClassifications(results)
+		if got == nil {
+			t.Fatal("got nil, want non-nil")
+		}
+		if got.Contractual != 1 || got.Incidental != 1 || got.Ambiguous != 1 {
+			t.Errorf("got %+v, want 1/1/1", got)
+		}
+	})
+
+	t.Run("unclassified effects are not counted", func(t *testing.T) {
+		results := []taxonomy.AnalysisResult{
+			{
+				SideEffects: []taxonomy.SideEffect{
+					{ID: "a"},
+					{ID: "b", Classification: mk(taxonomy.Contractual)},
+				},
+			},
+		}
+		got := countClassifications(results)
+		if got == nil {
+			t.Fatal("got nil, want non-nil")
+		}
+		if got.Contractual != 1 || got.Incidental != 0 || got.Ambiguous != 0 {
+			t.Errorf("got %+v, want 1/0/0", got)
+		}
+	})
+
+	t.Run("nil when nothing classified", func(t *testing.T) {
+		results := []taxonomy.AnalysisResult{
+			{SideEffects: []taxonomy.SideEffect{{ID: "a"}}},
+		}
+		if got := countClassifications(results); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+		if got := countClassifications(nil); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
 }

@@ -275,6 +275,7 @@ The CRAP JSON output is not covered by a formal embedded schema but follows a st
 | `ssa_degraded` | `bool` | No | `true` when SSA construction failed (partial results) |
 | `ssa_degraded_packages` | `string[]` | No | Package paths where SSA construction failed |
 | `reason` | `string` | No | Stable degradation identifier when metrics are unavailable (`test_mapping_unavailable` or `test_mapping_error`) |
+| `classification_counts` | `ClassificationCounts?` | No | Module-wide distribution of side effects by classification (contractual/incidental/ambiguous); external analyzers only |
 
 ### Annotated Example
 

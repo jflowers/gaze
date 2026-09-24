@@ -498,10 +498,12 @@ func runCrap(p crapParams) error {
 		return err
 	}
 
-	// External analyzer path: when --analyzer is set, use the
-	// external protocol adapter instead of Go providers.
+	// External analyzer path: when --analyzer or --language is set,
+	// use the external protocol adapter instead of Go providers.
+	// --language alone triggers tier-3 PATH-convention discovery
+	// (gaze-analyzer-<language>), matching runDocscan.
 	// Design decision D12: deferred for `gaze analyze`.
-	if p.analyzerFlag != "" {
+	if p.analyzerFlag != "" || p.languageFlag != "" {
 		return runCrapWithExternalAnalyzer(p)
 	}
 
@@ -649,7 +651,10 @@ func initExternalSession(
 		return nil, nil, fmt.Errorf("discovering analyzer: %w", err)
 	}
 	if binary == "" {
-		return nil, nil, fmt.Errorf("analyzer %q not found", analyzerFlag)
+		if analyzerFlag != "" {
+			return nil, nil, fmt.Errorf("analyzer %q not found", analyzerFlag)
+		}
+		return nil, nil, fmt.Errorf("no analyzer found for language %q", languageFlag)
 	}
 
 	session := adapter.NewSession(binary, args, moduleDir, patterns, stderr, cfg)
@@ -1182,7 +1187,9 @@ func runQuality(p qualityParams) error {
 
 	// External analyzer path: delegate to the external analyzer pipeline
 	// which bypasses Go-specific test loading and assertion mapping.
-	if p.analyzerFlag != "" {
+	// --language alone triggers tier-3 PATH-convention discovery
+	// (gaze-analyzer-<language>), matching runDocscan.
+	if p.analyzerFlag != "" || p.languageFlag != "" {
 		return runQualityWithExternalAnalyzer(p)
 	}
 
@@ -1364,6 +1371,11 @@ func writeQualityEmptyOutput(p qualityParams, summary *taxonomy.PackageSummary) 
 
 // mergeSummaries combines multiple PackageSummary values into one.
 // Coverage is averaged, counts are summed.
+//
+// ClassificationCounts is intentionally not merged: the external-analyzer
+// path builds a single summary from all module results and never merges,
+// and the Go-native path never populates the field. If multi-package
+// external quality is ever added, sum the three counts here.
 func mergeSummaries(summaries []*taxonomy.PackageSummary) *taxonomy.PackageSummary {
 	if len(summaries) == 0 {
 		return &taxonomy.PackageSummary{}
