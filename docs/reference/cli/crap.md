@@ -23,6 +23,8 @@ At least one package pattern is required. Use `./...` to analyze the entire modu
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--format` | `string` | `text` | Output format: `text` or `json` |
+| `--analyzer` | `string` | `""` | External analyzer binary (e.g., `snake-eyes`) for language-neutral side effect and CRAP analysis |
+| `--language` | `string` | `""` | Target language for analyzer discovery (e.g., `python`) |
 | `--coverprofile` | `string` | `""` (generate via `go test`) | Path to a pre-generated Go coverage profile. When omitted, Gaze runs `go test -coverprofile` automatically. |
 | `--crap-threshold` | `float64` | `15` | CRAP score threshold for flagging functions. Functions at or above this score are counted in the CRAPload. |
 | `--gaze-crap-threshold` | `float64` | `15` | GazeCRAP score threshold. Used when contract coverage is available to compute GazeCRAPload. |

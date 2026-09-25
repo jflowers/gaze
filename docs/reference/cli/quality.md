@@ -38,7 +38,7 @@ At least one package argument is required. Wildcard patterns like `./...` are ex
 | `--ai-mapper` | | `string` | `""` | AI backend for assertion mapping fallback: `claude`, `gemini`, `ollama`, or `opencode` |
 | `--ai-mapper-model` | | `string` | `""` | Model name for AI mapper (required for `ollama`) |
 
-> **Note**: Go-specific flags (`--target`, `--ai-mapper`, `--include-unexported`) are rejected when `--analyzer` is set. The external analyzer provides its own test-to-target mapping and assertion detection, so those Go-only analysis features do not apply.
+> **Note**: Go-specific flags (`--target`, `--ai-mapper`, `--include-unexported`) are rejected when `--analyzer` or `--language` is set. The external analyzer provides its own test-to-target mapping and assertion detection, so those Go-only analysis features do not apply.
 
 When the external analyzer does not support `test_mapping` (or the call fails), `gaze quality` degrades gracefully: it reports zero contract coverage and sets a stable `reason` field in the JSON summary (`test_mapping_unavailable` or `test_mapping_error`) instead of failing.
 
