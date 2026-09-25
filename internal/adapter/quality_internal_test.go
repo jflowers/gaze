@@ -835,4 +835,19 @@ func TestCountClassifications(t *testing.T) {
 			t.Errorf("got %+v, want nil", got)
 		}
 	})
+
+	t.Run("unknown label is not bucketed", func(t *testing.T) {
+		results := []taxonomy.AnalysisResult{
+			{SideEffects: []taxonomy.SideEffect{
+				{ID: "a", Classification: mk(taxonomy.ClassificationLabel("unrecognized"))},
+			}},
+		}
+		got := countClassifications(results)
+		if got == nil {
+			t.Fatal("got nil, want non-nil all-zeros (label present but not bucketed)")
+		}
+		if got.Contractual != 0 || got.Incidental != 0 || got.Ambiguous != 0 {
+			t.Errorf("got %+v, want 0/0/0", got)
+		}
+	})
 }

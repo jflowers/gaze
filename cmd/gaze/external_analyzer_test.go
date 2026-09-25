@@ -237,6 +237,11 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 			TotalTests                   int     `json:"total_tests"`
 			AverageContractCoverage      float64 `json:"average_contract_coverage"`
 			AssertionDetectionConfidence int     `json:"assertion_detection_confidence"`
+			ClassificationCounts         struct {
+				Contractual int `json:"contractual"`
+				Incidental  int `json:"incidental"`
+				Ambiguous   int `json:"ambiguous"`
+			} `json:"classification_counts"`
 		} `json:"quality_summary"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
@@ -306,6 +311,15 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 	if output.Summary.AssertionDetectionConfidence != 67 {
 		t.Errorf("Summary.AssertionDetectionConfidence = %d, want 67",
 			output.Summary.AssertionDetectionConfidence)
+	}
+
+	// The headline feature: the analyzer's analyze response emits three
+	// side effects, all classified "contractual" (divide:ReturnValue,
+	// divide:ErrorReturn, multiply:ReturnValue), surfaced as a
+	// classification_counts distribution in the quality summary.
+	cc := output.Summary.ClassificationCounts
+	if cc.Contractual != 3 || cc.Incidental != 0 || cc.Ambiguous != 0 {
+		t.Errorf("classification_counts = %+v, want contractual=3 incidental=0 ambiguous=0", cc)
 	}
 
 	// Verify stderr mentions the external analyzer.
