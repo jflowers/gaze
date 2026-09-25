@@ -508,7 +508,7 @@ func TestQualityWithExternalAnalyzer_BinaryNotFound(t *testing.T) {
 }
 
 // TestQualityWithExternalAnalyzer_RejectsTarget verifies that --target
-// is rejected when used with --analyzer (Go-specific SSA feature).
+// is rejected when used with --analyzer or --language (Go-specific SSA feature).
 func TestQualityWithExternalAnalyzer_RejectsTarget(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -523,13 +523,13 @@ func TestQualityWithExternalAnalyzer_RejectsTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for --target with --analyzer")
 	}
-	if !strings.Contains(err.Error(), "--target is not supported with --analyzer") {
+	if !strings.Contains(err.Error(), "--target is not supported with --analyzer or --language") {
 		t.Errorf("expected target rejection error, got: %s", err.Error())
 	}
 }
 
 // TestQualityWithExternalAnalyzer_RejectsAIMapper verifies that
-// --ai-mapper is rejected when used with --analyzer.
+// --ai-mapper is rejected when used with --analyzer or --language.
 func TestQualityWithExternalAnalyzer_RejectsAIMapper(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -544,7 +544,7 @@ func TestQualityWithExternalAnalyzer_RejectsAIMapper(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for --ai-mapper with --analyzer")
 	}
-	if !strings.Contains(err.Error(), "--ai-mapper is not supported with --analyzer") {
+	if !strings.Contains(err.Error(), "--ai-mapper is not supported with --analyzer or --language") {
 		t.Errorf("expected ai-mapper rejection error, got: %s", err.Error())
 	}
 }
