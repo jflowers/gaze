@@ -1269,11 +1269,11 @@ func runQualityWithExternalAnalyzer(p qualityParams) error {
 	// Validate flag combinations: --target and --ai-mapper are
 	// Go-specific features incompatible with external analyzers.
 	if p.targetFunc != "" {
-		return fmt.Errorf("--target is not supported with --analyzer; " +
+		return fmt.Errorf("--target is not supported with --analyzer or --language; " +
 			"the external analyzer provides its own test-to-target mapping")
 	}
 	if p.aiMapper != "" {
-		return fmt.Errorf("--ai-mapper is not supported with --analyzer; " +
+		return fmt.Errorf("--ai-mapper is not supported with --analyzer or --language; " +
 			"assertion mapping is provided by the external analyzer")
 	}
 
