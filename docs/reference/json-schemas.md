@@ -277,6 +277,14 @@ The CRAP JSON output is not covered by a formal embedded schema but follows a st
 | `reason` | `string` | No | Stable degradation identifier when metrics are unavailable (`test_mapping_unavailable` or `test_mapping_error`) |
 | `classification_counts` | `ClassificationCounts?` | No | Module-wide distribution of side effects by classification (contractual/incidental/ambiguous); external analyzers only |
 
+### ClassificationCounts
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `contractual` | `int` | Yes | Number of side effects classified contractual |
+| `incidental` | `int` | Yes | Number of side effects classified incidental |
+| `ambiguous` | `int` | Yes | Number of side effects whose classification could not be determined with confidence |
+
 ### Annotated Example
 
 ```json
