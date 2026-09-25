@@ -638,6 +638,36 @@ func TestWriteJSON_Structure(t *testing.T) {
 	}
 }
 
+func TestWriteJSON_ClassificationCounts(t *testing.T) {
+	reports := []taxonomy.QualityReport{}
+	summary := &taxonomy.PackageSummary{
+		TotalTests:           0,
+		ClassificationCounts: &taxonomy.ClassificationCounts{Contractual: 3, Incidental: 1, Ambiguous: 2},
+	}
+
+	var buf bytes.Buffer
+	if err := quality.WriteJSON(&buf, reports, summary); err != nil {
+		t.Fatalf("WriteJSON failed: %v", err)
+	}
+
+	var output struct {
+		Summary struct {
+			ClassificationCounts *taxonomy.ClassificationCounts `json:"classification_counts"`
+		} `json:"quality_summary"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if output.Summary.ClassificationCounts == nil {
+		t.Fatal("expected classification_counts to be present in serialized JSON")
+	}
+	cc := output.Summary.ClassificationCounts
+	if cc.Contractual != 3 || cc.Incidental != 1 || cc.Ambiguous != 2 {
+		t.Errorf("classification_counts = %+v, want 3/1/2", cc)
+	}
+}
+
 func TestWriteText_Output(t *testing.T) {
 	reports := []taxonomy.QualityReport{
 		{
