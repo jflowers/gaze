@@ -216,3 +216,19 @@ Report final status with summary of completed work.
 - [ ] Implementation validated against specification, plan, and test coverage
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with summary of completed work
+
+## Guardrails
+
+- This command **writes source code** — implementation
+  is its primary purpose. It executes the tasks defined
+  in the active feature's `tasks.md`.
+- Scope modifications to the active feature's
+  implementation plan. Do not make changes unrelated to
+  the current task group.
+- Mark task checkboxes `[x]` as each task is completed.
+- Consult the project constitution
+  (`.specify/memory/constitution.md`) and retrieve prior
+  context via Dewey (`dewey_semantic_search`) before
+  writing code.
+- Run `/uf.review-council` before completing
+  implementation.

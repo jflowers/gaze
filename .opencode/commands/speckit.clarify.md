@@ -51,6 +51,13 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+**STOP HERE. Do NOT proceed to implementation.**
+
+Your job is done. Report the results and prompt the
+user. The user will invoke a separate command
+(`/speckit.implement`, `/unleash`, or `/cobalt-crush`)
+when they are ready to implement.
+
 Goal: Detect and reduce ambiguity or missing decision points in the active feature specification and record the clarifications directly in the spec file.
 
 Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `/speckit.plan`. If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.
@@ -285,3 +292,24 @@ Report completion (after questioning loop ends or early termination):
 - [ ] Spec quality checklist re-validated against updated spec (if `FEATURE_DIR/checklists/requirements.md` exists)
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with questions answered, sections touched, checklist status, and coverage summary
+
+## Guardrails
+
+- **NEVER modify source code** — this command updates
+  spec artifacts ONLY. Implementation changes belong in
+  `/speckit.implement`, `/unleash`, or `/cobalt-crush`.
+- **NEVER modify test files, Go source, Markdown agents,
+  convention packs, or config files** outside the
+  `specs/NNN-*/` feature directory.
+- The ONLY files this command may write are:
+  - `FEATURE_SPEC` (the spec.md file)
+  - Files within `FEATURE_DIR` (spec artifacts:
+    plan.md, tasks.md, research.md, data-model.md,
+    quickstart.md, contracts/, checklists/)
+- The user needs to review the plan before
+  implementation begins. Implementing without review
+  defeats the purpose of the spec-first workflow.
+- Consult the project constitution
+  (`.specify/memory/constitution.md`) and retrieve prior
+  context via Dewey (`dewey_semantic_search`) before
+  writing spec artifacts.

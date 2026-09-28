@@ -120,6 +120,28 @@ Archive a completed change in the experimental workflow.
 
    If the sync failed, or any capability does not match, report what differs and stop — do not archive. Nothing has moved and `changeRoot` is intact, so the user can fix the mismatch or re-run the sync and start the archive again.
 
+**Commit and push all changes**
+
+Before archiving, ensure all work is committed:
+
+1. Run `git status --short` to check for uncommitted
+   changes.
+2. If uncommitted changes exist:
+   - Stage the change directory and implementation
+     files explicitly:
+     `git add openspec/changes/<name>/ .opencode/`
+     and any other modified files shown by
+     `git status --short`
+   - Commit with a descriptive message:
+     `git commit -m "feat(<name>): complete implementation"`
+   - Push to remote: `git push`
+3. Verify the working tree is clean after push.
+
+**CRITICAL**: Do NOT move to the archive step with
+uncommitted changes. All work must be committed and
+pushed before the change directory is moved to the
+archive.
+
 5. **Perform the archive**
 
    Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
@@ -136,6 +158,17 @@ Archive a completed change in the experimental workflow.
    ```bash
    mv "<changeRoot>" "<planningHome.changesDir>/archive/<target-name>"
    ```
+
+**Return to main branch**
+
+After the archive move completes:
+```bash
+git checkout main
+```
+
+The `opsx/<name>` branch still exists locally. Note in the
+summary that the developer can delete it manually with
+`git branch -d opsx/<name>` if desired.
 
 6. **Display summary**
 

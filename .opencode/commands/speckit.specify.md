@@ -55,6 +55,13 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+**STOP HERE. Do NOT proceed to implementation.**
+
+Your job is done. Report the results and prompt the
+user. The user will invoke a separate command
+(`/speckit.implement`, `/unleash`, or `/cobalt-crush`)
+when they are ready to implement.
+
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
@@ -343,3 +350,24 @@ Success criteria must be:
 - [ ] Specification written to `SPEC_FILE` and validated against quality checklist
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with feature directory, spec file path, and checklist results
+
+## Guardrails
+
+- **NEVER modify source code** — this command updates
+  spec artifacts ONLY. Implementation changes belong in
+  `/speckit.implement`, `/unleash`, or `/cobalt-crush`.
+- **NEVER modify test files, Go source, Markdown agents,
+  convention packs, or config files** outside the
+  `specs/NNN-*/` feature directory.
+- The ONLY files this command may write are:
+  - `FEATURE_SPEC` (the spec.md file)
+  - Files within `FEATURE_DIR` (spec artifacts:
+    plan.md, tasks.md, research.md, data-model.md,
+    quickstart.md, contracts/, checklists/)
+- The user needs to review the plan before
+  implementation begins. Implementing without review
+  defeats the purpose of the spec-first workflow.
+- Consult the project constitution
+  (`.specify/memory/constitution.md`) and retrieve prior
+  context via Dewey (`dewey_semantic_search`) before
+  writing spec artifacts.

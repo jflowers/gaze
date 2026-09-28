@@ -171,3 +171,18 @@ Check if `.specify/extensions.yml` exists in the project root.
     ```
     After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+
+## Guardrails
+
+- This command updates the project constitution and
+  propagates changes to dependent templates.
+- The ONLY files this command may write are:
+  - `.specify/memory/constitution.md`
+  - `.specify/templates/*-template.md` (consistency
+    propagation)
+- Do NOT modify source code, test files, or any files
+  outside the `.specify/` directory.
+- Consult the project constitution
+  (`.specify/memory/constitution.md`) and retrieve prior
+  context via Dewey (`dewey_semantic_search`) before
+  amending governance documents.
