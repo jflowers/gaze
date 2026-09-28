@@ -22,7 +22,7 @@
   `check-signing-secrets` requires all six secrets consumed by `sign-macos`,
   and map the signing identity directly from `secrets.MACOS_SIGN_IDENTITY`
   with no variable or hardcoded fallback.
-- [ ] 2.2 [P] Extend the existing `TestReleaseWorkflow_MacOSSigningIdentity` in
+- [ ] 2.2 Extend the existing `TestReleaseWorkflow_MacOSSigningIdentity` in
   `cmd/gaze/release_workflow_test.go`. Read the workflow as configuration and
   isolate the `check-signing-secrets` section. Assert individually that all six
   environment mappings use `secrets.<NAME>` and that the check requires all six
@@ -36,9 +36,10 @@
 - [ ] 2.4 Update `check-signing-secrets` to emit a GitHub warning naming each
   missing secret before reporting `has_secrets=false`. Print constant secret
   names only; never print or interpolate values.
-- [ ] 2.5 Extend `TestReleaseWorkflow_MacOSSigningIdentity` to assert all six
+- [ ] 2.5 After 2.2 and 2.4, extend
+  `TestReleaseWorkflow_MacOSSigningIdentity` to assert all six
   `::warning::Missing required signing secret: <NAME>` lines individually.
-  Assert that warning lines contain no environment-variable or secret-value
+  Assert that warning lines contain no `${{ ... }}` or shell-variable
   interpolation.
 
 ## 3. Verification
