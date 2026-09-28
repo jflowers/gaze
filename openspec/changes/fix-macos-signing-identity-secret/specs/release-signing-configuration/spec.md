@@ -29,6 +29,21 @@ NOT run the `sign-macos` job.
 - **THEN** the signing-secret check reports signing credentials unavailable,
   the `sign-macos` job is skipped, and the unsigned-cask job remains eligible
 
+### Requirement: Actionable incomplete-configuration diagnostics
+
+When signing configuration is incomplete, the readiness check MUST emit a
+GitHub warning for each missing secret in the form `Missing required signing
+secret: <NAME>`, where `<NAME>` is the constant secret name. It MUST NOT print
+or interpolate any environment variable or secret value. Diagnostic output
+MUST NOT change the existing signed-versus-unsigned routing decision.
+
+#### Scenario: Missing secrets are identified safely
+
+- **GIVEN** one or more required signing secrets are empty
+- **WHEN** the signing-secret check selects the unsigned path
+- **THEN** it emits one warning for each missing secret name, emits no secret
+  values, and reports signing credentials unavailable
+
 ### Requirement: Secret-backed signing identity
 
 The `sign-macos` job MUST provide `MACOS_SIGN_IDENTITY` to `codesign` from

@@ -8,6 +8,8 @@
   parallel workers will cause merge conflicts.
 -->
 
+# Tasks: Fix macOS Signing Identity Secret
+
 ## 1. Prerequisites
 
 - [x] 1.1 Confirm that an authorized repository administrator has configured
@@ -20,24 +22,32 @@
   `check-signing-secrets` requires all six secrets consumed by `sign-macos`,
   and map the signing identity directly from `secrets.MACOS_SIGN_IDENTITY`
   with no variable or hardcoded fallback.
-- [x] 2.2 [P] Add `TestReleaseWorkflow_MacOSSigningIdentity` in
+- [ ] 2.2 [P] Extend the existing `TestReleaseWorkflow_MacOSSigningIdentity` in
   `cmd/gaze/release_workflow_test.go`. Read the workflow as configuration and
-  assert that the readiness check maps and requires all six values; that
-  `sign-macos` depends on the readiness check and runs only
+  isolate the `check-signing-secrets` section. Assert individually that all six
+  environment mappings use `secrets.<NAME>` and that the check requires all six
+  values; assert that `sign-macos` depends on the readiness check and runs only
   when its output is `true`; that `push-unsigned-cask` depends on the check and
   runs only when its output is `false`; direct identity mapping; and absence of
   the variable/fallback expression without accessing secret values.
 - [x] 2.3 [P] Update the macOS-signing prerequisite documentation in
   `README.md` to list the sixth secret and its certificate-label value.
   Preserve completed feature specs as point-in-time design artifacts.
+- [ ] 2.4 Update `check-signing-secrets` to emit a GitHub warning naming each
+  missing secret before reporting `has_secrets=false`. Print constant secret
+  names only; never print or interpolate values.
+- [ ] 2.5 Extend `TestReleaseWorkflow_MacOSSigningIdentity` to assert all six
+  `::warning::Missing required signing secret: <NAME>` lines individually.
+  Assert that warning lines contain no environment-variable or secret-value
+  interpolation.
 
 ## 3. Verification
 
-- [x] 3.1 Run `go build ./...`, `go test -race -count=1 -short -timeout 15m
+- [ ] 3.1 Run `go build ./...`, `go test -race -count=1 -short -timeout 15m
   -coverprofile=coverage.out ./...`, and `go test -race -count=1 -run
   'TestRunSelfCheck' -timeout 30m ./cmd/gaze/...` to match the Test workflow's
   relevant build and test gates.
-- [x] 3.2 Run `golangci-lint run` and validate the changed workflow through
+- [ ] 3.2 Run `golangci-lint run` and validate the changed workflow through
   the repository's MegaLinter-equivalent local tooling; fix all reported YAML
   or workflow syntax errors without changing CI gates.
 - [ ] 3.3 Have a repository administrator confirm on the next permitted
@@ -51,4 +61,3 @@
   for accuracy, minimal assumptions, actionable output, and testability.
 
 <!-- spec-review: passed -->
-<!-- code-review: passed -->

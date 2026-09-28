@@ -1,3 +1,5 @@
+# Fix macOS Signing Identity Secret
+
 ## Why
 
 The macOS signing job falls back to a specific Apple Developer ID identity in
@@ -19,6 +21,8 @@ signing credentials are unavailable.
 - Add a workflow-focused regression check that verifies the signing job uses
   the secret and that the unsigned fallback remains guarded by complete
   signing-secret availability.
+- Report each missing secret by name when incomplete configuration selects the
+  unsigned path, without exposing any secret value.
 
 ## Capabilities
 
@@ -70,9 +74,10 @@ repositories without it publish unsigned artifacts.
 
 **Assessment**: PASS
 
-The workflow's branch condition remains observable in the release job graph,
-and the focused regression check will verify the configured secret contract
-without exposing its value.
+The workflow's branch condition remains observable in the release job graph.
+When configuration is incomplete, name-only warnings identify the missing
+prerequisites without exposing their values, and the focused regression check
+verifies that contract.
 
 ### IV. Testability
 
@@ -117,9 +122,10 @@ It introduces no developer-specific identity or external runtime dependency.
 **Assessment**: PASS
 
 When any required signing secret is unavailable, the existing unsigned-cask
-path remains eligible and the signing job is skipped.
+path remains eligible, the signing job is skipped, and name-only warnings tell
+maintainers which prerequisites require configuration.
 
-#### IV. Testability
+#### Gaze IV. Testability
 
 **Assessment**: PASS
 

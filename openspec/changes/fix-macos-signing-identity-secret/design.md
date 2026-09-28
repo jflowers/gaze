@@ -1,3 +1,5 @@
+# Design: Fix macOS Signing Identity Secret
+
 ## Context
 
 The `sign-macos` job currently maps `MACOS_SIGN_IDENTITY` from a GitHub
@@ -20,6 +22,7 @@ graph, and uses isolated static validation rather than Apple services.
 - Treat all six secrets consumed by the signing job as one complete signing
   configuration at the existing release branch point.
 - Preserve unsigned releases when any required signing secret is absent.
+- Identify each missing secret by name without printing its value.
 - Make the sixth required secret clear in maintainer-facing documentation.
 - Verify the workflow contract without exposing secret values or invoking
   `codesign` or `notarytool`.
@@ -41,6 +44,14 @@ environment and report signing credentials available only when every value is
 non-empty. This keeps the existing release branch decision in one place and
 avoids a late signing or notarization failure for incomplete configuration.
 
+### Report missing prerequisites without exposing values
+
+The readiness step will test each mapped value individually and emit a GitHub
+warning in the form `Missing required signing secret: <NAME>` when it is empty,
+where `<NAME>` is a constant secret name. It will then preserve the existing
+`has_secrets=false` output and unsigned routing. Diagnostics will never
+interpolate, print, or otherwise reveal secret values.
+
 ### Remove the variable and hardcoded fallback
 
 The `sign-macos` step will map `MACOS_SIGN_IDENTITY` directly from
@@ -51,11 +62,12 @@ coupling releases to a named developer identity.
 ### Validate statically and in CI
 
 Implementation will add an isolated regression check that reads the workflow
-as configuration and asserts the six-secret condition, direct identity mapping,
-and absence of the variable/fallback expression. It will not load or print
-secret values. The existing CI YAML linting and the project's mandated local
-CI-parity commands remain the syntax and integration gate. A release run with
-configured repository secrets is the operational acceptance check.
+as configuration and asserts all six readiness mappings, name-only missing
+secret diagnostics, direct identity mapping, and absence of the variable or
+fallback expression. It will not load or print secret values. The existing CI
+YAML linting and the project's mandated local CI-parity commands remain the
+syntax and integration gate. A release run with configured repository secrets
+is the operational acceptance check.
 
 ### Documentation location
 
