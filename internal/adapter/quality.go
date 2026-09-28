@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 
 	"github.com/unbound-force/gaze/v2/internal/protocol"
@@ -29,6 +30,7 @@ import (
 func BuildQualityFromMappings(
 	mappings []protocol.AssertionMappingData,
 	results []taxonomy.AnalysisResult,
+	testFiles map[string]bool,
 ) ([]taxonomy.QualityReport, *taxonomy.PackageSummary) {
 	type funcKey struct {
 		pkg      string
@@ -105,6 +107,15 @@ func BuildQualityFromMappings(
 
 		// Compute contract coverage using the shared quality function.
 		cc := quality.ComputeContractCoverage(effects, taxonomyMappings)
+
+		// No-contract-expected sentinel: a test function targeting a
+		// confirmed test file (via discover) whose unioned target effects
+		// are empty has no production contract to assert on. Distinguish it
+		// from a production function whose contract is genuinely unasserted.
+		if len(effects) == 0 && testFiles != nil && testFiles[filepath.Clean(tk.testFile)] {
+			cc.NoContractExpected = true
+			cc.Reason = "test_function_no_target_effects"
+		}
 
 		// Compute over-specification: assertions on incidental effects.
 		overSpec := computeOverSpecification(effects, taxonomyMappings)
@@ -205,25 +216,41 @@ func buildQualitySummary(reports []taxonomy.QualityReport) *taxonomy.PackageSumm
 
 	var totalCoverage float64
 	var totalConfidence int
+	countedCoverage := 0
 	for _, r := range reports {
-		totalCoverage += r.ContractCoverage.Percentage
+		if r.ContractCoverage.NoContractExpected {
+			// Excluded from AverageContractCoverage and
+			// WorstCoverageTests — no contract to assert on.
+		} else {
+			totalCoverage += r.ContractCoverage.Percentage
+			countedCoverage++
+		}
 		summary.TotalOverSpecifications += r.OverSpecification.Count
 		totalConfidence += r.AssertionDetectionConfidence
 	}
-	summary.AverageContractCoverage = totalCoverage / float64(len(reports))
+	if countedCoverage > 0 {
+		summary.AverageContractCoverage = totalCoverage / float64(countedCoverage)
+	}
+	// When all reports are sentinel, AverageContractCoverage stays 0
+	// (zero-value) — no division by zero.
 	summary.AssertionDetectionConfidence = int(float64(totalConfidence)/float64(len(reports)) + 0.5)
 
-	// Worst coverage tests: bottom 5 by contract coverage percentage.
-	sorted := make([]taxonomy.QualityReport, len(reports))
-	copy(sorted, reports)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].ContractCoverage.Percentage < sorted[j].ContractCoverage.Percentage
+	// Worst coverage tests: bottom 5 by contract coverage percentage,
+	// excluding no-contract-expected reports.
+	var nonSentinel []taxonomy.QualityReport
+	for _, r := range reports {
+		if !r.ContractCoverage.NoContractExpected {
+			nonSentinel = append(nonSentinel, r)
+		}
+	}
+	sort.Slice(nonSentinel, func(i, j int) bool {
+		return nonSentinel[i].ContractCoverage.Percentage < nonSentinel[j].ContractCoverage.Percentage
 	})
 	limit := 5
-	if len(sorted) < limit {
-		limit = len(sorted)
+	if len(nonSentinel) < limit {
+		limit = len(nonSentinel)
 	}
-	summary.WorstCoverageTests = sorted[:limit]
+	summary.WorstCoverageTests = nonSentinel[:limit]
 
 	return summary
 }

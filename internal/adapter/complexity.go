@@ -13,6 +13,7 @@ package adapter
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/unbound-force/gaze/v2/internal/crap"
 	"github.com/unbound-force/gaze/v2/internal/protocol"
@@ -21,13 +22,21 @@ import (
 // ExternalComplexityProvider implements crap.ComplexityProvider by
 // calling the "complexity" protocol method on an external analyzer.
 type ExternalComplexityProvider struct {
-	client *protocol.Client
+	client    *protocol.Client
+	testFiles map[string]bool
 }
 
 // NewExternalComplexityProvider creates a complexity provider that
 // delegates to the given protocol client.
 func NewExternalComplexityProvider(client *protocol.Client) *ExternalComplexityProvider {
 	return &ExternalComplexityProvider{client: client}
+}
+
+// SetTestFiles configures the set of test file paths (cleaned, relative to
+// rootDir) that Analyze should exclude from its results. A nil or empty set
+// disables filtering. Called by Session.Initialize after the discover call.
+func (p *ExternalComplexityProvider) SetTestFiles(testFiles map[string]bool) {
+	p.testFiles = testFiles
 }
 
 // Analyze calls the "complexity" protocol method and converts the
@@ -44,7 +53,24 @@ func (p *ExternalComplexityProvider) Analyze(patterns []string, rootDir string) 
 		return nil, err
 	}
 
-	return convertComplexity(result.Functions), nil
+	funcs := convertComplexity(result.Functions)
+	return filterTestFiles(funcs, p.testFiles), nil
+}
+
+// filterTestFiles removes functions whose cleaned file path is in
+// testFiles. A nil or empty testFiles set disables filtering (D1).
+func filterTestFiles(funcs []crap.FunctionComplexity, testFiles map[string]bool) []crap.FunctionComplexity {
+	if len(testFiles) == 0 {
+		return funcs
+	}
+	filtered := funcs[:0:0]
+	for _, f := range funcs {
+		if testFiles[filepath.Clean(f.File)] {
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	return filtered
 }
 
 // convertComplexity maps protocol FunctionComplexityData to

@@ -88,7 +88,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings(mappings, results)
+		reports, summary := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(reports) != 1 {
 			t.Fatalf("got %d reports, want 1", len(reports))
@@ -148,7 +148,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings(nil, results)
+		reports, summary := BuildQualityFromMappings(nil, results, nil)
 
 		if len(reports) != 0 {
 			t.Fatalf("got %d reports, want 0", len(reports))
@@ -168,7 +168,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings([]protocol.AssertionMappingData{}, results)
+		reports, summary := BuildQualityFromMappings([]protocol.AssertionMappingData{}, results, nil)
 
 		if len(reports) != 0 {
 			t.Fatalf("got %d reports, want 0", len(reports))
@@ -199,7 +199,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, _ := BuildQualityFromMappings(mappings, results)
+		reports, _ := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(reports) != 1 {
 			t.Fatalf("got %d reports, want 1", len(reports))
@@ -241,7 +241,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings(mappings, results)
+		reports, summary := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(reports) != 2 {
 			t.Fatalf("got %d reports, want 2", len(reports))
@@ -283,7 +283,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, _ := BuildQualityFromMappings(mappings, results)
+		reports, _ := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(reports) != 1 {
 			t.Fatalf("got %d reports, want 1", len(reports))
@@ -337,7 +337,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		_, summary := BuildQualityFromMappings(mappings, results)
+		_, summary := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(summary.WorstCoverageTests) != 2 {
 			t.Fatalf("WorstCoverageTests = %d, want 2", len(summary.WorstCoverageTests))
@@ -402,7 +402,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			}
 		}
 
-		_, summary := BuildQualityFromMappings(mappings, results)
+		_, summary := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(summary.WorstCoverageTests) != 5 {
 			t.Fatalf("WorstCoverageTests = %d, want 5 (truncated from 6)",
@@ -436,7 +436,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings(mappings, nil)
+		reports, summary := BuildQualityFromMappings(mappings, nil, nil)
 
 		if len(reports) != 1 {
 			t.Fatalf("got %d reports, want 1", len(reports))
@@ -505,7 +505,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings(mappings, results)
+		reports, summary := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(reports) != 1 {
 			t.Fatalf("got %d reports, want 1", len(reports))
@@ -583,7 +583,7 @@ func TestBuildQualityFromMappings(t *testing.T) {
 			},
 		}
 
-		reports, summary := BuildQualityFromMappings(mappings, results)
+		reports, summary := BuildQualityFromMappings(mappings, results, nil)
 
 		if len(reports) != 1 {
 			t.Fatalf("got %d reports, want 1", len(reports))
@@ -613,6 +613,95 @@ func TestBuildQualityFromMappings(t *testing.T) {
 		}
 		if summary.AverageContractCoverage != 100 {
 			t.Errorf("summary.AverageContractCoverage = %v, want 100", summary.AverageContractCoverage)
+		}
+	})
+}
+
+func TestBuildQualityFromMappingsNoContractExpected(t *testing.T) {
+	mapping := func(testFn, testFile string) protocol.AssertionMappingData {
+		return protocol.AssertionMappingData{
+			TestFunction:   testFn,
+			TestFile:       testFile,
+			TargetFunction: "add",
+			TargetPackage:  "math_utils",
+			SideEffectType: "",
+			Confidence:     0,
+		}
+	}
+
+	t.Run("empty effects with test_files membership fires sentinel", func(t *testing.T) {
+		mappings := []protocol.AssertionMappingData{mapping("test_add", "tests/test_ops.py")}
+		reports, _ := BuildQualityFromMappings(mappings, nil, map[string]bool{"tests/test_ops.py": true})
+
+		if len(reports) != 1 {
+			t.Fatalf("got %d reports, want 1", len(reports))
+		}
+		r := reports[0]
+		if !r.ContractCoverage.NoContractExpected {
+			t.Error("NoContractExpected = false, want true")
+		}
+		if r.ContractCoverage.Reason != "test_function_no_target_effects" {
+			t.Errorf("Reason = %q, want %q", r.ContractCoverage.Reason, "test_function_no_target_effects")
+		}
+		if r.ContractCoverage.Percentage != 0 {
+			t.Errorf("Percentage = %v, want 0", r.ContractCoverage.Percentage)
+		}
+	})
+
+	t.Run("empty effects without test_files membership stays normal", func(t *testing.T) {
+		mappings := []protocol.AssertionMappingData{mapping("test_add", "tests/test_ops.py")}
+		reports, _ := BuildQualityFromMappings(mappings, nil, map[string]bool{"tests/other.py": true})
+
+		if len(reports) != 1 {
+			t.Fatalf("got %d reports, want 1", len(reports))
+		}
+		if reports[0].ContractCoverage.NoContractExpected {
+			t.Error("NoContractExpected = true, want false for non-test file")
+		}
+	})
+
+	t.Run("nil test_files stays normal", func(t *testing.T) {
+		mappings := []protocol.AssertionMappingData{mapping("test_add", "tests/test_ops.py")}
+		reports, _ := BuildQualityFromMappings(mappings, nil, nil)
+
+		if len(reports) != 1 {
+			t.Fatalf("got %d reports, want 1", len(reports))
+		}
+		if reports[0].ContractCoverage.NoContractExpected {
+			t.Error("NoContractExpected = true, want false when discover unavailable")
+		}
+	})
+
+	t.Run("dot-prefixed test file normalizes to match", func(t *testing.T) {
+		mappings := []protocol.AssertionMappingData{mapping("test_add", "./tests/test_ops.py")}
+		reports, _ := BuildQualityFromMappings(mappings, nil, map[string]bool{"tests/test_ops.py": true})
+
+		if len(reports) != 1 {
+			t.Fatalf("got %d reports, want 1", len(reports))
+		}
+		if !reports[0].ContractCoverage.NoContractExpected {
+			t.Error("NoContractExpected = false, want true for cleaned dot-prefixed path")
+		}
+	})
+
+	t.Run("all-sentinel summary has zero coverage and counts sentinels", func(t *testing.T) {
+		mappings := []protocol.AssertionMappingData{
+			mapping("test_add", "tests/test_ops.py"),
+			mapping("test_sub", "tests/test_ops.py"),
+		}
+		reports, summary := BuildQualityFromMappings(mappings, nil, map[string]bool{"tests/test_ops.py": true})
+
+		if len(reports) != 2 {
+			t.Fatalf("got %d reports, want 2", len(reports))
+		}
+		if summary.TotalTests != 2 {
+			t.Errorf("TotalTests = %d, want 2 (sentinels still counted)", summary.TotalTests)
+		}
+		if summary.AverageContractCoverage != 0 {
+			t.Errorf("AverageContractCoverage = %v, want 0 (all-sentinel, no division by zero)", summary.AverageContractCoverage)
+		}
+		if len(summary.WorstCoverageTests) != 0 {
+			t.Errorf("WorstCoverageTests = %d, want 0 (sentinels excluded)", len(summary.WorstCoverageTests))
 		}
 	})
 }

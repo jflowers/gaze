@@ -134,12 +134,12 @@ func TestFullSession(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &complexityResult); err != nil {
 		t.Fatalf("unmarshal complexity result: %v", err)
 	}
-	if len(complexityResult.Functions) != 3 {
-		t.Fatalf("complexity returned %d functions, want 3", len(complexityResult.Functions))
+	if len(complexityResult.Functions) != 4 {
+		t.Fatalf("complexity returned %d functions, want 4", len(complexityResult.Functions))
 	}
 
 	// Verify expected complexity values.
-	wantComplexity := map[string]int{"add": 2, "multiply": 3, "divide": 5}
+	wantComplexity := map[string]int{"add": 2, "multiply": 3, "divide": 5, "test_add": 1}
 	for _, f := range complexityResult.Functions {
 		if want, ok := wantComplexity[f.Name]; ok {
 			if f.Complexity != want {
@@ -409,8 +409,8 @@ func TestDiscoverAndTestMapping(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &mappingResult); err != nil {
 		t.Fatalf("unmarshal test_mapping result: %v", err)
 	}
-	if len(mappingResult.Mappings) != 3 {
-		t.Fatalf("test_mapping returned %d mappings, want 3", len(mappingResult.Mappings))
+	if len(mappingResult.Mappings) != 4 {
+		t.Fatalf("test_mapping returned %d mappings, want 4", len(mappingResult.Mappings))
 	}
 	if mappingResult.Mappings[0].TestFunction != "test_multiply" {
 		t.Errorf("mapping[0] test_function = %q, want %q", mappingResult.Mappings[0].TestFunction, "test_multiply")

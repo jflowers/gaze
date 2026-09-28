@@ -103,11 +103,11 @@ func TestCallAndUnmarshal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("callAndUnmarshal: unexpected error: %v", err)
 		}
-		if len(result.Functions) != 3 {
-			t.Fatalf("got %d functions, want 3", len(result.Functions))
+		if len(result.Functions) != 4 {
+			t.Fatalf("got %d functions, want 4", len(result.Functions))
 		}
 		// Assert specific field values from the canned data.
-		want := map[string]int{"add": 2, "multiply": 3, "divide": 5}
+		want := map[string]int{"add": 2, "multiply": 3, "divide": 5, "test_add": 1}
 		for _, fn := range result.Functions {
 			exp, ok := want[fn.Name]
 			if !ok {

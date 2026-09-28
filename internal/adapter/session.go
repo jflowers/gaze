@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/unbound-force/gaze/v2/internal/config"
 	"github.com/unbound-force/gaze/v2/internal/crap"
@@ -63,6 +64,13 @@ type Session struct {
 	caps     protocol.Capabilities
 	language string
 	initDone bool
+
+	// testFiles holds the analyzer-reported test file paths (cleaned,
+	// relative to rootDir) discovered during Initialize. Nil when the
+	// analyzer does not advertise the discover capability or the discover
+	// call failed. Used to filter test files out of CRAP scoring and to
+	// gate the quality "no contract expected" sentinel.
+	testFiles map[string]bool
 }
 
 // NewSession creates a new session for the given analyzer binary.
@@ -118,8 +126,14 @@ func (s *Session) Initialize() (*Providers, error) {
 	s.language = initResult.Language
 	s.initDone = true
 
+	// Discover source/test files once (before provider construction) so the
+	// complexity provider can filter test files out of CRAP scoring and the
+	// quality path can gate the "no contract expected" sentinel (D2).
+	s.discoverTestFiles()
+
 	// Construct provider adapters.
 	complexityProvider := NewExternalComplexityProvider(s.client)
+	complexityProvider.SetTestFiles(s.testFiles)
 	coverageProvider := NewExternalLineCoverageProvider(s.client)
 
 	sideEffectAnalyzer := NewExternalSideEffectAnalyzer(
@@ -144,6 +158,64 @@ func (s *Session) Initialize() (*Providers, error) {
 		Language:         initResult.Language,
 		LanguageVersion:  initResult.LanguageVersion,
 	}, nil
+}
+
+// DiscoverTestFiles returns the analyzer-reported test file paths (cleaned,
+// relative to rootDir) discovered during Initialize. Returns nil when the
+// analyzer does not advertise the discover capability, the discover call
+// failed, or the session was not initialized.
+func (s *Session) DiscoverTestFiles() map[string]bool {
+	return s.testFiles
+}
+
+// discoverTestFiles performs the discover call (gated on the discover
+// capability) and populates s.testFiles. Failures degrade gracefully: a
+// warning is logged to stderr and testFiles stays nil.
+func (s *Session) discoverTestFiles() {
+	if !s.caps.Discover {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), protocol.ShortTimeout)
+	defer cancel()
+	result, err := s.discover(ctx, protocol.DiscoverParams{RootPath: s.rootDir})
+	if err != nil {
+		if s.stderr != nil {
+			_, _ = fmt.Fprintf(s.stderr, "warning: discover failed: %v\n", err)
+		}
+		return
+	}
+	if result == nil {
+		return
+	}
+	s.testFiles = make(map[string]bool, len(result.TestFiles))
+	for _, tf := range result.TestFiles {
+		s.testFiles[filepath.Clean(tf)] = true
+	}
+}
+
+// discover calls the discover protocol method on the external analyzer and
+// returns the result. Returns nil when the session has not been initialized
+// or the analyzer does not advertise the discover capability. Uses
+// ShortTimeout when the caller-provided context has no deadline (D2).
+func (s *Session) discover(ctx context.Context, params protocol.DiscoverParams) (*protocol.DiscoverResult, error) {
+	if !s.initDone {
+		return nil, nil
+	}
+	if !s.caps.Discover {
+		return nil, nil
+	}
+
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, protocol.ShortTimeout)
+		defer cancel()
+	}
+
+	result, err := callAndUnmarshal[protocol.DiscoverResult](ctx, s.client, protocol.MethodDiscover, params)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // Client returns the underlying protocol client. Callers can use this

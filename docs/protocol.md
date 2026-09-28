@@ -458,7 +458,7 @@ These methods are declared via capabilities in the `initialize` response. Gaze o
 
 ### `discover` (optional)
 
-Find source and test files in the project. Reserved for future use -- currently not consumed by Gaze's provider interfaces.
+Find source and test files in the project. Gaze consumes `test_files` to exclude test functions from CRAP scoring: external analyzers that instrument only source code have no coverage entry for test files, so test functions would otherwise be scored at 0% and inflate CRAP/quadrant/fix-strategy counts. `source_files` is informational and not currently consumed by the scoring engine.
 
 **Capability**: `discover`
 
@@ -640,7 +640,7 @@ When a required method (`analyze`, `complexity`, `coverage`) returns a JSON-RPC 
 
 When an optional method (`discover`, `test_mapping`, `classify_signals`, `doc_coverage`) returns an error, Gaze logs a warning to stderr and degrades gracefully:
 
-- `discover` error: no impact (not currently consumed)
+- `discover` error: no test-file filtering is applied, so test functions are scored normally (potentially inflating CRAP/quadrant/fix-strategy counts); Gaze warns and falls back to unfiltered scoring
 - `test_mapping` error: GazeCRAP is unavailable and `gaze quality` degrades to zero contract coverage (JSON summary sets `reason` to `test_mapping_error`)
 - `classify_signals` error: uses pre-classified effects from `analyze`
 - `doc_coverage` error: falls back to heuristic documentation coverage from `analyze` output

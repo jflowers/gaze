@@ -379,6 +379,18 @@ type ContractCoverage struct {
 	// DiscardedReturns: len(DiscardedReturnHints) == len(DiscardedReturns).
 	// Omitted from JSON when there are no discarded returns.
 	DiscardedReturnHints []string `json:"discarded_return_hints,omitempty"`
+
+	// NoContractExpected is true when this report's test function targets
+	// a confirmed test file (via discover test_files) whose unioned target
+	// effects are empty — there is no production contract to assert on.
+	// Omitted from JSON when false (production functions and normal test
+	// functions).
+	NoContractExpected bool `json:"no_contract_expected,omitempty"`
+
+	// Reason carries a machine-readable explanation for an unusual
+	// ContractCoverage state (e.g., "test_function_no_target_effects").
+	// Omitted from JSON when empty.
+	Reason string `json:"reason,omitempty"`
 }
 
 // OverSpecificationScore measures how many incidental side effects
