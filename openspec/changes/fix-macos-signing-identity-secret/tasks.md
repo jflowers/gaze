@@ -24,12 +24,10 @@
   with no variable or hardcoded fallback.
 - [ ] 2.2 Extend the existing `TestReleaseWorkflow_MacOSSigningIdentity` in
   `cmd/gaze/release_workflow_test.go`. Read the workflow as configuration and
-  isolate the `check-signing-secrets` section. Assert individually that all six
-  environment mappings use `secrets.<NAME>` and that the check requires all six
-  values; assert that `sign-macos` depends on the readiness check and runs only
-  when its output is `true`; that `push-unsigned-cask` depends on the check and
-  runs only when its output is `false`; direct identity mapping; and absence of
-  the variable/fallback expression without accessing secret values.
+  preserve its existing gate-condition, routing, identity-mapping, and
+  forbidden-fallback assertions. Isolate the `check-signing-secrets` section
+  and add the missing per-secret assertions that all six environment mappings
+  use `secrets.<NAME>`.
 - [x] 2.3 [P] Update the macOS-signing prerequisite documentation in
   `README.md` to list the sixth secret and its certificate-label value.
   Preserve completed feature specs as point-in-time design artifacts.
