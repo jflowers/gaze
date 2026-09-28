@@ -327,6 +327,14 @@ const QualitySchema = `{
             { "type": "null" }
           ],
           "description": "Go code snippets suggesting how to assert on each discarded return. Parallel to discarded_returns: len(discarded_return_hints) == len(discarded_returns). Omitted when there are no discarded returns."
+        },
+        "no_contract_expected": {
+          "type": "boolean",
+          "description": "True when this report's test function targets a confirmed test file with no production contract to assert on. Omitted when false."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Machine-readable explanation for an unusual ContractCoverage state (e.g., 'test_function_no_target_effects'). Omitted when empty."
         }
       }
     },

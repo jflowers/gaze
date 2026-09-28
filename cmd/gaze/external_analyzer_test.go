@@ -96,6 +96,31 @@ func TestCrapWithExternalAnalyzer(t *testing.T) {
 		}
 	}
 
+	// Verify the test-file function (tests/test_ops.py::test_add) was
+	// filtered out of CRAP scoring entirely (spec Scenario 1).
+	if len(report.Scores) != 3 {
+		t.Errorf("got %d scores, want 3 (test file should be excluded): %v",
+			len(report.Scores), scores)
+	}
+	if _, ok := scores["test_add"]; ok {
+		t.Errorf("test_add should be excluded from CRAP scores")
+	}
+	if report.Summary.TotalFunctions != 3 {
+		t.Errorf("TotalFunctions = %d, want 3 (test file should be excluded)",
+			report.Summary.TotalFunctions)
+	}
+	// divide is the only source function with 0% coverage → the sole
+	// add_tests entry. If test_add leaked it would also be 0%-coverage and
+	// push this to 2.
+	if got := report.Summary.FixStrategyCounts[crap.FixAddTests]; got != 1 {
+		t.Errorf("add_tests fix-strategy count = %d, want 1 (test file must not contribute)", got)
+	}
+	for _, action := range report.Summary.RecommendedActions {
+		if action.Function == "test_add" {
+			t.Errorf("test_add leaked into recommended_actions")
+		}
+	}
+
 	// Verify the stderr mentions the external analyzer.
 	stderrStr := stderr.String()
 	if !bytes.Contains([]byte(stderrStr), []byte("fake-analyzer")) {
@@ -228,9 +253,11 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 			AssertionCount               int    `json:"assertion_count"`
 			AssertionDetectionConfidence int    `json:"assertion_detection_confidence"`
 			ContractCoverage             struct {
-				Percentage       float64 `json:"percentage"`
-				CoveredCount     int     `json:"covered_count"`
-				TotalContractual int     `json:"total_contractual"`
+				Percentage         float64 `json:"percentage"`
+				CoveredCount       int     `json:"covered_count"`
+				TotalContractual   int     `json:"total_contractual"`
+				NoContractExpected bool    `json:"no_contract_expected"`
+				Reason             string  `json:"reason"`
 			} `json:"contract_coverage"`
 		} `json:"quality_reports"`
 		Summary struct {
@@ -248,8 +275,8 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 		t.Fatalf("parsing JSON output: %v\nraw: %s", err, stdout.String())
 	}
 
-	if len(output.QualityReports) != 3 {
-		t.Fatalf("got %d quality reports, want 3", len(output.QualityReports))
+	if len(output.QualityReports) != 4 {
+		t.Fatalf("got %d quality reports, want 4", len(output.QualityReports))
 	}
 
 	// Per-test-function confidence: fraction of that test's mapping rows
@@ -258,6 +285,7 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 		"test_multiply":     100,
 		"test_divide_basic": 100,
 		"test_divide_error": 0,
+		"test_add":          0,
 	}
 	seen := make(map[string]bool)
 	for _, r := range output.QualityReports {
@@ -275,8 +303,8 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 				r.TestFunction, r.AssertionDetectionConfidence, want)
 		}
 	}
-	if len(seen) != 3 {
-		t.Errorf("got %d distinct test functions, want 3", len(seen))
+	if len(seen) != 4 {
+		t.Errorf("got %d distinct test functions, want 4", len(seen))
 	}
 
 	// test_multiply targets multiply, which has 1 contractual effect
@@ -298,19 +326,35 @@ func TestQualityWithExternalAnalyzer_HappyPath(t *testing.T) {
 		}
 	}
 
-	if output.Summary.TotalTests != 3 {
-		t.Errorf("Summary.TotalTests = %d, want 3", output.Summary.TotalTests)
+	if output.Summary.TotalTests != 4 {
+		t.Errorf("Summary.TotalTests = %d, want 4", output.Summary.TotalTests)
 	}
-	// Average over 3 reports: (100 + 50 + 50) / 3 ≈ 66.67.
+	// Average over 3 non-sentinel reports: (100 + 50 + 50) / 3 ≈ 66.67.
+	// test_add is a no-contract-expected report and is excluded.
 	wantAvgCoverage := (100.0 + 50.0 + 50.0) / 3.0
 	if output.Summary.AverageContractCoverage != wantAvgCoverage {
 		t.Errorf("Summary.AverageContractCoverage = %g, want %g",
 			output.Summary.AverageContractCoverage, wantAvgCoverage)
 	}
-	// Mean of per-report confidence: (100 + 100 + 0) / 3 → 67 (round half up).
-	if output.Summary.AssertionDetectionConfidence != 67 {
-		t.Errorf("Summary.AssertionDetectionConfidence = %d, want 67",
+	// Mean of per-report confidence: (100 + 100 + 0 + 0) / 4 → 50.
+	if output.Summary.AssertionDetectionConfidence != 50 {
+		t.Errorf("Summary.AssertionDetectionConfidence = %d, want 50",
 			output.Summary.AssertionDetectionConfidence)
+	}
+
+	// test_add targets `add`, which the analyzer reports with zero side
+	// effects; test_add lives in the analyzer's discover test_files set, so
+	// its report is marked no-contract-expected rather than "0% coverage".
+	for _, r := range output.QualityReports {
+		if r.TestFunction != "test_add" {
+			continue
+		}
+		if !r.ContractCoverage.NoContractExpected {
+			t.Errorf("test_add NoContractExpected = false, want true")
+		}
+		if r.ContractCoverage.Reason != "test_function_no_target_effects" {
+			t.Errorf("test_add Reason = %q, want %q", r.ContractCoverage.Reason, "test_function_no_target_effects")
+		}
 	}
 
 	// The headline feature: the analyzer's analyze response emits three

@@ -1317,7 +1317,7 @@ func runQualityWithExternalAnalyzer(p qualityParams) error {
 	}
 
 	// Build quality reports from external data.
-	reports, summary := adapter.BuildQualityFromMappings(mappings, results)
+	reports, summary := adapter.BuildQualityFromMappings(mappings, results, session.DiscoverTestFiles())
 
 	if len(reports) == 0 {
 		return handleQualityEmptyResults(p, summary)

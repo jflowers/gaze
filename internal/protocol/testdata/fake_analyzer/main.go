@@ -29,6 +29,15 @@ import (
 	"time"
 )
 
+// Package-level option state populated from flags. Kept as package vars so
+// handleRequest can read them without a growing parameter list.
+var (
+	noDiscover    bool
+	discoverError bool
+	reportCounts  bool
+	methodCounts  = map[string]int{}
+)
+
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      int64           `json:"id"`
@@ -37,9 +46,9 @@ type request struct {
 }
 
 type response struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      int64  `json:"id"`
-	Result  any    `json:"result,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      int64     `json:"id"`
+	Result  any       `json:"result,omitempty"`
 	Error   *rpcError `json:"error,omitempty"`
 }
 
@@ -57,6 +66,9 @@ func main() {
 	malformedJSON := flag.Bool("malformed-json", false, "return malformed JSON for first non-initialize request")
 	errorResponse := flag.Bool("error-response", false, "return JSON-RPC error for first non-initialize request")
 	noDocCoverage := flag.Bool("no-doc-coverage", false, "disable doc_coverage capability in initialize response")
+	flag.BoolVar(&noDiscover, "no-discover", false, "disable discover capability in initialize response")
+	flag.BoolVar(&discoverError, "discover-error", false, "return a JSON-RPC error for discover requests")
+	flag.BoolVar(&reportCounts, "report-counts", false, "write per-method invocation counts to stderr at EOF")
 	flag.Parse()
 
 	if !*stdio {
@@ -81,6 +93,7 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "fake_analyzer: failed to parse request: %v\n", err)
 			continue
 		}
+		methodCounts[req.Method]++
 
 		// Handle --malformed-json: return garbage for first non-initialize request.
 		if *malformedJSON && pastInitialize {
@@ -132,6 +145,11 @@ func main() {
 			time.Sleep(24 * time.Hour)
 		}
 	}
+
+	if reportCounts {
+		counts, _ := json.Marshal(methodCounts)
+		_, _ = fmt.Fprintf(os.Stderr, "fake_analyzer counts: %s\n", counts)
+	}
 }
 
 func handleRequest(req request, streaming, noDocCoverage bool) response {
@@ -142,16 +160,16 @@ func handleRequest(req request, streaming, noDocCoverage bool) response {
 			ID:      req.ID,
 			Result: map[string]any{
 				"capabilities": map[string]any{
-					"discover":         true,
+					"discover":         !noDiscover,
 					"test_mapping":     true,
 					"classify_signals": true,
 					"streaming":        streaming,
 					"doc_coverage":     !noDocCoverage,
 				},
-				"protocol_version":  "1.1.0",
-				"analyzer_name":     "fake-analyzer",
-				"language":          "python",
-				"language_version":  "3.12.0",
+				"protocol_version": "1.1.0",
+				"analyzer_name":    "fake-analyzer",
+				"language":         "python",
+				"language_version": "3.12.0",
 			},
 		}
 
@@ -227,6 +245,7 @@ func handleRequest(req request, streaming, noDocCoverage bool) response {
 					{"name": "add", "package": "math_utils", "file": "math_utils/ops.py", "line": 1, "complexity": 2},
 					{"name": "multiply", "package": "math_utils", "file": "math_utils/ops.py", "line": 10, "complexity": 3},
 					{"name": "divide", "package": "math_utils", "file": "math_utils/ops.py", "line": 20, "complexity": 5},
+					{"name": "test_add", "package": "tests", "file": "tests/test_ops.py", "line": 5, "complexity": 1},
 				},
 			},
 		}
@@ -245,6 +264,16 @@ func handleRequest(req request, streaming, noDocCoverage bool) response {
 		}
 
 	case "discover":
+		if discoverError {
+			return response{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error: &rpcError{
+					Code:    -32603,
+					Message: "internal error: simulated discover failure",
+				},
+			}
+		}
 		return response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -290,6 +319,16 @@ func handleRequest(req request, streaming, noDocCoverage bool) response {
 						"target_package":     "math_utils",
 						"side_effect_type":   "ErrorReturn",
 						"confidence":         60,
+					},
+					{
+						"test_function":      "test_add",
+						"test_file":          "tests/test_ops.py",
+						"assertion_location": "tests/test_ops.py:5",
+						"assertion_type":     "",
+						"target_function":    "add",
+						"target_package":     "math_utils",
+						"side_effect_type":   "",
+						"confidence":         0,
 					},
 				},
 			},

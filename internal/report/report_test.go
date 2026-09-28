@@ -529,6 +529,76 @@ func TestQualitySchema_ValidatesSampleOutput(t *testing.T) {
 	}
 }
 
+// TestQualitySchema_ValidatesNoContractExpected validates that a
+// contract_coverage object carrying the no_contract_expected and reason
+// fields (external-analyzer test functions with no target effects) conforms
+// to the QualitySchema.
+func TestQualitySchema_ValidatesNoContractExpected(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(QualitySchema))
+	if err != nil {
+		t.Fatalf("failed to parse QualitySchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("quality-schema.json", sch); err != nil {
+		t.Fatalf("failed to add quality schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("quality-schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile QualitySchema: %v", err)
+	}
+
+	sample := map[string]interface{}{
+		"quality_reports": []map[string]interface{}{
+			{
+				"test_function": "test_add",
+				"test_location": "tests/test_ops.py:5",
+				"target_function": map[string]interface{}{
+					"package":   "math_utils",
+					"function":  "add",
+					"signature": "add",
+					"location":  "math_utils/ops.py:5",
+				},
+				"contract_coverage": map[string]interface{}{
+					"percentage":           0.0,
+					"covered_count":        0,
+					"total_contractual":    0,
+					"no_contract_expected": true,
+					"reason":               "test_function_no_target_effects",
+				},
+				"over_specification": map[string]interface{}{
+					"count": 0,
+					"ratio": 0.0,
+				},
+				"assertion_detection_confidence": 0,
+				"metadata": map[string]interface{}{
+					"gaze_version":     "0.1.0",
+					"language":         "python",
+					"language_version": "3.11",
+					"duration_ms":      10,
+				},
+			},
+		},
+		"quality_summary": map[string]interface{}{
+			"total_tests":                    1,
+			"average_contract_coverage":      0.0,
+			"total_over_specifications":      0,
+			"assertion_detection_confidence": 0,
+		},
+	}
+
+	sampleJSON, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatalf("failed to marshal sample: %v", err)
+	}
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+	if err != nil {
+		t.Fatalf("failed to parse sample JSON: %v", err)
+	}
+	if err := compiled.Validate(inst); err != nil {
+		t.Errorf("no-contract-expected quality JSON does not conform to QualitySchema:\n%v", err)
+	}
+}
+
 // TestQualitySchema_ValidatesDegradedOutput validates that quality
 // JSON output with ssa_degraded: true conforms to the QualitySchema.
 func TestQualitySchema_ValidatesDegradedOutput(t *testing.T) {

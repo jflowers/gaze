@@ -1,0 +1,164 @@
+package adapter_test
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/unbound-force/gaze/internal/adapter"
+	"github.com/unbound-force/gaze/internal/taxonomy"
+)
+
+func TestSession_DiscoverPopulatesTestFiles(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+	defer session.Close()
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	tf := session.DiscoverTestFiles()
+	if !tf["tests/test_ops.py"] {
+		t.Errorf("DiscoverTestFiles() = %v, want entry for tests/test_ops.py", tf)
+	}
+
+	results, err := providers.Complexity.Analyze([]string{"./..."}, "/tmp/project")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(results) != 3 {
+		t.Errorf("Analyze() = %d funcs, want 3 (test-file entry filtered)", len(results))
+	}
+	for _, r := range results {
+		if r.File == "tests/test_ops.py" {
+			t.Errorf("test file tests/test_ops.py leaked into CRAP scoring")
+		}
+	}
+}
+
+func TestSession_DiscoverUncapable(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--no-discover", "--report-counts"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	if tf := session.DiscoverTestFiles(); tf != nil {
+		t.Errorf("DiscoverTestFiles() = %v, want nil when discover capability absent", tf)
+	}
+
+	results, err := providers.Complexity.Analyze([]string{"./..."}, "/tmp/project")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(results) != 4 {
+		t.Errorf("Analyze() = %d funcs, want 4 (no filtering when discover uncapable)", len(results))
+	}
+
+	// Assert discover was never invoked.
+	if err := session.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if counts := session.Client().Stderr(); strings.Contains(counts, `"discover"`) {
+		t.Errorf("discover should not be called when capability absent; counts = %q", counts)
+	}
+}
+
+func TestSession_DiscoverError(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--discover-error"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+	defer session.Close()
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	if tf := session.DiscoverTestFiles(); tf != nil {
+		t.Errorf("DiscoverTestFiles() = %v, want nil when discover fails", tf)
+	}
+	if !strings.Contains(stderr.String(), "discover failed") {
+		t.Errorf("stderr = %q, want substring %q", stderr.String(), "discover failed")
+	}
+	// Graceful fallback: CRAP analysis still completes with all functions
+	// scored (no data loss when discover fails).
+	results, err := providers.Complexity.Analyze([]string{"./..."}, "/tmp/project")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(results) != 4 {
+		t.Errorf("Analyze() = %d funcs, want 4 (no filtering when discover fails)", len(results))
+	}
+}
+
+func TestSession_DiscoverCalledOnce(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--report-counts"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+
+	if _, err := session.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	counts := session.Client().Stderr()
+	if !strings.Contains(counts, `"discover":1`) {
+		t.Errorf("subprocess stderr = %q, want discover invoked exactly once", counts)
+	}
+}
+
+func TestSession_QualitySentinelEndToEnd(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+	defer session.Close()
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	mappings, err := adapter.FetchTestMappings(session.Client(), []string{"./..."}, "/tmp/project")
+	if err != nil {
+		t.Fatalf("FetchTestMappings: %v", err)
+	}
+	results, err := providers.SideEffects.AllResults()
+	if err != nil {
+		t.Fatalf("AllResults: %v", err)
+	}
+
+	reports, summary := adapter.BuildQualityFromMappings(mappings, results, session.DiscoverTestFiles())
+
+	found := false
+	for _, r := range reports {
+		if r.TestFunction != "test_add" {
+			continue
+		}
+		found = true
+		if !r.ContractCoverage.NoContractExpected {
+			t.Errorf("test_add ContractCoverage.NoContractExpected = false, want true")
+		}
+		if r.ContractCoverage.Reason != "test_function_no_target_effects" {
+			t.Errorf("test_add ContractCoverage.Reason = %q, want %q", r.ContractCoverage.Reason, "test_function_no_target_effects")
+		}
+		if r.ContractCoverage.Percentage != 0 {
+			t.Errorf("test_add ContractCoverage.Percentage = %v, want 0", r.ContractCoverage.Percentage)
+		}
+	}
+	if !found {
+		names := make([]string, len(reports))
+		for i, r := range reports {
+			names[i] = r.TestFunction
+		}
+		t.Fatalf("no test_add report produced; reports = %v", names)
+	}
+	if summary.TotalTests != 4 {
+		t.Errorf("summary.TotalTests = %d, want 4", summary.TotalTests)
+	}
+}
+
+var _ taxonomy.QualityReport
