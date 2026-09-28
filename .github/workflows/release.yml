@@ -78,6 +78,24 @@ jobs:
       - name: Check signing secrets
         id: check-secrets
         run: |
+          if [ -z "$MACOS_SIGN_P12" ]; then
+            echo "::warning::Signing configuration missing: MACOS_SIGN_P12"
+          fi
+          if [ -z "$MACOS_SIGN_PASSWORD" ]; then
+            echo "::warning::Signing configuration missing: MACOS_SIGN_PASSWORD"
+          fi
+          if [ -z "$MACOS_SIGN_IDENTITY" ]; then
+            echo "::warning::Signing configuration missing: MACOS_SIGN_IDENTITY"
+          fi
+          if [ -z "$MACOS_NOTARY_KEY" ]; then
+            echo "::warning::Signing configuration missing: MACOS_NOTARY_KEY"
+          fi
+          if [ -z "$MACOS_NOTARY_KEY_ID" ]; then
+            echo "::warning::Signing configuration missing: MACOS_NOTARY_KEY_ID"
+          fi
+          if [ -z "$MACOS_NOTARY_ISSUER_ID" ]; then
+            echo "::warning::Signing configuration missing: MACOS_NOTARY_ISSUER_ID"
+          fi
           if [ -n "$MACOS_SIGN_P12" ] && [ -n "$MACOS_SIGN_PASSWORD" ] && [ -n "$MACOS_SIGN_IDENTITY" ] && [ -n "$MACOS_NOTARY_KEY" ] && [ -n "$MACOS_NOTARY_KEY_ID" ] && [ -n "$MACOS_NOTARY_ISSUER_ID" ]; then
             echo "has_secrets=true" >> "$GITHUB_OUTPUT"
           else

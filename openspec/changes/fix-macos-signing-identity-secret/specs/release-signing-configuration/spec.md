@@ -32,8 +32,8 @@ NOT run the `sign-macos` job.
 ### Requirement: Actionable incomplete-configuration diagnostics
 
 When signing configuration is incomplete, the readiness check MUST emit a
-GitHub warning for each missing secret in the form `Missing required signing
-secret: <NAME>`, where `<NAME>` is the constant secret name. It MUST NOT print
+GitHub warning for each missing secret in the form `Signing configuration
+missing: <NAME>`, where `<NAME>` is the constant secret name. It MUST NOT print
 or interpolate any environment variable or secret value. Diagnostic output
 MUST NOT change the existing signed-versus-unsigned routing decision.
 

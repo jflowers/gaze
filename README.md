@@ -67,7 +67,7 @@ Homebrew binaries are code-signed with an Apple Developer ID certificate and not
 Configure each value as a GitHub Actions secret. Set `MACOS_SIGN_IDENTITY` to
 the exact Apple Developer ID Application certificate label used by
 `codesign --sign`. When any required secret is not configured, the release
-pipeline produces unsigned binaries without error.
+pipeline produces unsigned binaries and reports which configuration is missing.
 
 ## Commands
 

@@ -22,7 +22,7 @@
   `check-signing-secrets` requires all six secrets consumed by `sign-macos`,
   and map the signing identity directly from `secrets.MACOS_SIGN_IDENTITY`
   with no variable or hardcoded fallback.
-- [ ] 2.2 Extend the existing `TestReleaseWorkflow_MacOSSigningIdentity` in
+- [x] 2.2 Extend the existing `TestReleaseWorkflow_MacOSSigningIdentity` in
   `cmd/gaze/release_workflow_test.go`. Read the workflow as configuration and
   preserve its existing gate-condition, routing, identity-mapping, and
   forbidden-fallback assertions. Isolate the `check-signing-secrets` section
@@ -31,18 +31,18 @@
 - [x] 2.3 [P] Update the macOS-signing prerequisite documentation in
   `README.md` to list the sixth secret and its certificate-label value.
   Preserve completed feature specs as point-in-time design artifacts.
-- [ ] 2.4 Update `check-signing-secrets` to emit a GitHub warning naming each
+- [x] 2.4 Update `check-signing-secrets` to emit a GitHub warning naming each
   missing secret before reporting `has_secrets=false`. Print constant secret
   names only; never print or interpolate values.
-- [ ] 2.5 After 2.2 and 2.4, extend
+- [x] 2.5 After 2.2 and 2.4, extend
   `TestReleaseWorkflow_MacOSSigningIdentity` to assert all six
-  `::warning::Missing required signing secret: <NAME>` lines individually.
+  `::warning::Signing configuration missing: <NAME>` lines individually.
   Assert that warning lines contain no `${{ ... }}` or shell-variable
   interpolation.
 
 ## 3. Verification
 
-- [ ] 3.1 Run `go build ./...`, `go test -race -count=1 -short -timeout 15m
+- [x] 3.1 Run `go build ./...`, `go test -race -count=1 -short -timeout 15m
   -coverprofile=coverage.out ./...`, and `go test -race -count=1 -run
   'TestRunSelfCheck' -timeout 30m ./cmd/gaze/...` to match the Test workflow's
   relevant build and test gates.

@@ -47,7 +47,7 @@ avoids a late signing or notarization failure for incomplete configuration.
 ### Report missing prerequisites without exposing values
 
 The readiness step will test each mapped value individually and emit a GitHub
-warning in the form `Missing required signing secret: <NAME>` when it is empty,
+warning in the form `Signing configuration missing: <NAME>` when it is empty,
 where `<NAME>` is a constant secret name. It will then preserve the existing
 `has_secrets=false` output and unsigned routing. Diagnostics will never
 interpolate, print, or otherwise reveal secret values.
