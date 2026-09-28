@@ -46,7 +46,7 @@
   -coverprofile=coverage.out ./...`, and `go test -race -count=1 -run
   'TestRunSelfCheck' -timeout 30m ./cmd/gaze/...` to match the Test workflow's
   relevant build and test gates.
-- [ ] 3.2 Run `golangci-lint run` and validate the changed workflow through
+- [x] 3.2 Run `golangci-lint run` and validate the changed workflow through
   the repository's MegaLinter-equivalent local tooling; fix all reported YAML
   or workflow syntax errors without changing CI gates.
 - [ ] 3.3 Have a repository administrator confirm on the next permitted

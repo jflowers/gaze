@@ -1,3 +1,5 @@
+# Release Signing Configuration
+
 ## ADDED Requirements
 
 ### Requirement: Complete macOS signing-secret gate
@@ -10,12 +12,14 @@ incomplete signing secret set through the existing unsigned-cask path and MUST
 NOT run the `sign-macos` job.
 
 #### Scenario: Complete signing configuration runs macOS signing
+
 - **GIVEN** the repository provides all six non-empty signing secrets
 - **WHEN** a release reaches the signing stage
 - **THEN** the signing-secret check reports signing credentials available and
   the `sign-macos` job is eligible to run
 
 #### Scenario: Missing signing identity preserves unsigned release
+
 - **GIVEN** the repository provides the other five signing secrets but does
   not provide `MACOS_SIGN_IDENTITY`
 - **WHEN** a release reaches the signing stage
@@ -23,6 +27,7 @@ NOT run the `sign-macos` job.
   the `sign-macos` job is skipped, and the unsigned-cask job remains eligible
 
 #### Scenario: Another missing signing secret preserves unsigned release
+
 - **GIVEN** the repository does not provide one of the other five signing
   secrets
 - **WHEN** a release reaches the signing stage
@@ -52,6 +57,7 @@ specific fallback identity or source the identity from a GitHub Actions
 variable.
 
 #### Scenario: Signing uses the repository secret
+
 - **GIVEN** the macOS signing job is eligible to run
 - **WHEN** it invokes `codesign`
 - **THEN** the command receives the identity through the
@@ -66,6 +72,7 @@ and three notary credentials. It MUST explain that its value is the current
 Apple Developer ID Application certificate label.
 
 #### Scenario: Maintainer provisions signing secrets
+
 - **GIVEN** a maintainer prepares repository secrets for macOS signing
 - **WHEN** they follow the documented prerequisites
 - **THEN** they can identify all six required secret names and the expected

@@ -17,6 +17,7 @@ graph, and uses isolated static validation rather than Apple services.
 ## Goals / Non-Goals
 
 ### Goals
+
 - Source the macOS signing identity exclusively from
   `secrets.MACOS_SIGN_IDENTITY`.
 - Treat all six secrets consumed by the signing job as one complete signing
@@ -28,6 +29,7 @@ graph, and uses isolated static validation rather than Apple services.
   `codesign` or `notarytool`.
 
 ### Non-Goals
+
 - Change the certificate, notary credentials, keychain commands, notarization,
   process, cask publication, or release permissions.
 - Add a secret value, rotate an Apple certificate, or modify repository

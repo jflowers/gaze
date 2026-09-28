@@ -27,14 +27,17 @@ signing credentials are unavailable.
 ## Capabilities
 
 ### New Capabilities
+
 - None.
 
 ### Modified Capabilities
+
 - `release-signing-configuration`: Configure the macOS signing identity as a
   required GitHub Actions secret and treat incomplete signing configuration as
   unavailable signing credentials.
 
 ### Removed Capabilities
+
 - None.
 
 ## Impact
