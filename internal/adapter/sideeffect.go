@@ -8,7 +8,9 @@ import (
 	"io"
 	"sync"
 
+	"github.com/unbound-force/gaze/v2/internal/adapter/docsignal"
 	"github.com/unbound-force/gaze/v2/internal/config"
+	"github.com/unbound-force/gaze/v2/internal/docscan"
 	"github.com/unbound-force/gaze/v2/internal/protocol"
 	"github.com/unbound-force/gaze/v2/internal/taxonomy"
 )
@@ -155,17 +157,34 @@ func (a *ExternalSideEffectAnalyzer) loadStreaming() error {
 	return nil
 }
 
-// classifyAndMerge calls the classify_signals protocol method when
-// the external analyzer supports it, then merges the returned signals
-// into the cached analysis results. Must be called after a.cached is
-// populated. Must be called with a.mu held.
+// classifyAndMerge derives doc-derived classification signals
+// unconditionally after the analysis cache is populated, then calls the
+// classify_signals protocol method only when the external analyzer
+// advertises the capability, and merges both signal sets into the cached
+// analysis results. Must be called after a.cached is populated. Must be
+// called with a.mu held.
+//
+// Doc-signal derivation is a quality improvement, not a correctness
+// requirement (design D5): when rootDir is empty or docscan.Scan fails,
+// derivation is skipped and classification proceeds with protocol signals
+// (if any) alone. Doc signals flow through even when the analyzer lacks
+// classify_signals.
 func (a *ExternalSideEffectAnalyzer) classifyAndMerge() {
-	if !a.caps.ClassifySignals {
-		return
+	var docSignals []docsignal.DerivedSignal
+	if a.rootDir != "" {
+		if docs, err := docscan.Scan(a.rootDir, docscan.ScanOptions{Config: a.config}); err == nil {
+			docSignals = docsignal.DeriveSignals(docs, a.cached, a.rootDir, a.stderr)
+		} else if a.stderr != nil {
+			_, _ = fmt.Fprintf(a.stderr, "warning: doc scan failed, skipping doc-signal derivation: %v\n", err)
+		}
 	}
 
-	signals := fetchClassifySignals(a.client, a.rootDir, a.patterns, a.stderr)
-	mergeClassifications(a.cached, signals, a.config)
+	var signals []protocol.ClassifySignalData
+	if a.caps.ClassifySignals {
+		signals = fetchClassifySignals(a.client, a.rootDir, a.patterns, a.stderr)
+	}
+
+	mergeClassifications(a.cached, signals, docSignals, a.config)
 }
 
 // parseSideEffectStream reads JSONL-encoded AnalyzedFunction records

@@ -12,12 +12,14 @@
 //
 // Flags:
 //
-//	--stdio           Required flag (matches real analyzer convention)
-//	--crash-after=M   Exit immediately after responding to method M
-//	--hang            Sleep forever after responding to initialize
-//	--malformed-json  Return invalid JSON for the first non-initialize request
-//	--error-response  Return a JSON-RPC error for the first non-initialize request
-//	--no-doc-coverage Disable doc_coverage capability in initialize response
+//	--stdio               Required flag (matches real analyzer convention)
+//	--crash-after=M       Exit immediately after responding to method M
+//	--hang                Sleep forever after responding to initialize
+//	--malformed-json      Return invalid JSON for the first non-initialize request
+//	--error-response      Return a JSON-RPC error for the first non-initialize request
+//	--no-doc-coverage     Disable doc_coverage capability in initialize response
+//	--no-classify-signals Disable classify_signals capability in initialize response
+//	--unclassified-effect Add an unclassified ContainerMutation effect to "add" in the analyze response
 package main
 
 import (
@@ -71,6 +73,8 @@ func main() {
 	flag.BoolVar(&options.discoverError, "discover-error", false, "return a JSON-RPC error for discover requests")
 	flag.BoolVar(&options.emptyDiscover, "empty-discover", false, "return an empty test_files list for discover requests")
 	flag.BoolVar(&options.reportCounts, "report-counts", false, "write per-method invocation counts to stderr at EOF")
+	noClassifySignals := flag.Bool("no-classify-signals", false, "disable classify_signals capability in initialize response")
+	unclassifiedEffect := flag.Bool("unclassified-effect", false, "add an unclassified ContainerMutation effect to \"add\" in the analyze response")
 	flag.Parse()
 
 	if !*stdio {
@@ -135,7 +139,7 @@ func main() {
 			time.Sleep(24 * time.Hour)
 		}
 
-		resp := handleRequest(req, *hangStream, *noDocCoverage, options)
+		resp := handleRequest(req, *hangStream, *noDocCoverage, *noClassifySignals, *unclassifiedEffect, options)
 		writeResponse(resp)
 
 		if req.Method == "initialize" {
@@ -159,7 +163,7 @@ func main() {
 	}
 }
 
-func handleRequest(req request, streaming, noDocCoverage bool, options analyzerOptions) response {
+func handleRequest(req request, streaming, noDocCoverage, noClassifySignals, unclassifiedEffect bool, options analyzerOptions) response {
 	switch req.Method {
 	case "initialize":
 		return response{
@@ -169,7 +173,7 @@ func handleRequest(req request, streaming, noDocCoverage bool, options analyzerO
 				"capabilities": map[string]any{
 					"discover":         !options.noDiscover,
 					"test_mapping":     true,
-					"classify_signals": true,
+					"classify_signals": !noClassifySignals,
 					"streaming":        streaming,
 					"doc_coverage":     !noDocCoverage,
 				},
@@ -181,6 +185,15 @@ func handleRequest(req request, streaming, noDocCoverage bool, options analyzerO
 		}
 
 	case "analyze":
+		addEffects := []map[string]any{}
+		if unclassifiedEffect {
+			addEffects = append(addEffects, map[string]any{
+				"type":        "ContainerMutation",
+				"description": "mutates a shared container",
+				"location":    "math_utils/ops.py:5:3",
+				"target":      "items",
+			})
+		}
 		return response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -237,7 +250,7 @@ func handleRequest(req request, streaming, noDocCoverage bool, options analyzerO
 						"package":      "math_utils",
 						"file":         "math_utils/ops.py",
 						"line":         1,
-						"side_effects": []map[string]any{},
+						"side_effects": addEffects,
 					},
 				},
 			},

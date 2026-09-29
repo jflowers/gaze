@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/unbound-force/gaze/v2/internal/adapter/docsignal"
 	"github.com/unbound-force/gaze/v2/internal/classify"
 	"github.com/unbound-force/gaze/v2/internal/config"
 	"github.com/unbound-force/gaze/v2/internal/protocol"
@@ -45,11 +46,20 @@ func fetchClassifySignals(
 	return result.Signals
 }
 
-// mergeClassifications groups signals by (Package, Function,
-// SideEffectType) and attaches computed classifications to cached
-// effects. Effects that already have a non-nil Classification (inline
-// from the analyze response) are preserved — the analyzer's explicit
-// classification takes precedence (design D6).
+// mergeClassifications groups protocol and doc-derived signals by
+// (Package, Function, SideEffectType) and attaches computed
+// classifications to cached effects. Effects that already have a
+// non-nil Classification (inline from the analyze response) are
+// preserved — the analyzer's explicit classification takes precedence
+// (design D6).
+//
+// docSignals are doc-derived signals produced by
+// docsignal.DeriveSignals. Each DerivedSignal is reduced to its
+// embedded Signal field and grouped alongside protocol signals using
+// the same (Package, Function, SideEffectType) key; classify.ComputeScore
+// then sums the combined weights additively (design D4). The function
+// does not distinguish between signal sources during scoring — all
+// signals for a given tuple are passed together.
 //
 // When a function has multiple effects of the same SideEffectType,
 // the computed classification is applied to all matching effects that
@@ -61,9 +71,10 @@ func fetchClassifySignals(
 func mergeClassifications(
 	cached []taxonomy.AnalysisResult,
 	signals []protocol.ClassifySignalData,
+	docSignals []docsignal.DerivedSignal,
 	cfg *config.GazeConfig,
 ) {
-	if len(signals) == 0 {
+	if len(signals) == 0 && len(docSignals) == 0 {
 		return
 	}
 
@@ -89,6 +100,17 @@ func mergeClassifications(
 			Weight:    s.Weight,
 			Reasoning: s.Reasoning,
 		})
+	}
+	// Reduce each doc-derived signal to its embedded Signal field and
+	// group it alongside protocol signals using the same key, so that
+	// classify.ComputeScore sums the combined weights additively.
+	for _, ds := range docSignals {
+		key := signalKey{
+			pkg:      ds.Package,
+			function: ds.Function,
+			seType:   ds.SideEffectType,
+		}
+		grouped[key] = append(grouped[key], ds.Signal)
 	}
 
 	// Match grouped signals to cached effects and compute classifications.

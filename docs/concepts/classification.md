@@ -1,6 +1,6 @@
 # Classification
 
-Once Gaze detects a function's [side effects](side-effects.md), the next question is: *which of these effects are part of the function's contract?* Classification answers this by assigning each side effect one of three labels — [contractual](../reference/glossary.md#contractual), [ambiguous](../reference/glossary.md#ambiguous), or [incidental](../reference/glossary.md#incidental) — based on weighted evidence from five mechanical signal analyzers.
+Once Gaze detects a function's [side effects](side-effects.md), the next question is: *which of these effects are part of the function's contract?* Classification answers this by assigning each side effect one of three labels — [contractual](../reference/glossary.md#contractual), [ambiguous](../reference/glossary.md#ambiguous), or [incidental](../reference/glossary.md#incidental) — based on weighted evidence from five mechanical signal analyzers (Go-native), plus a sixth doc-derived source that applies only to external-analyzer projects.
 
 Classification is the bridge between raw side effect detection and meaningful quality metrics. Only [contractual](../reference/glossary.md#contractual) effects count toward [contract coverage](../reference/glossary.md#contract-coverage). Only [incidental](../reference/glossary.md#incidental) effects count toward [over-specification](../reference/glossary.md#over-specification-score). [Ambiguous](../reference/glossary.md#ambiguous) effects are excluded from both metrics.
 
@@ -40,7 +40,7 @@ This means P0 effects reach the default contractual threshold (75) with no addit
 
 #### Step 2: Signal Accumulation
 
-Each of the five signal analyzers contributes a weighted signal (positive or negative). Signals with zero weight or empty source are skipped. The weights are added to the running score.
+Each of the five Go-native signal analyzers contributes a weighted signal (positive or negative). Signals with zero weight or empty source are skipped. The weights are added to the running score.
 
 #### Step 3: Contradiction Penalty
 
@@ -50,7 +50,7 @@ If both positive and negative signals are present (e.g., the function name sugge
 
 The final score is clamped to the range [0, 100].
 
-## The Five Signal Analyzers
+## The Five Go-Native Signal Analyzers
 
 ### 1. Interface Satisfaction (max weight: +30)
 
@@ -121,6 +121,22 @@ Parses the function's documentation comment for behavioral declarations.
 
 **Incidental keywords** (weight: -15):
 `logs`, `prints`, `traces`, `debugs`
+
+## The Doc-Derived Signal Source (External Analyzers Only)
+
+For [external-analyzer](../porting/contracts.md) projects, a sixth source derives classification signals from the project's Markdown documentation and an optional sidecar file. This source exists because external analyzers lack the Go-specific signals above (interface satisfaction, API visibility, caller dependency, naming, GoDoc).
+
+Three source tokens are produced, each with a signed weight:
+
+| Source Token | Weight | Meaning |
+|---|---|---|
+| `architecture_doc` | ±25 | Annotation in a non-README Markdown document (design doc, ADR, etc.) |
+| `readme` | ±15 | Annotation in a `README*` document |
+| `sidecar` | ±30 | Entry in `.uf/gaze/contracts.yaml` (or `.json`) |
+
+A `contractual` annotation contributes a **positive** weight; an `incidental` annotation contributes a **negative** weight. Sidecar entries override grammar annotations for the same `(package, function, side_effect_type)` tuple, and root-level documents override nested documents.
+
+See [Document Annotations](../guides/doc-annotations.md) for the annotation grammar, sidecar format, and precedence rules.
 
 ## Worked Example
 

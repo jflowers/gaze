@@ -12,6 +12,7 @@ import (
 
 	"github.com/unbound-force/gaze/v2/internal/adapter"
 	"github.com/unbound-force/gaze/v2/internal/protocol"
+	"github.com/unbound-force/gaze/v2/internal/taxonomy"
 )
 
 // fakeBinaryPath is the path to the compiled fake_analyzer binary.
@@ -1112,4 +1113,72 @@ func startFakeAnalyzerWithArgs(t *testing.T, extraArgs ...string) *protocol.Clie
 		t.Fatalf("starting fake analyzer with args %v: %v", extraArgs, err)
 	}
 	return client
+}
+
+// TestExternalSideEffectAnalyzer_DocSignalClassification verifies the
+// end-to-end doc-signal → classification flow through the fake analyzer
+// binary. With --no-classify-signals the analyzer advertises
+// classify_signals: false, and with --unclassified-effect its analyze
+// response emits an unclassified ContainerMutation effect on "add". A
+// design doc in the session root declares that effect contractual, so the
+// doc-derived signal is the sole classification source.
+func TestExternalSideEffectAnalyzer_DocSignalClassification(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: spawns external process")
+	}
+
+	// Build a project root containing an annotated design doc.
+	rootDir := t.TempDir()
+	docPath := filepath.Join(rootDir, "DESIGN.md")
+	if err := os.WriteFile(docPath, []byte("<!-- gaze:contractual ContainerMutation -->\n"), 0o644); err != nil {
+		t.Fatalf("writing design doc: %v", err)
+	}
+
+	client := startFakeAnalyzerWithArgs(t, "--no-classify-signals", "--unclassified-effect")
+	defer func() { _ = client.Close() }()
+
+	caps := mustInitialize(t, client)
+	if caps.ClassifySignals {
+		t.Fatal("expected ClassifySignals=false with --no-classify-signals")
+	}
+
+	var stderr bytes.Buffer
+	analyzer := adapter.NewExternalSideEffectAnalyzer(
+		client, caps, rootDir, []string{"./..."}, &stderr, nil,
+	)
+
+	results, err := analyzer.Analyze("math_utils")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	// "add" now has a single unclassified ContainerMutation effect; the
+	// design doc is its only classification source.
+	for _, r := range results {
+		if r.Target.Function != "add" {
+			continue
+		}
+		if len(r.SideEffects) != 1 {
+			t.Fatalf("add has %d effects, want 1 (unclassified-effect flag)", len(r.SideEffects))
+		}
+		e := r.SideEffects[0]
+		if e.Type != taxonomy.ContainerMutation {
+			t.Fatalf("add effect type = %q, want %q", e.Type, taxonomy.ContainerMutation)
+		}
+		if e.Classification == nil {
+			t.Fatal("expected doc-signal classification on unclassified effect")
+		}
+		// ContainerMutation is P1 (tier boost +10): base 50 + 10 + 25 = 85.
+		if e.Classification.Label != taxonomy.Contractual {
+			t.Errorf("label = %q, want %q", e.Classification.Label, taxonomy.Contractual)
+		}
+		if e.Classification.Confidence != 85 {
+			t.Errorf("confidence = %d, want 85", e.Classification.Confidence)
+		}
+		if len(e.Classification.Signals) == 0 || e.Classification.Signals[0].Source != "architecture_doc" {
+			t.Errorf("expected architecture_doc signal, got %+v", e.Classification.Signals)
+		}
+		return
+	}
+	t.Fatal("add function not found in analyze results")
 }
