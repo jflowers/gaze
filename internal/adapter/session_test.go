@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/unbound-force/gaze/internal/adapter"
-	"github.com/unbound-force/gaze/internal/taxonomy"
 )
 
 func TestSession_DiscoverPopulatesTestFiles(t *testing.T) {
@@ -38,7 +37,7 @@ func TestSession_DiscoverPopulatesTestFiles(t *testing.T) {
 	}
 }
 
-func TestSession_DiscoverUncapable(t *testing.T) {
+func TestSession_DiscoverCapabilityDisabled(t *testing.T) {
 	var stderr bytes.Buffer
 	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--no-discover", "--report-counts"}, "/tmp/project", []string{"./..."}, &stderr, nil)
 
@@ -56,7 +55,7 @@ func TestSession_DiscoverUncapable(t *testing.T) {
 		t.Fatalf("Analyze: %v", err)
 	}
 	if len(results) != 4 {
-		t.Errorf("Analyze() = %d funcs, want 4 (no filtering when discover uncapable)", len(results))
+		t.Errorf("Analyze() = %d funcs, want 4 (no filtering when discover capability is disabled)", len(results))
 	}
 
 	// Assert discover was never invoked.
@@ -160,5 +159,3 @@ func TestSession_QualitySentinelEndToEnd(t *testing.T) {
 		t.Errorf("summary.TotalTests = %d, want 4", summary.TotalTests)
 	}
 }
-
-var _ taxonomy.QualityReport
