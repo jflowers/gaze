@@ -8,7 +8,7 @@ External analyzers report complexity for both source and test files, but only in
 
 - Exclude external-analyzer test files from CRAP scoring when `discover` capability is available.
 - Store the `discover` result on the `Session` so the complexity provider and CLI wiring can access it without a second protocol call.
-- Gracefully degrade when `discover` is unsupported or fails — no hard errors, no data loss.
+- Gracefully degrade when `discover` is unsupported or returns a protocol error — no hard errors, no data loss. (A `discover` timeout is the exception: the transport kills the shared analyzer subprocess on deadline, so `Initialize` fails fast rather than continuing with a poisoned client.)
 - Distinguish "test function with no target effects" from "production function with unasserted contracts" in quality reports, without emitting schema-invalid JSON.
 - Ensure Go-mode behavior is unchanged (zero-impact on existing code paths).
 
@@ -40,7 +40,7 @@ The call is gated on `caps.Discover`. When the capability is absent, the `testFi
 
 This follows the same pattern as `DocCoverage()` and `Analyze()` on `Session` — capability-gated protocol calls that return `nil, nil` when the feature is unavailable.
 
-**Constitution alignment**: Minimal Assumptions — analyzers without `discover` are unaffected. Actionable Output — graceful degradation with a stderr warning, no hard failure.
+**Constitution alignment**: Minimal Assumptions — analyzers without `discover` are unaffected. Actionable Output — graceful degradation with a stderr warning for protocol errors; a `discover` timeout fails fast (the transport kills the shared subprocess on deadline, so fail-fast is the only safe response).
 
 ### D3: Store `testFiles` as a `map[string]bool` of cleaned relative paths
 
