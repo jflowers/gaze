@@ -231,3 +231,5 @@ Canonical `snake_case` field names for cross-implementation compatibility:
 | `assertion_count` | QualityReport | int |
 | `unmapped_assertions` | QualityReport | array |
 | `assertion_detection_confidence` | QualityReport | int |
+| `no_contract_expected` | ContractCoverage | bool (nullable) |
+| `reason` | ContractCoverage | string (nullable) |
