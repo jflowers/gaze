@@ -55,7 +55,19 @@ Requires Go 1.25.0 or later. For platform notes and verification steps, see [Ins
 
 Homebrew binaries are code-signed with an Apple Developer ID certificate and notarized by Apple's notary service. macOS Gatekeeper trusts the binary on first run -- no security overrides needed.
 
-**For maintainers**: Signing requires 5 GitHub secrets (Apple Developer ID certificate + App Store Connect API key). See [quickstart guide](specs/014-macos-notarization/quickstart.md) for setup instructions. When secrets are not configured, the release pipeline produces unsigned binaries without error.
+**For maintainers**: Signing requires these six repository values:
+
+- `MACOS_SIGN_P12`
+- `MACOS_SIGN_PASSWORD`
+- `MACOS_SIGN_IDENTITY`
+- `MACOS_NOTARY_KEY`
+- `MACOS_NOTARY_KEY_ID`
+- `MACOS_NOTARY_ISSUER_ID`
+
+Configure each value as a GitHub Actions secret. Set `MACOS_SIGN_IDENTITY` to
+the exact Apple Developer ID Application certificate label used by
+`codesign --sign`. When any required secret is not configured, the release
+pipeline produces unsigned binaries and reports which configuration is missing.
 
 ## Commands
 
@@ -252,6 +264,7 @@ For setup details, see the [OpenCode Integration guide](docs/guides/opencode-int
 - **P3-P4 side effects not yet detected.** The taxonomy defines types for stdout/stderr writes, environment mutations, mutex operations, reflection, unsafe, and other P3-P4 effects, but detection logic is not yet implemented for these tiers.
 - **GazeCRAP accuracy is limited.** The quality pipeline is wired into the CRAP command and GazeCRAP scores are computed when contract coverage data is available. However, assertion-to-side-effect mapping accuracy is currently ~86% (target: 90%), primarily affecting cross-target assertions and go-cmp patterns (tracked as GitHub Issue #6).
 - **No CGo or unsafe analysis.** Functions using `cgo` or `unsafe.Pointer` are not analyzed for their specific side effects.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
