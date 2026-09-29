@@ -29,14 +29,12 @@ import (
 	"time"
 )
 
-// Package-level option state populated from flags. Kept as package vars so
-// handleRequest can read them without a growing parameter list.
-var (
+type analyzerOptions struct {
 	noDiscover    bool
 	discoverError bool
 	reportCounts  bool
-	methodCounts  = map[string]int{}
-)
+	methodCounts  map[string]int
+}
 
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -59,6 +57,7 @@ type rpcError struct {
 }
 
 func main() {
+	options := analyzerOptions{methodCounts: make(map[string]int)}
 	stdio := flag.Bool("stdio", false, "run in stdio mode")
 	crashAfter := flag.String("crash-after", "", "crash after responding to this method")
 	hang := flag.Bool("hang", false, "hang after initialize")
@@ -66,9 +65,9 @@ func main() {
 	malformedJSON := flag.Bool("malformed-json", false, "return malformed JSON for first non-initialize request")
 	errorResponse := flag.Bool("error-response", false, "return JSON-RPC error for first non-initialize request")
 	noDocCoverage := flag.Bool("no-doc-coverage", false, "disable doc_coverage capability in initialize response")
-	flag.BoolVar(&noDiscover, "no-discover", false, "disable discover capability in initialize response")
-	flag.BoolVar(&discoverError, "discover-error", false, "return a JSON-RPC error for discover requests")
-	flag.BoolVar(&reportCounts, "report-counts", false, "write per-method invocation counts to stderr at EOF")
+	flag.BoolVar(&options.noDiscover, "no-discover", false, "disable discover capability in initialize response")
+	flag.BoolVar(&options.discoverError, "discover-error", false, "return a JSON-RPC error for discover requests")
+	flag.BoolVar(&options.reportCounts, "report-counts", false, "write per-method invocation counts to stderr at EOF")
 	flag.Parse()
 
 	if !*stdio {
@@ -93,7 +92,7 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "fake_analyzer: failed to parse request: %v\n", err)
 			continue
 		}
-		methodCounts[req.Method]++
+		options.methodCounts[req.Method]++
 
 		// Handle --malformed-json: return garbage for first non-initialize request.
 		if *malformedJSON && pastInitialize {
@@ -128,7 +127,7 @@ func main() {
 			continue
 		}
 
-		resp := handleRequest(req, *hangStream, *noDocCoverage)
+		resp := handleRequest(req, *hangStream, *noDocCoverage, options)
 		writeResponse(resp)
 
 		if req.Method == "initialize" {
@@ -146,13 +145,13 @@ func main() {
 		}
 	}
 
-	if reportCounts {
-		counts, _ := json.Marshal(methodCounts)
+	if options.reportCounts {
+		counts, _ := json.Marshal(options.methodCounts)
 		_, _ = fmt.Fprintf(os.Stderr, "fake_analyzer counts: %s\n", counts)
 	}
 }
 
-func handleRequest(req request, streaming, noDocCoverage bool) response {
+func handleRequest(req request, streaming, noDocCoverage bool, options analyzerOptions) response {
 	switch req.Method {
 	case "initialize":
 		return response{
@@ -160,7 +159,7 @@ func handleRequest(req request, streaming, noDocCoverage bool) response {
 			ID:      req.ID,
 			Result: map[string]any{
 				"capabilities": map[string]any{
-					"discover":         !noDiscover,
+					"discover":         !options.noDiscover,
 					"test_mapping":     true,
 					"classify_signals": true,
 					"streaming":        streaming,
@@ -264,7 +263,7 @@ func handleRequest(req request, streaming, noDocCoverage bool) response {
 		}
 
 	case "discover":
-		if discoverError {
+		if options.discoverError {
 			return response{
 				JSONRPC: "2.0",
 				ID:      req.ID,
