@@ -60,4 +60,4 @@ Reports again identify real production-code risk: `recommended_actions` and fix-
 
 **Assessment**: PASS
 
-The filtering is a pure function of (complexity entries, test-file set) and the summary exclusion is a pure function of the report set — both unit-testable in isolation with synthetic data. Integration coverage flows through the existing fake analyzer, and Go-mode regression tests confirm zero impact. Coverage strategy is specified in `design.md`/`tasks.md` (§6).
+The filtering is a pure function of (complexity entries, test-file set) and the summary exclusion is a pure function of the report set — both unit-testable in isolation with synthetic data. Integration coverage flows through the existing fake analyzer, and Go-mode behavior is protected by the purely additive nature of the change plus the unchanged Go-mode test suite. Coverage strategy is specified in `design.md`/`tasks.md` (§6).

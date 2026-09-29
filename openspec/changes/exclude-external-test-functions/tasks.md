@@ -14,11 +14,11 @@
 
 - [x] 1.1 Add `testFiles map[string]bool` field to `Session` in `internal/adapter/session.go`; add a `DiscoverTestFiles() map[string]bool` accessor that returns `nil` when `discover` was not called
 - [x] 1.2 In `Session.Initialize()`, after the `initialize` handshake and capability capture, gate on `caps.Discover` and call the `discover` protocol method once BEFORE constructing the providers; on success normalize each `test_files` entry with `filepath.Clean` and populate `s.testFiles`; on protocol error/timeout log a warning to `s.stderr` (format `"warning: discover failed: %v"`) and leave `testFiles` nil (graceful fallback)
-- [x] 1.3 Add `Session.discover()` helper mirroring the `DocCoverage()` capability-gated pattern, using `protocol.ShortTimeout` (30s) for the call context (NOT `AnalysisTimeout`)
+- [x] 1.3 Add `Session.discoverTestFiles()` performing the `discover` call inline (mirroring the `DocCoverage()` capability-gated pattern), using `protocol.ShortTimeout` (30s) for the call context (NOT `AnalysisTimeout`); returns an error on timeout so `Initialize` can fail fast
 
 ## 2. Complexity provider filtering
 
-- [x] 2.1 Add a `testFiles map[string]bool` field and a `SetTestFiles(map[string]bool)` setter to `ExternalComplexityProvider` in `internal/adapter/complexity.go`; in `Session.Initialize()` call `complexityProvider.SetTestFiles(s.testFiles)` after the discover call and provider construction
+- [x] 2.1 Add a `testFiles map[string]bool` field to `ExternalComplexityProvider` in `internal/adapter/complexity.go`, injected via the constructor `NewExternalComplexityProvider(client, testFiles)`; in `Session.Initialize()` pass `s.testFiles` to the constructor
 - [x] 2.2 In `ExternalComplexityProvider.Analyze`, filter the result of `convertComplexity` by dropping any `FunctionComplexity` whose `filepath.Clean(File)` is in `testFiles`; return the filtered slice (no-op when `testFiles` is nil/empty)
 
 ## 3. Quality contract-coverage sentinel

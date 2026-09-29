@@ -28,7 +28,7 @@ The `computeScores` function in `internal/crap/analyze.go` already has a Go-spec
 
 Instead, the `ExternalComplexityProvider.Analyze` method filters the returned `[]FunctionComplexity` before returning it to the CRAP pipeline. This keeps the filtering at the adapter layer, where it belongs, and avoids adding a general-purpose field to `Options` that only external-analyzer callers would populate.
 
-The provider stores the excluded-file set via a new `testFiles` field set through a `SetTestFiles` method. `Session.Initialize()` calls `discover` BEFORE constructing the complexity provider, then invokes `SetTestFiles(s.testFiles)` — guaranteeing the filter is populated before `Analyze` is ever invoked (deterministic ordering, no silent no-op).
+The provider receives the excluded-file set via constructor injection: `NewExternalComplexityProvider(client, testFiles)`. `Session.Initialize()` calls `discover` BEFORE constructing the complexity provider and passes `s.testFiles` to the constructor — guaranteeing the filter is populated before `Analyze` is ever invoked (deterministic ordering, no silent no-op).
 
 **Constitution alignment**: Minimal Assumptions — the filtering is an adapter concern; the universal scoring engine is unchanged. Accuracy — the provider derives its filter from the analyzer's own self-describing `discover` output.
 
