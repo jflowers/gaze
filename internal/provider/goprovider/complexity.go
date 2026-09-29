@@ -7,7 +7,13 @@
 package goprovider
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/fzipp/gocyclo"
 	"github.com/unbound-force/gaze/v2/internal/crap"
@@ -41,9 +47,8 @@ func (p *GoComplexityProvider) Analyze(patterns []string, rootDir string) ([]cra
 
 	stats := gocyclo.Analyze(absPaths, testFileRegexp)
 
-	// Convert gocyclo.Stat → crap.FunctionComplexity (D4).
-	// Field mapping: PkgName→Package, FuncName→Function,
-	// Pos.Filename→File, Pos.Line→Line, Complexity→Complexity.
+	endLines := buildEndLineMap(absPaths)
+
 	result := make([]crap.FunctionComplexity, len(stats))
 	for i, stat := range stats {
 		result[i] = crap.FunctionComplexity{
@@ -51,9 +56,62 @@ func (p *GoComplexityProvider) Analyze(patterns []string, rootDir string) ([]cra
 			Function:   stat.FuncName,
 			File:       stat.Pos.Filename,
 			Line:       stat.Pos.Line,
+			EndLine:    endLines[stat.Pos.Filename][stat.Pos.Line],
 			Complexity: stat.Complexity,
 		}
 	}
 
 	return result, nil
+}
+
+type fileLineKey struct {
+	file string
+	line int
+}
+
+func buildEndLineMap(paths []string) map[string]map[int]int {
+	fset := token.NewFileSet()
+	result := make(map[string]map[int]int)
+
+	var files []string
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			_ = filepath.Walk(p, func(path string, fi os.FileInfo, err error) error {
+				if err != nil {
+					return nil
+				}
+				if !fi.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+					files = append(files, path)
+				}
+				return nil
+			})
+		} else {
+			files = append(files, p)
+		}
+	}
+
+	for _, file := range files {
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			continue
+		}
+		filename := fset.Position(f.Pos()).Filename
+		lineMap := make(map[int]int)
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			startLine := fset.Position(fn.Pos()).Line
+			endLine := fset.Position(fn.End()).Line
+			lineMap[startLine] = endLine
+		}
+		result[filename] = lineMap
+	}
+
+	return result
 }

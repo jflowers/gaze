@@ -23,6 +23,7 @@ import (
 	"github.com/unbound-force/gaze/v2/internal/cliutil"
 	"github.com/unbound-force/gaze/v2/internal/config"
 	"github.com/unbound-force/gaze/v2/internal/crap"
+	"github.com/unbound-force/gaze/v2/internal/diff"
 	"github.com/unbound-force/gaze/v2/internal/docscan"
 	"github.com/unbound-force/gaze/v2/internal/docscan/apidoc"
 	"github.com/unbound-force/gaze/v2/internal/loader"
@@ -456,6 +457,7 @@ type crapParams struct {
 	baselinePath    string
 	analyzerFlag    string
 	languageFlag    string
+	gateOnChange    string
 	stdout          io.Writer
 	stderr          io.Writer
 
@@ -581,16 +583,43 @@ func runCrap(p crapParams) error {
 		return baselineErr
 	}
 
+	// Compute change gate if --gate-on-change is set.
+	var changeGateResult *crap.ChangeGateResult
+	if p.gateOnChange != "" {
+		differ := &diff.GitDiffer{}
+		diffOutput, err := differ.Diff(p.gateOnChange)
+		if err != nil {
+			return err
+		}
+		fileChanges := diff.Parse(diffOutput)
+		changeGateResult = crap.EvaluateChangeGate(
+			rpt.Scores, fileChanges,
+			p.opts.CRAPThreshold, p.opts.GazeCRAPThreshold)
+	}
+
 	// Write output and CI summary.
 	if err := writeCrapOutputAndSummary(
 		p.stdout, p.stderr, p.format, rpt, comparisonResult,
+		changeGateResult,
 		p.maxCrapload, p.maxGazeCrapload); err != nil {
 		return err
 	}
 
 	// Evaluate gates: baseline regression then CI thresholds (D7).
-	return evaluateCrapGates(rpt, comparisonResult, p.stderr,
-		p.maxCrapload, p.maxGazeCrapload)
+	if err := evaluateCrapGates(rpt, comparisonResult, p.stderr,
+		p.maxCrapload, p.maxGazeCrapload); err != nil {
+		return err
+	}
+
+	// Change gate: evaluate after other gates.
+	if changeGateResult != nil && !changeGateResult.Passed {
+		_, _ = fmt.Fprintf(p.stderr, "change gate: FAIL (%d/%d changed functions exceed CRAP threshold)\n",
+			changeGateResult.Summary.Failed, changeGateResult.Summary.Total)
+		return fmt.Errorf("change gate failed: %d/%d changed functions exceed CRAP threshold",
+			changeGateResult.Summary.Failed, changeGateResult.Summary.Total)
+	}
+
+	return nil
 }
 
 // runCrapWithExternalAnalyzer runs the CRAP pipeline using an
@@ -630,7 +659,7 @@ func finishExternalCrapReport(p crapParams, rpt *crap.Report) error {
 	}
 	emitExternalCrapNotes(p.stderr, rpt)
 
-	if err := writeCrapReport(p.stdout, p.format, rpt); err != nil {
+	if err := writeCrapReport(p.stdout, p.format, rpt, nil); err != nil {
 		return err
 	}
 
@@ -691,12 +720,46 @@ func emitExternalCrapNotes(stderr io.Writer, rpt *crap.Report) {
 }
 
 // writeCrapReport outputs the CRAP report in the requested format.
-func writeCrapReport(w io.Writer, format string, rpt *crap.Report) error {
+func writeCrapReport(w io.Writer, format string, rpt *crap.Report, cgr *crap.ChangeGateResult) error {
 	switch format {
 	case "json":
+		if cgr != nil {
+			return crap.WriteJSONWithChangeGate(w, rpt, cgr)
+		}
 		return crap.WriteJSON(w, rpt)
 	default:
 		return crap.WriteText(w, rpt)
+	}
+}
+
+func writeChangeGateText(w io.Writer, cgr *crap.ChangeGateResult) {
+	if cgr.Summary.Total == 0 {
+		_, _ = fmt.Fprintln(w, "\n--- Changed Functions ---")
+		_, _ = fmt.Fprintln(w, "  No changed functions detected.")
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "--- Changed Functions ---")
+	status := "PASS"
+	if !cgr.Passed {
+		status = "FAIL"
+	}
+	_, _ = fmt.Fprintf(w, "  %d total, %d passed, %d failed [%s]\n",
+		cgr.Summary.Total, cgr.Summary.Passed, cgr.Summary.Failed, status)
+	for _, cf := range cgr.ChangedFunctions {
+		marker := "  "
+		if !cf.Passed {
+			marker = "* "
+		}
+		_, _ = fmt.Fprintf(w, "  %s%-40s  CRAP: %.1f",
+			marker, cf.Function, cf.CRAP)
+		if cf.GazeCRAP != nil {
+			_, _ = fmt.Fprintf(w, "  GazeCRAP: %.1f", *cf.GazeCRAP)
+		}
+		if !cf.Passed {
+			_, _ = fmt.Fprintf(w, "  [FAIL]")
+		}
+		_, _ = fmt.Fprintln(w)
 	}
 }
 
@@ -872,6 +935,7 @@ func writeCrapOutputAndSummary(
 	format string,
 	rpt *crap.Report,
 	cr *crap.ComparisonResult,
+	cgr *crap.ChangeGateResult,
 	maxCrapload, maxGazeCrapload int,
 ) error {
 	if cr != nil {
@@ -879,9 +943,12 @@ func writeCrapOutputAndSummary(
 			return err
 		}
 	} else {
-		if err := writeCrapReport(stdout, format, rpt); err != nil {
+		if err := writeCrapReport(stdout, format, rpt, cgr); err != nil {
 			return err
 		}
+	}
+	if cgr != nil {
+		writeChangeGateText(stderr, cgr)
 	}
 	printCISummary(stderr, rpt, maxCrapload, maxGazeCrapload)
 	return nil
@@ -923,6 +990,7 @@ func newCrapCmd() *cobra.Command {
 		aiMapper          string
 		aiMapperModel     string
 		baselinePath      string
+		gateOnChange      string
 		analyzerFlag      string
 		languageFlag      string
 		testShort         bool
@@ -963,6 +1031,7 @@ automatically.`,
 				aiMapper:        aiMapper,
 				aiMapperModel:   aiMapperModel,
 				baselinePath:    baselinePath,
+				gateOnChange:    gateOnChange,
 				analyzerFlag:    analyzerFlag,
 				languageFlag:    languageFlag,
 				stdout:          os.Stdout,
@@ -990,6 +1059,8 @@ automatically.`,
 		"model name for AI mapper (required for ollama)")
 	cmd.Flags().StringVar(&baselinePath, "baseline", "",
 		"path to baseline file for comparison")
+	cmd.Flags().StringVar(&gateOnChange, "gate-on-change", "",
+		"fail if changed functions exceed CRAP threshold (git ref or 'staged')")
 	cmd.Flags().StringVar(&analyzerFlag, "analyzer", "",
 		"external analyzer binary (e.g., snake-eyes)")
 	cmd.Flags().StringVar(&languageFlag, "language", "",

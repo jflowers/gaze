@@ -33,6 +33,7 @@ At least one package pattern is required. Use `./...` to analyze the entire modu
 | `--ai-mapper` | `string` | `""` | AI backend for assertion mapping fallback: `claude`, `gemini`, `ollama`, or `opencode`. When set, unmapped assertions are sent to the AI for semantic matching. |
 | `--ai-mapper-model` | `string` | `""` | Model name for the AI mapper. Required when `--ai-mapper=ollama`. |
 | `--baseline` | `string` | `""` | Path to a baseline JSON file for comparison. Overrides auto-detection of `.gaze/baseline.json` and the `baseline.file` config value. Errors if the specified file does not exist. |
+| `--gate-on-change` | `string` | `""` | Fail if any function modified in the current changeset exceeds the CRAP threshold. Accepts a git ref (e.g., `origin/main`, `HEAD~3`) or `staged` for index-only changes. Requires `git` on PATH. |
 
 
 ## Configuration Interaction
@@ -138,15 +139,29 @@ Baseline Comparison
   Removed Functions: 1
 ```
 
+### Gate on changed functions
+
+```bash
+# Fail if any function changed vs origin/main exceeds CRAP threshold
+gaze crap --gate-on-change=origin/main ./...
+
+# Check only staged (uncommitted) changes
+gaze crap --gate-on-change=staged ./...
+```
+
+Enforces the Boy Scout Rule: code you touch must meet quality standards. Only functions with changed lines are evaluated against the `--crap-threshold` (default 15). The GazeCRAP threshold is also enforced when contract coverage is available.
+
+JSON output includes a `changed_functions` array with per-function pass/fail status and a `changed_functions_summary` object.
+
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| `0` | Analysis succeeds with no regressions, no new-function violations, and no threshold failures |
-| `1` | At least one regression detected, a new-function violation found, or a `--max-crapload` / `--max-gaze-crapload` threshold exceeded |
+| `0` | Analysis succeeds with no regressions, no new-function violations, no threshold failures, and no change gate failures |
+| `1` | At least one regression detected, a new-function violation found, a `--max-crapload` / `--max-gaze-crapload` threshold exceeded, or a `--gate-on-change` violation |
 
-The baseline comparison gate and the threshold gate (`--max-crapload`, `--max-gaze-crapload`) are evaluated independently — exit code is 1 if either gate fails. Comparison output is always written regardless of threshold results.
 
+The baseline comparison gate, threshold gates (`--max-crapload`, `--max-gaze-crapload`), and change gate (`--gate-on-change`) are evaluated independently — exit code is 1 if any gate fails. Comparison output is always written regardless of threshold results.
 When no baseline is loaded, exit code depends only on threshold flags (exit 0 if no thresholds are set).
 
 ## See Also

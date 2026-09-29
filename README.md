@@ -101,6 +101,8 @@ Compute CRAP scores by combining cyclomatic complexity with test coverage.
 gaze crap ./...                                     # Analyze all packages
 gaze crap --coverprofile=cover.out ./...            # Use existing coverage
 gaze crap --max-crapload=5 ./...                    # CI mode: fail on threshold
+gaze crap --gate-on-change=origin/main ./...        # Fail if changed functions exceed CRAP threshold
+gaze crap --gate-on-change=staged ./...             # Check staged changes only
 ```
 
 For the CRAP formula, GazeCRAP, quadrants, and fix strategies, see [Scoring](docs/concepts/scoring.md). For all flags, see [`gaze crap` reference](docs/reference/cli/crap.md).

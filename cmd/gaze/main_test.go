@@ -203,7 +203,7 @@ func TestWriteCrapReport_JSON(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := writeCrapReport(&buf, "json", rpt)
+	err := writeCrapReport(&buf, "json", rpt, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestWriteCrapReport_Text(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := writeCrapReport(&buf, "text", rpt)
+	err := writeCrapReport(&buf, "text", rpt, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1236,7 +1236,7 @@ func TestWriteCrapOutputAndSummary_WithComparison(t *testing.T) {
 		Summary: crap.ComparisonSummary{Passed: true},
 	}
 	var stdout, stderr bytes.Buffer
-	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, cr, 0, 0)
+	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, cr, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1253,7 +1253,7 @@ func TestWriteCrapOutputAndSummary_WithComparison(t *testing.T) {
 func TestWriteCrapOutputAndSummary_WithoutComparison(t *testing.T) {
 	rpt := stubReport()
 	var stdout, stderr bytes.Buffer
-	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, nil, 0, 0)
+	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, nil, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

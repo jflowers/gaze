@@ -23,6 +23,9 @@ type Score struct {
 	// Line is the line number of the function declaration.
 	Line int `json:"line"`
 
+	// EndLine is the last line of the function declaration.
+	EndLine int `json:"end_line"`
+
 	// Complexity is the cyclomatic complexity.
 	Complexity int `json:"complexity"`
 

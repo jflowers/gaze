@@ -37,6 +37,10 @@ type FunctionComplexity struct {
 	// Line is the line number of the function declaration.
 	Line int `json:"line"`
 
+	// EndLine is the last line of the function declaration
+	// (including the closing brace). Populated from AST data.
+	EndLine int `json:"end_line"`
+
 	// Complexity is the cyclomatic complexity value.
 	Complexity int `json:"complexity"`
 }
