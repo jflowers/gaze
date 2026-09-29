@@ -64,11 +64,6 @@ func (p *GoComplexityProvider) Analyze(patterns []string, rootDir string) ([]cra
 	return result, nil
 }
 
-type fileLineKey struct {
-	file string
-	line int
-}
-
 func buildEndLineMap(paths []string) map[string]map[int]int {
 	fset := token.NewFileSet()
 	result := make(map[string]map[int]int)
