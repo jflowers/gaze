@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/unbound-force/gaze/v2/internal/adapter/docsignal"
 	"github.com/unbound-force/gaze/v2/internal/config"
 	"github.com/unbound-force/gaze/v2/internal/protocol"
 	"github.com/unbound-force/gaze/v2/internal/taxonomy"
@@ -162,7 +163,7 @@ func TestMergeClassifications_MatchingSignals(t *testing.T) {
 		},
 	}
 
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	if cached[0].SideEffects[0].Classification == nil {
 		t.Fatal("expected classification to be attached")
@@ -205,7 +206,7 @@ func TestMergeClassifications_NoMatchingSignals(t *testing.T) {
 		},
 	}
 
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	if cached[0].SideEffects[0].Classification != nil {
 		t.Error("expected classification to remain nil (no matching signals)")
@@ -244,7 +245,7 @@ func TestMergeClassifications_PreservesPreClassified(t *testing.T) {
 		},
 	}
 
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	// Pre-classified effect should be preserved.
 	if cached[0].SideEffects[0].Classification != existing {
@@ -281,7 +282,7 @@ func TestMergeClassifications_NilConfig(t *testing.T) {
 	}
 
 	// Passing nil config — should use DefaultConfig internally.
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	if cached[0].SideEffects[0].Classification == nil {
 		t.Fatal("expected classification with nil config (uses DefaultConfig)")
@@ -317,7 +318,7 @@ func TestMergeClassifications_CustomConfig(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Classification.Thresholds.Contractual = 99
 
-	mergeClassifications(cached, signals, cfg)
+	mergeClassifications(cached, signals, nil, cfg)
 
 	c := cached[0].SideEffects[0].Classification
 	if c == nil {
@@ -346,13 +347,13 @@ func TestMergeClassifications_EmptySignals(t *testing.T) {
 	}
 
 	// Empty signals — should be a no-op.
-	mergeClassifications(cached, nil, nil)
+	mergeClassifications(cached, nil, nil, nil)
 
 	if cached[0].SideEffects[0].Classification != nil {
 		t.Error("expected classification to remain nil with nil signals")
 	}
 
-	mergeClassifications(cached, []protocol.ClassifySignalData{}, nil)
+	mergeClassifications(cached, []protocol.ClassifySignalData{}, nil, nil)
 
 	if cached[0].SideEffects[0].Classification != nil {
 		t.Error("expected classification to remain nil with empty signals")
@@ -385,7 +386,7 @@ func TestMergeClassifications_SideEffectTypeMismatch(t *testing.T) {
 		},
 	}
 
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	if cached[0].SideEffects[0].Classification != nil {
 		t.Error("expected classification to remain nil (SideEffectType mismatch)")
@@ -426,7 +427,7 @@ func TestMergeClassifications_MultipleSignalsSameKey(t *testing.T) {
 		},
 	}
 
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	c := cached[0].SideEffects[0].Classification
 	if c == nil {
@@ -472,7 +473,7 @@ func TestMergeClassifications_MultipleEffectsSameType(t *testing.T) {
 		},
 	}
 
-	mergeClassifications(cached, signals, nil)
+	mergeClassifications(cached, signals, nil, nil)
 
 	// Both effects of the same type should be classified.
 	// MapMutation is P1 (tier boost +10): base 50 + 10 + weight 30 = 90.
@@ -494,5 +495,100 @@ func TestMergeClassifications_MultipleEffectsSameType(t *testing.T) {
 		t.Errorf("effects have different labels: %q vs %q",
 			cached[0].SideEffects[0].Classification.Label,
 			cached[0].SideEffects[1].Classification.Label)
+	}
+}
+
+// TestMergeClassifications_DocSignals covers the doc-signal integration
+// at the mergeClassifications boundary: additive merging of doc signals
+// with protocol signals, doc-signal-only classification when protocol
+// signals are absent (exercising the extended empty-signal guard), and
+// the empty doc-signal no-op.
+func TestMergeClassifications_DocSignals(t *testing.T) {
+	// cached fixture: (pkg, Foo, ErrorReturn) with no inline classification.
+	newCached := func() []taxonomy.AnalysisResult {
+		return []taxonomy.AnalysisResult{
+			{
+				Target: taxonomy.FunctionTarget{
+					Package:  "pkg",
+					Function: "Foo",
+				},
+				SideEffects: []taxonomy.SideEffect{
+					{Type: taxonomy.ErrorReturn},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name           string
+		signals        []protocol.ClassifySignalData
+		docSignals     []docsignal.DerivedSignal
+		wantNil        bool
+		wantLabel      taxonomy.ClassificationLabel
+		wantConfidence int
+	}{
+		{
+			name: "DocSignalPlusProtocolSignalAdditive",
+			signals: []protocol.ClassifySignalData{
+				{Package: "pkg", Function: "Foo", SideEffectType: "ErrorReturn", Source: "docstring", Weight: 20},
+			},
+			docSignals: []docsignal.DerivedSignal{
+				{
+					Package:        "pkg",
+					Function:       "Foo",
+					SideEffectType: "ErrorReturn",
+					Signal:         taxonomy.Signal{Source: "architecture_doc", Weight: 25},
+				},
+			},
+			// ErrorReturn is P0 (tier boost +25): base 50 + 25 + 20 + 25 = 120,
+			// clamped to 100. Both signals are summed additively.
+			wantLabel:      taxonomy.Contractual,
+			wantConfidence: 100,
+		},
+		{
+			name:    "DocSignalOnlyWhenProtocolSignalsEmpty",
+			signals: nil,
+			docSignals: []docsignal.DerivedSignal{
+				{
+					Package:        "pkg",
+					Function:       "Foo",
+					SideEffectType: "ErrorReturn",
+					Signal:         taxonomy.Signal{Source: "architecture_doc", Weight: 25},
+				},
+			},
+			// ErrorReturn is P0 (tier boost +25): base 50 + 25 + 25 = 100.
+			wantLabel:      taxonomy.Contractual,
+			wantConfidence: 100,
+		},
+		{
+			name:       "EmptyDocSignalNoop",
+			signals:    nil,
+			docSignals: nil,
+			wantNil:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cached := newCached()
+			mergeClassifications(cached, tc.signals, tc.docSignals, nil)
+
+			c := cached[0].SideEffects[0].Classification
+			if tc.wantNil {
+				if c != nil {
+					t.Fatalf("expected nil classification, got %+v", c)
+				}
+				return
+			}
+			if c == nil {
+				t.Fatal("expected classification to be attached")
+			}
+			if c.Label != tc.wantLabel {
+				t.Errorf("label = %q, want %q", c.Label, tc.wantLabel)
+			}
+			if c.Confidence != tc.wantConfidence {
+				t.Errorf("confidence = %d, want %d", c.Confidence, tc.wantConfidence)
+			}
+		})
 	}
 }

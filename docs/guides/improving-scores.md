@@ -257,3 +257,7 @@ The `summary.recommended_actions` array provides a prioritized remediation list 
 - **Don't chase 100% contract coverage** — diminishing returns set in around 80%. Focus on the functions Gaze flags as dangerous.
 - **Use [`gaze quality --verbose`](../reference/cli/quality.md)** to see exactly which effects are unasserted — don't guess.
 - **Ratchet your thresholds** — once you've improved scores, tighten your CI thresholds to prevent regression. See [CI Integration](ci-integration.md) for threshold configuration.
+
+## External-Analyzer Projects: Document Annotations
+
+If you analyze a non-Go codebase through an external analyzer (`--analyzer`), Gaze can't rely on Go-specific signals like interface satisfaction or GoDoc comments, so more effects land in the `ambiguous` range. For those projects, you can annotate your design docs — or add a `.uf/gaze/contracts.yaml` sidecar — to declare which effects are contractual and which are incidental. These doc-derived signals flow directly into classification and sharpen the `add_assertions` and `decompose` strategies by resolving ambiguity without writing more tests. See [Document Annotations](doc-annotations.md) for the annotation grammar, sidecar format, and precedence rules.

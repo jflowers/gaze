@@ -56,6 +56,7 @@ These docs cover everything from first-time setup to language porting contracts.
 - [AI Reports](guides/ai-reports.md) — Adapter setup for Claude, Gemini, Ollama, and OpenCode
 - [OpenCode Integration](guides/opencode-integration.md) — `gaze init`, scaffolded files, and the `/gaze` command
 - [Improving Scores](guides/improving-scores.md) — Fix strategies with before/after examples: decompose, add tests, add assertions
+- [Document Annotations](guides/doc-annotations.md) — Declare contractual vs incidental effects in docs or a sidecar file for external-analyzer projects
 
 ### Architecture
 

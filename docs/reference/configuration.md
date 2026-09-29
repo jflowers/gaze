@@ -126,6 +126,53 @@ All fields are optional — when omitted, sensible defaults are used.
 
 ---
 
+## Doc-Contract Sidecar File
+
+For [external-analyzer](../porting/contracts.md) projects, Gaze reads an optional sidecar file to derive [classification](../concepts/classification.md) signals from explicit declarations. This file is **not** part of `.gaze.yaml` — it lives at `.uf/gaze/contracts.yaml` (primary) or `.uf/gaze/contracts.json` (alternative, for tool-generated sidecars).
+
+### Schema
+
+```yaml
+# .uf/gaze/contracts.yaml
+version: 1
+contracts:
+  - package: "mypackage"
+    function: "process_items"
+    side_effect_type: "ContainerMutation"
+    label: contractual
+    reasoning: "public API mutation per design doc"
+```
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `version` | `int` | No | Schema version (reserved) |
+| `contracts` | `array` | Yes | List of contract declarations |
+| `contracts[].package` | `string` | Yes | Package the function belongs to |
+| `contracts[].function` | `string` | Yes | The analyzer's verbatim function name (bare name, not receiver-qualified) |
+| `contracts[].side_effect_type` | `string` | Yes | A known effect type name (from the [taxonomy](../porting/taxonomy-reference.md)) |
+| `contracts[].label` | `string` | Yes | `contractual` or `incidental` (case-insensitive) |
+| `contracts[].reasoning` | `string` | No | Human-readable justification; defaults to a generated message when omitted |
+
+### Precedence
+
+Sidecar declarations carry the highest signal weight (`±30`) and override grammar-derived signals from Markdown docs for the same `(package, function, side_effect_type)` tuple. When both `.uf/gaze/contracts.yaml` and `.uf/gaze/contracts.json` exist, YAML takes precedence.
+
+### Graceful Degradation
+
+The sidecar file is opt-in and degrades gracefully:
+
+- **Absent file** → no sidecar signals, no error, no warning. Grammar-derived signals (if any) are still used.
+- **Malformed file** (invalid YAML/JSON) → a warning is written to stderr and the sidecar is ignored; grammar-derived signals are still used.
+- **Semantically invalid entry** (unknown `label`, empty `package` or `function`, or unknown `side_effect_type`) → that entry is skipped with a warning to stderr; remaining valid entries are still loaded.
+
+A failing sidecar step never blocks analysis — classification simply produces more `ambiguous` results in its absence.
+
+### Scope
+
+The sidecar file is only read for external-analyzer projects. Go-native analysis ignores it and uses the GoDoc analyzer instead. See [Document Annotations](../guides/doc-annotations.md) for the full grammar and examples.
+
+---
+
 ## CLI Flag Overrides
 
 Several CLI flags override config file values. The CLI flag always takes precedence when explicitly set.
