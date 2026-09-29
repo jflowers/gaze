@@ -48,11 +48,10 @@ func TestExternalComplexityProvider(t *testing.T) {
 
 	mustInitialize(t, client)
 
-	provider := adapter.NewExternalComplexityProvider(client)
 	// The fake analyzer now reports a test-file complexity entry
 	// (tests/test_ops.py::test_add); filter it so the source-only count is
 	// asserted and the test-file exclusion path is exercised.
-	provider.SetTestFiles(map[string]bool{"tests/test_ops.py": true})
+	provider := adapter.NewExternalComplexityProvider(client, map[string]bool{"tests/test_ops.py": true})
 	results, err := provider.Analyze([]string{"./..."}, "/tmp/project")
 	if err != nil {
 		t.Fatalf("Analyze: %v", err)
@@ -410,7 +409,7 @@ func TestErrorPropagation_ComplexityProtocolError(t *testing.T) {
 	}
 
 	// Complexity call should get the error response.
-	provider := adapter.NewExternalComplexityProvider(client)
+	provider := adapter.NewExternalComplexityProvider(client, nil)
 	_, err = provider.Analyze([]string{"./..."}, "/tmp/project")
 	if err == nil {
 		t.Fatal("Analyze should fail with error response")

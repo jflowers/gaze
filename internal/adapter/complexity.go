@@ -26,17 +26,10 @@ type ExternalComplexityProvider struct {
 	testFiles map[string]bool
 }
 
-// NewExternalComplexityProvider creates a complexity provider that
-// delegates to the given protocol client.
-func NewExternalComplexityProvider(client *protocol.Client) *ExternalComplexityProvider {
-	return &ExternalComplexityProvider{client: client}
-}
-
-// SetTestFiles configures the set of test file paths (cleaned, relative to
-// rootDir) that Analyze should exclude from its results. A nil or empty set
-// disables filtering. Called by Session.Initialize after the discover call.
-func (p *ExternalComplexityProvider) SetTestFiles(testFiles map[string]bool) {
-	p.testFiles = testFiles
+// NewExternalComplexityProvider creates a complexity provider that delegates
+// to the given protocol client and optionally filters test files.
+func NewExternalComplexityProvider(client *protocol.Client, testFiles map[string]bool) *ExternalComplexityProvider {
+	return &ExternalComplexityProvider{client: client, testFiles: testFiles}
 }
 
 // Analyze calls the "complexity" protocol method and converts the

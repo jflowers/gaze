@@ -132,8 +132,7 @@ func (s *Session) Initialize() (*Providers, error) {
 	s.discoverTestFiles()
 
 	// Construct provider adapters.
-	complexityProvider := NewExternalComplexityProvider(s.client)
-	complexityProvider.SetTestFiles(s.testFiles)
+	complexityProvider := NewExternalComplexityProvider(s.client, s.testFiles)
 	coverageProvider := NewExternalLineCoverageProvider(s.client)
 
 	sideEffectAnalyzer := NewExternalSideEffectAnalyzer(
@@ -160,10 +159,8 @@ func (s *Session) Initialize() (*Providers, error) {
 	}, nil
 }
 
-// DiscoverTestFiles returns the analyzer-reported test file paths (cleaned,
-// relative to rootDir) discovered during Initialize. Returns nil when the
-// analyzer does not advertise the discover capability, the discover call
-// failed, or the session was not initialized.
+// DiscoverTestFiles returns the analyzer-reported test file paths discovered
+// during Initialize, or nil when discovery is unavailable.
 func (s *Session) DiscoverTestFiles() map[string]bool {
 	return s.testFiles
 }
@@ -193,18 +190,10 @@ func (s *Session) discoverTestFiles() {
 	}
 }
 
-// discover calls the discover protocol method on the external analyzer and
-// returns the result. Returns nil when the session has not been initialized
-// or the analyzer does not advertise the discover capability. Uses
-// ShortTimeout when the caller-provided context has no deadline (D2).
+// discover calls the discover protocol method on the external analyzer. The
+// caller must have completed initialization and checked capability support.
+// Uses ShortTimeout when the caller-provided context has no deadline (D2).
 func (s *Session) discover(ctx context.Context, params protocol.DiscoverParams) (*protocol.DiscoverResult, error) {
-	if !s.initDone {
-		return nil, nil
-	}
-	if !s.caps.Discover {
-		return nil, nil
-	}
-
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, protocol.ShortTimeout)

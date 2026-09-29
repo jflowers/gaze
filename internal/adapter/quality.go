@@ -112,6 +112,7 @@ func BuildQualityFromMappings(
 		// confirmed test file (via discover) whose unioned target effects
 		// are empty has no production contract to assert on. Distinguish it
 		// from a production function whose contract is genuinely unasserted.
+		// This boundary assumes the analyzer classifies test files accurately.
 		if len(effects) == 0 && testFiles != nil && testFiles[filepath.Clean(tk.testFile)] {
 			cc.NoContractExpected = true
 			cc.Reason = "test_function_no_target_effects"
