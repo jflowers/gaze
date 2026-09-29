@@ -22,6 +22,32 @@ func WriteJSON(w io.Writer, report *Report) error {
 	return enc.Encode(report)
 }
 
+// crapJSONWithChangeGate is the JSON envelope when --gate-on-change is active.
+type crapJSONWithChangeGate struct {
+	Scores           []Score               `json:"scores"`
+	Summary          Summary               `json:"summary"`
+	ChangedFunctions []ChangedFunction      `json:"changed_functions"`
+	ChangedSummary   ChangedFunctionsSummary `json:"changed_functions_summary"`
+}
+
+// WriteJSONWithChangeGate writes the CRAP report as JSON with the
+// changed_functions section appended.
+func WriteJSONWithChangeGate(w io.Writer, report *Report, cgr *ChangeGateResult) error {
+	out := crapJSONWithChangeGate{
+		Scores:         report.Scores,
+		Summary:        report.Summary,
+		ChangedSummary: cgr.Summary,
+	}
+	if cgr.ChangedFunctions != nil {
+		out.ChangedFunctions = cgr.ChangedFunctions
+	} else {
+		out.ChangedFunctions = []ChangedFunction{}
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
 // writeScoreTable builds and writes the CRAP score table with
 // threshold markers and color styling.
 func writeScoreTable(w io.Writer, sorted []Score, threshold float64, styles report.Styles) {
