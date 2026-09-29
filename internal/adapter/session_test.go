@@ -111,6 +111,34 @@ func TestSession_DiscoverCalledOnce(t *testing.T) {
 	}
 }
 
+func TestSession_DiscoverEmptyTestFiles(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--empty-discover"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+	defer session.Close()
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	tf := session.DiscoverTestFiles()
+	if tf == nil {
+		t.Fatalf("DiscoverTestFiles() = nil, want non-nil empty map when discover returns empty test_files")
+	}
+	if len(tf) != 0 {
+		t.Errorf("DiscoverTestFiles() = %v, want empty map", tf)
+	}
+
+	// An empty test-file set disables filtering: all 4 functions are scored.
+	results, err := providers.Complexity.Analyze([]string{"./..."}, "/tmp/project")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(results) != 4 {
+		t.Errorf("Analyze() = %d funcs, want 4 (no filtering when test_files is empty)", len(results))
+	}
+}
+
 func TestSession_QualitySentinelEndToEnd(t *testing.T) {
 	var stderr bytes.Buffer
 	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio"}, "/tmp/project", []string{"./..."}, &stderr, nil)

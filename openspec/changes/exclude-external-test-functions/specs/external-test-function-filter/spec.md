@@ -27,12 +27,20 @@ The `test_files` paths from `discover`, the `complexity` method's `File` values,
 - **WHEN** `gaze crap --analyzer <name>` is run
 - **THEN** no functions SHALL be excluded from CRAP scoring
 
-#### Scenario: discover call fails gracefully
+#### Scenario: discover returns a protocol error and degrades gracefully
 
-- **GIVEN** an external analyzer whose `discover` method returns a protocol error (e.g., method not found despite capability flag) or times out
+- **GIVEN** an external analyzer whose `discover` method returns a protocol error (e.g., method not found despite capability flag)
 - **WHEN** `gaze crap --analyzer <name>` is run
 - **THEN** Gaze SHALL log a warning to stderr and fall back to no filtering
 - **AND** the CRAP analysis SHALL complete with all functions scored (no data loss)
+
+#### Scenario: discover times out and fails fast
+
+- **GIVEN** an external analyzer whose `discover` method hangs and does not respond within `protocol.ShortTimeout`
+- **WHEN** `gaze crap --analyzer <name>` is run
+- **THEN** `Session.Initialize()` SHALL return an error and the run SHALL abort
+- **AND** the error SHALL wrap `context.DeadlineExceeded` so callers can distinguish a discover timeout from a protocol error
+- **RATIONALE** a discover timeout kills the shared analyzer subprocess (the transport kills the process on context deadline), so continuing would leave every subsequent provider call operating on a dead client; failing fast is the only safe response
 
 ### Requirement: Discover call placement in session initialization
 

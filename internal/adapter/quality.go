@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"path/filepath"
 	"sort"
 
 	"github.com/unbound-force/gaze/v2/internal/protocol"
@@ -113,9 +112,9 @@ func BuildQualityFromMappings(
 		// are empty has no production contract to assert on. Distinguish it
 		// from a production function whose contract is genuinely unasserted.
 		// This boundary assumes the analyzer classifies test files accurately.
-		if len(effects) == 0 && testFiles != nil && testFiles[filepath.Clean(tk.testFile)] {
+		if len(effects) == 0 && isTestFile(tk.testFile, testFiles) {
 			cc.NoContractExpected = true
-			cc.Reason = "test_function_no_target_effects"
+			cc.Reason = taxonomy.ContractCoverageReasonNoTargetEffects
 		}
 
 		// Compute over-specification: assertions on incidental effects.

@@ -349,6 +349,19 @@ type AssertionMapping struct {
 	UnmappedReason UnmappedReasonType `json:"unmapped_reason,omitempty"`
 }
 
+// ContractCoverageReasonType enumerates the machine-readable reasons a report
+// may be marked "no contract expected".
+type ContractCoverageReasonType string
+
+// Contract coverage reason constants.
+const (
+	// ContractCoverageReasonNoTargetEffects indicates the test function
+	// targets a confirmed test file (via discover test_files) whose unioned
+	// target effects are empty, so there is no production contract to
+	// assert on.
+	ContractCoverageReasonNoTargetEffects ContractCoverageReasonType = "test_function_no_target_effects"
+)
+
 // ContractCoverage is the primary test quality metric: the ratio of
 // contractual side effects that the test asserts on.
 type ContractCoverage struct {
@@ -388,9 +401,9 @@ type ContractCoverage struct {
 	NoContractExpected bool `json:"no_contract_expected,omitempty"`
 
 	// Reason carries a machine-readable explanation for an unusual
-	// ContractCoverage state (e.g., "test_function_no_target_effects").
+	// ContractCoverage state (see ContractCoverageReasonType constants).
 	// Omitted from JSON when empty.
-	Reason string `json:"reason,omitempty"`
+	Reason ContractCoverageReasonType `json:"reason,omitempty"`
 }
 
 // OverSpecificationScore measures how many incidental side effects

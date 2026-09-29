@@ -253,7 +253,7 @@ The CRAP JSON output is not covered by a formal embedded schema but follows a st
 | `gap_hints` | `string[]?` | No | Go code snippets suggesting how to assert on each gap (parallel to `gaps`) |
 | `discarded_returns` | `SideEffectRef[]?` | No | Contractual return/error effects explicitly discarded (e.g., `_ = target()`) |
 | `discarded_return_hints` | `string[]?` | No | Code snippets for discarded returns (parallel to `discarded_returns`) |
-| `no_contract_expected` | `bool?` | No | `true` when the test function targets a function in the analyzer's `discover` `test_files` set with no contractual effects; such reports are excluded from `AverageContractCoverage` |
+| `no_contract_expected` | `bool?` | No | `true` when the test function targets a function in the analyzer's `discover` `test_files` set whose unioned target effects are empty; such reports are excluded from `AverageContractCoverage` |
 | `reason` | `string?` | No | Why contract coverage is not expected (e.g. `test_function_no_target_effects`) |
 
 ### OverSpecificationScore

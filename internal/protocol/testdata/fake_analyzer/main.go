@@ -32,6 +32,7 @@ import (
 type analyzerOptions struct {
 	noDiscover    bool
 	discoverError bool
+	emptyDiscover bool
 	reportCounts  bool
 	methodCounts  map[string]int
 }
@@ -62,11 +63,13 @@ func main() {
 	crashAfter := flag.String("crash-after", "", "crash after responding to this method")
 	hang := flag.Bool("hang", false, "hang after initialize")
 	hangStream := flag.Bool("hang-stream", false, "enable streaming mode and write JSONL for analyze/stream")
+	hangDiscover := flag.Bool("hang-discover", false, "hang forever on discover requests")
 	malformedJSON := flag.Bool("malformed-json", false, "return malformed JSON for first non-initialize request")
 	errorResponse := flag.Bool("error-response", false, "return JSON-RPC error for first non-initialize request")
 	noDocCoverage := flag.Bool("no-doc-coverage", false, "disable doc_coverage capability in initialize response")
 	flag.BoolVar(&options.noDiscover, "no-discover", false, "disable discover capability in initialize response")
 	flag.BoolVar(&options.discoverError, "discover-error", false, "return a JSON-RPC error for discover requests")
+	flag.BoolVar(&options.emptyDiscover, "empty-discover", false, "return an empty test_files list for discover requests")
 	flag.BoolVar(&options.reportCounts, "report-counts", false, "write per-method invocation counts to stderr at EOF")
 	flag.Parse()
 
@@ -125,6 +128,11 @@ func main() {
 				os.Exit(0)
 			}
 			continue
+		}
+
+		// Handle --hang-discover: sleep forever on discover requests.
+		if *hangDiscover && req.Method == "discover" {
+			time.Sleep(24 * time.Hour)
 		}
 
 		resp := handleRequest(req, *hangStream, *noDocCoverage, options)
@@ -273,12 +281,16 @@ func handleRequest(req request, streaming, noDocCoverage bool, options analyzerO
 				},
 			}
 		}
+		testFiles := []string{"tests/test_ops.py"}
+		if options.emptyDiscover {
+			testFiles = []string{}
+		}
 		return response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result: map[string]any{
 				"source_files": []string{"math_utils/ops.py", "math_utils/helpers.py"},
-				"test_files":   []string{"tests/test_ops.py"},
+				"test_files":   testFiles,
 				"framework":    "pytest",
 			},
 		}

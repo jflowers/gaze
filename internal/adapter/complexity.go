@@ -50,6 +50,12 @@ func (p *ExternalComplexityProvider) Analyze(patterns []string, rootDir string) 
 	return filterTestFiles(funcs, p.testFiles), nil
 }
 
+// isTestFile reports whether path is in the test-file set after cleaning
+// both sides. A nil or empty set returns false (D3).
+func isTestFile(path string, testFiles map[string]bool) bool {
+	return testFiles[filepath.Clean(path)]
+}
+
 // filterTestFiles removes functions whose cleaned file path is in
 // testFiles. A nil or empty testFiles set disables filtering (D1).
 func filterTestFiles(funcs []crap.FunctionComplexity, testFiles map[string]bool) []crap.FunctionComplexity {
@@ -58,7 +64,7 @@ func filterTestFiles(funcs []crap.FunctionComplexity, testFiles map[string]bool)
 	}
 	filtered := funcs[:0:0]
 	for _, f := range funcs {
-		if testFiles[filepath.Clean(f.File)] {
+		if isTestFile(f.File, testFiles) {
 			continue
 		}
 		filtered = append(filtered, f)
