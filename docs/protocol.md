@@ -642,7 +642,7 @@ When an optional method (`discover`, `test_mapping`, `classify_signals`, `doc_co
 
 - `discover` error: no test-file filtering is applied, so test functions are scored normally (potentially inflating CRAP/quadrant/fix-strategy counts); Gaze warns and falls back to unfiltered scoring
 - `test_mapping` error: GazeCRAP is unavailable and `gaze quality` degrades to zero contract coverage (JSON summary sets `reason` to `test_mapping_error`)
-- `classify_signals` error: uses pre-classified effects from `analyze`
+- `classify_signals` error: uses pre-classified effects from `analyze`, supplemented by doc-derived signals from Markdown annotations and the sidecar file for external analyzers (see [classification concepts](concepts/classification.md))
 - `doc_coverage` error: falls back to heuristic documentation coverage from `analyze` output
 
 ### Process crashes

@@ -147,6 +147,9 @@ score = clamp(base + tier_boost + sum(signal_weights) - contradiction_penalty, 0
 | Naming (Sentinel) | `naming` | +30 | — | `Err*` sentinel errors only; exceeds normal max |
 | Documentation (direct) | `godoc` | +15 | -15 | Keyword matches the detected effect type |
 | Documentation (indirect) | `godoc_keyword_indirect` | +5 | — | Keyword found but effect type doesn't match |
+| Documentation (architecture doc) | `architecture_doc` | +25 | -25 | External analyzers only; annotation in non-README Markdown |
+| Documentation (README) | `readme` | +15 | -15 | External analyzers only; annotation in a `README*` document |
+| Documentation (sidecar) | `sidecar` | +30 | -30 | External analyzers only; entry in `.uf/gaze/contracts.yaml`/`.json` |
 | Contradiction | `contradiction` | — | -20 | Auto-applied when positive + negative signals coexist |
 
 ---
