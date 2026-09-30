@@ -46,6 +46,11 @@ type Options struct {
 	// function for GazeCRAP scoring. When nil, GazeCRAP fields
 	// remain unavailable.
 	ContractCoverageProvider ContractCoverageProvider
+
+	// CognitiveComplexityProvider computes per-function cognitive
+	// complexity. When nil, cognitive complexity fields remain
+	// unavailable.
+	CognitiveComplexityProvider CognitiveComplexityProvider
 }
 
 // ContractCoverageInfo carries contract coverage data from the
@@ -138,6 +143,23 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 	// Step 5: Join complexity with coverage and compute CRAP.
 	scores := computeScores(complexityStats, coverMap, opts, ccFunc)
 
+	// Step 5a: Compute cognitive complexity and GazeCRAP-CC if provider is set.
+	if opts.CognitiveComplexityProvider != nil {
+		ccStats, ccErr := opts.CognitiveComplexityProvider.Analyze(patterns, moduleDir)
+		if ccErr == nil {
+			ccLookup := buildCognitiveLookup(ccStats)
+			for i := range scores {
+				if cc, ok := ccLookup[cognitiveKey{file: scores[i].File, function: scores[i].Function}]; ok {
+					scores[i].CognitiveComplexity = &cc
+					gazeCRAPCC := CognitiveFormula(cc, scores[i].LineCoverage)
+					scores[i].GazeCRAPCC = &gazeCRAPCC
+				}
+			}
+		} else if opts.Stderr != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "warning: cognitive complexity provider failed: %v\n", ccErr)
+		}
+	}
+
 	// Step 5b: Relativize file paths for portable JSON output.
 	// computeScores uses absolute paths for coverage lookups, but the
 	// final report should contain paths relative to the module root.
@@ -200,6 +222,22 @@ func buildCoverMap(coverages []FuncCoverage) coverMaps {
 		base[coverKey{file: filepath.Base(fc.File), line: fc.StartLine}] = fc.Percentage
 	}
 	return coverMaps{exact: exact, basename: base}
+}
+
+// cognitiveKey is the lookup key for cognitive complexity data.
+type cognitiveKey struct {
+	file     string
+	function string
+}
+
+// buildCognitiveLookup creates a map from (file, function) to
+// cognitive complexity value.
+func buildCognitiveLookup(stats []FunctionCognitiveComplexity) map[cognitiveKey]int {
+	m := make(map[cognitiveKey]int, len(stats))
+	for _, s := range stats {
+		m[cognitiveKey{file: s.File, function: s.Function}] = s.CognitiveComplexity
+	}
+	return m
 }
 
 // lookupCoverage finds the coverage for a FunctionComplexity entry
@@ -376,6 +414,8 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 	quadrantCounts := make(map[Quadrant]int)
 	fixStrategyCounts := make(map[FixStrategy]int)
 	hasGazeCRAP := false
+	cognitiveTotal := 0
+	cognitiveExceeded := 0
 
 	for _, s := range scores {
 		totalComp += float64(s.Complexity)
@@ -401,6 +441,9 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 		if s.FixStrategy != nil {
 			fixStrategyCounts[*s.FixStrategy]++
 		}
+		if s.CognitiveComplexity != nil {
+			cognitiveTotal += *s.CognitiveComplexity
+		}
 	}
 
 	n := float64(len(scores))
@@ -417,13 +460,15 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 	}
 
 	summary := Summary{
-		TotalFunctions:  len(scores),
-		AvgComplexity:   totalComp / n,
-		AvgLineCoverage: totalCov / n,
-		AvgCRAP:         totalCRAP / n,
-		CRAPload:        crapload,
-		CRAPThreshold:   opts.CRAPThreshold,
-		WorstCRAP:       worst,
+		TotalFunctions:              len(scores),
+		AvgComplexity:               totalComp / n,
+		AvgLineCoverage:             totalCov / n,
+		AvgCRAP:                     totalCRAP / n,
+		CRAPload:                    crapload,
+		CRAPThreshold:               opts.CRAPThreshold,
+		WorstCRAP:                   worst,
+		CognitiveComplexityTotal:    cognitiveTotal,
+		CognitiveComplexityExceeded: cognitiveExceeded,
 	}
 
 	if len(fixStrategyCounts) > 0 {

@@ -95,3 +95,35 @@ type ContractCoverageProvider interface {
 	//   - An error if the pipeline fails entirely.
 	Build(patterns []string, rootDir string) (func(pkg, function string) (ContractCoverageInfo, bool), []string, error)
 }
+
+// FunctionCognitiveComplexity is a language-neutral representation
+// of per-function cognitive complexity. It mirrors FunctionComplexity
+// but uses the SonarSource cognitive complexity algorithm instead of
+// cyclomatic complexity.
+type FunctionCognitiveComplexity struct {
+	// Package is the package name (e.g., "crap").
+	Package string `json:"package"`
+
+	// Function is the function or method name (e.g., "Analyze" or
+	// "(*Store).Save").
+	Function string `json:"function"`
+
+	// File is the absolute filesystem path to the source file.
+	File string `json:"file"`
+
+	// Line is the line number of the function declaration.
+	Line int `json:"line"`
+
+	// CognitiveComplexity is the cognitive complexity value.
+	CognitiveComplexity int `json:"cognitive_complexity"`
+}
+
+// CognitiveComplexityProvider computes per-function cognitive
+// complexity for the given package patterns. Implementations wrap
+// language-specific cognitive complexity analyzers.
+type CognitiveComplexityProvider interface {
+	// Analyze computes cognitive complexity for all functions in
+	// the packages matched by patterns, rooted at rootDir.
+	// Returns a slice of FunctionCognitiveComplexity or an error.
+	Analyze(patterns []string, rootDir string) ([]FunctionCognitiveComplexity, error)
+}

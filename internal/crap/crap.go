@@ -60,6 +60,14 @@ type Score struct {
 	// across all side effects. Only populated when
 	// ContractCoverageReason is "all_effects_ambiguous".
 	EffectConfidenceRange *[2]int `json:"effect_confidence_range,omitempty"`
+
+	// CognitiveComplexity is the Sonar cognitive complexity.
+	// Nil when not computed (e.g., external analyzer without support).
+	CognitiveComplexity *int `json:"cognitive_complexity,omitempty"`
+
+	// GazeCRAPCC is the CRAP formula using cognitive complexity.
+	// Nil when cognitive complexity or coverage is unavailable.
+	GazeCRAPCC *float64 `json:"gaze_crap_cc,omitempty"`
 }
 
 // Quadrant classifies a function based on CRAP and GazeCRAP scores
@@ -140,6 +148,15 @@ type Summary struct {
 	// are based on a subset of analyzed functions. Consumers should
 	// caveat the metrics accordingly.
 	SSADegradedPackages []string `json:"ssa_degraded_packages,omitempty"`
+
+	// CognitiveComplexityTotal is the sum of cognitive complexity
+	// across all functions. Zero when cognitive complexity was not
+	// computed.
+	CognitiveComplexityTotal int `json:"cognitive_complexity_total,omitempty"`
+
+	// CognitiveComplexityExceeded is the count of functions whose
+	// cognitive complexity exceeds the configured threshold.
+	CognitiveComplexityExceeded int `json:"cognitive_complexity_exceeded,omitempty"`
 }
 
 // Report is the complete CRAP analysis output.
@@ -247,6 +264,16 @@ type ComparisonResult struct {
 // coveragePct is line coverage as a percentage (0-100).
 // Returns the CRAP score as a float64; higher scores indicate higher risk.
 func Formula(complexity int, coveragePct float64) float64 {
+	comp := float64(complexity)
+	uncov := 1.0 - coveragePct/100.0
+	return comp*comp*uncov*uncov*uncov + comp
+}
+
+// CognitiveFormula computes GazeCRAP-CC = cc^2 * (1 - cov/100)^3 + cc.
+// cc is cognitive complexity (>= 0).
+// coveragePct is line coverage as a percentage (0-100).
+// Returns the GazeCRAP-CC score as a float64.
+func CognitiveFormula(complexity int, coveragePct float64) float64 {
 	comp := float64(complexity)
 	uncov := 1.0 - coveragePct/100.0
 	return comp*comp*uncov*uncov*uncov + comp
