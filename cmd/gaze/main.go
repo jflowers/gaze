@@ -630,6 +630,13 @@ func runCrap(p crapParams) error {
 // Design decision D5: Three-tier discovery (CLI flag → config → PATH).
 // Design decision D12: Only crap/quality/report use this path.
 func runCrapWithExternalAnalyzer(p crapParams) error {
+	// Validate flag combinations: --gate-on-change is a Go-specific
+	// feature (it parses git diff of Go source files) and is
+	// incompatible with external analyzers.
+	if p.gateOnChange != "" {
+		return fmt.Errorf("--gate-on-change is not supported with --analyzer or --language; " +
+			"the change gate requires a git diff of Go source files")
+	}
 	session, providers, err := initExternalSession(
 		p.analyzerFlag, p.languageFlag, p.moduleDir, p.patterns, p.stderr)
 	if err != nil {
