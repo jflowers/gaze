@@ -495,3 +495,173 @@ const QualitySchema = `{
     }
   }
 }`
+
+// CrapSchema is the JSON Schema (Draft 2020-12) for the Gaze CRAP
+// JSON output. It documents the structure returned by crap.WriteJSON
+// and, when --gate-on-change is active, crap.WriteJSONWithChangeGate
+// (which appends the changed_functions and changed_functions_summary
+// sections).
+const CrapSchema = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unbound-force/gaze/crap-report.schema.json",
+  "title": "Gaze CRAP Report",
+  "description": "Output schema for gaze crap --format=json",
+  "type": "object",
+  "required": ["scores", "summary"],
+  "properties": {
+    "scores": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Score" }
+    },
+    "summary": { "$ref": "#/$defs/Summary" },
+    "changed_functions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ChangedFunction" },
+      "description": "Scores for functions changed by the diff, each with a pass/fail indicator. Present only when --gate-on-change is active."
+    },
+    "changed_functions_summary": {
+      "$ref": "#/$defs/ChangedFunctionsSummary",
+      "description": "Aggregate pass/fail counts for the change gate. Present only when --gate-on-change is active."
+    }
+  },
+  "$defs": {
+    "Score": {
+      "type": "object",
+      "required": [
+        "package", "function", "file", "line", "end_line",
+        "complexity", "line_coverage", "crap"
+      ],
+      "properties": {
+        "package": { "type": "string" },
+        "function": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer" },
+        "end_line": { "type": "integer" },
+        "complexity": { "type": "integer" },
+        "line_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Line coverage percentage (0-100)"
+        },
+        "crap": { "type": "number" },
+        "contract_coverage": {
+          "type": "number",
+          "description": "Contract coverage percentage (0-100); omitted when unavailable"
+        },
+        "gaze_crap": {
+          "type": "number",
+          "description": "CRAP score computed from contract coverage; omitted when unavailable"
+        },
+        "quadrant": { "type": "string" },
+        "fix_strategy": {
+          "type": "string",
+          "enum": ["decompose", "add_tests", "add_assertions", "decompose_and_test"]
+        },
+        "contract_coverage_reason": { "type": "string" },
+        "effect_confidence_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer" }
+        }
+      }
+    },
+    "Summary": {
+      "type": "object",
+      "required": [
+        "total_functions", "avg_complexity", "avg_line_coverage",
+        "avg_crap", "crapload", "crap_threshold", "worst_crap"
+      ],
+      "properties": {
+        "total_functions": { "type": "integer" },
+        "avg_complexity": { "type": "number" },
+        "avg_line_coverage": { "type": "number" },
+        "avg_crap": { "type": "number" },
+        "crapload": { "type": "integer" },
+        "crap_threshold": { "type": "number" },
+        "gaze_crapload": { "type": "integer" },
+        "gaze_crap_threshold": { "type": "number" },
+        "avg_gaze_crap": { "type": "number" },
+        "avg_contract_coverage": { "type": "number" },
+        "quadrant_counts": { "type": "object" },
+        "fix_strategy_counts": { "type": "object" },
+        "worst_crap": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Score" }
+        },
+        "worst_gaze_crap": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Score" }
+        },
+        "recommended_actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RecommendedAction" }
+        },
+        "ssa_degraded_packages": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "RecommendedAction": {
+      "type": "object",
+      "properties": {
+        "function": { "type": "string" },
+        "package": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer" },
+        "fix_strategy": { "type": "string" },
+        "crap": { "type": "number" },
+        "gaze_crap": { "type": "number" },
+        "complexity": { "type": "integer" },
+        "quadrant": { "type": "string" }
+      }
+    },
+    "ChangedFunction": {
+      "type": "object",
+      "required": [
+        "package", "function", "file", "line", "end_line",
+        "complexity", "line_coverage", "crap", "passed"
+      ],
+      "properties": {
+        "package": { "type": "string" },
+        "function": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer" },
+        "end_line": { "type": "integer" },
+        "complexity": { "type": "integer" },
+        "line_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "crap": { "type": "number" },
+        "contract_coverage": { "type": "number" },
+        "gaze_crap": { "type": "number" },
+        "quadrant": { "type": "string" },
+        "fix_strategy": { "type": "string" },
+        "contract_coverage_reason": { "type": "string" },
+        "effect_confidence_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer" }
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "True when the function passes both the CRAP and GazeCRAP thresholds"
+        }
+      }
+    },
+    "ChangedFunctionsSummary": {
+      "type": "object",
+      "required": ["total", "passed", "failed"],
+      "properties": {
+        "total": { "type": "integer" },
+        "passed": { "type": "integer" },
+        "failed": { "type": "integer" }
+      }
+    }
+  }
+}`
