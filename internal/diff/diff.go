@@ -45,40 +45,21 @@ func Parse(diffOutput string) []FileChange {
 	var current *FileChange
 	var pendingPath string
 
-	flushPending := func() {
-		if pendingPath != "" && current == nil {
-			current = &FileChange{Path: pendingPath}
-			pendingPath = ""
-		}
-	}
-
 	for _, line := range strings.Split(diffOutput, "\n") {
-		if m := diffLineRe.FindStringSubmatch(line); m != nil {
-			flushPending()
-			if current != nil {
-				changes = append(changes, *current)
-				current = nil
-			}
-			pendingPath = m[1]
+		if path, ok := diffHeaderPath(line); ok {
+			flushPending(&current, &pendingPath)
+			flushCurrent(&changes, &current)
+			pendingPath = path
 			continue
 		}
 
-		if m := fileHeaderRe.FindStringSubmatch(line); m != nil {
-			path := m[1]
+		if path, ok := fileHeaderPath(line, pendingPath); ok {
 			if path == "" {
-				path = pendingPath
-			}
-			if path == "" {
-				if current != nil {
-					changes = append(changes, *current)
-					current = nil
-				}
+				flushCurrent(&changes, &current)
 				pendingPath = ""
 				continue
 			}
-			if current != nil {
-				changes = append(changes, *current)
-			}
+			flushCurrent(&changes, &current)
 			current = &FileChange{Path: path}
 			pendingPath = ""
 			continue
@@ -88,24 +69,76 @@ func Parse(diffOutput string) []FileChange {
 			continue
 		}
 
-		if m := hunkHeaderRe.FindStringSubmatch(line); m != nil {
-			start, _ := strconv.Atoi(m[1])
-			count := 1
-			if m[2] != "" {
-				count, _ = strconv.Atoi(m[2])
-			}
-			if count == 0 {
-				continue
-			}
-			end := start + count - 1
-			current.Ranges = append(current.Ranges, LineRange{Start: start, End: end})
+		if r, ok := parseHunkHeader(line); ok {
+			current.Ranges = append(current.Ranges, r)
 		}
 	}
 
-	flushPending()
+	flushPending(&current, &pendingPath)
 	if current != nil {
 		changes = append(changes, *current)
 	}
-
 	return changes
+}
+
+// diffHeaderPath extracts the target path from a `diff --git` header
+// line. It returns the path and whether the line matched.
+func diffHeaderPath(line string) (string, bool) {
+	m := diffLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// fileHeaderPath extracts the file path from a `+++ b/` header line,
+// falling back to pendingPath for `+++ /dev/null` deletion headers.
+// It returns the resolved path and whether the line matched.
+func fileHeaderPath(line, pendingPath string) (string, bool) {
+	m := fileHeaderRe.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	path := m[1]
+	if path == "" {
+		path = pendingPath
+	}
+	return path, true
+}
+
+// parseHunkHeader parses an `@@ -a,b +c,d @@` hunk header line. It
+// returns the added-line range it describes and whether the line was
+// a hunk header with a non-zero added-line count.
+func parseHunkHeader(line string) (LineRange, bool) {
+	m := hunkHeaderRe.FindStringSubmatch(line)
+	if m == nil {
+		return LineRange{}, false
+	}
+	start, _ := strconv.Atoi(m[1])
+	count := 1
+	if m[2] != "" {
+		count, _ = strconv.Atoi(m[2])
+	}
+	if count == 0 {
+		return LineRange{}, false
+	}
+	return LineRange{Start: start, End: start + count - 1}, true
+}
+
+// flushPending creates a FileChange from a pending path when no
+// explicit `+++ b/` header has done so yet.
+func flushPending(current **FileChange, pendingPath *string) {
+	if *pendingPath != "" && *current == nil {
+		*current = &FileChange{Path: *pendingPath}
+		*pendingPath = ""
+	}
+}
+
+// flushCurrent appends the current FileChange, if any, to changes and
+// clears it.
+func flushCurrent(changes *[]FileChange, current **FileChange) {
+	if *current != nil {
+		*changes = append(*changes, **current)
+		*current = nil
+	}
 }

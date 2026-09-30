@@ -19,14 +19,7 @@ func (g *GitDiffer) Diff(ref string) (string, error) {
 		return "", fmt.Errorf("git binary not found: --gate-on-change requires git")
 	}
 
-	var args []string
-	if ref == "staged" {
-		args = []string{"diff", "--staged", "--unified=0"}
-	} else {
-		args = []string{"diff", ref, "--unified=0"}
-	}
-
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", diffArgs(ref)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -36,4 +29,13 @@ func (g *GitDiffer) Diff(ref string) (string, error) {
 	}
 
 	return stdout.String(), nil
+}
+
+// diffArgs returns the git arguments for a diff against the given ref,
+// using `--staged` when ref is "staged".
+func diffArgs(ref string) []string {
+	if ref == "staged" {
+		return []string{"diff", "--staged", "--unified=0"}
+	}
+	return []string{"diff", ref, "--unified=0"}
 }
