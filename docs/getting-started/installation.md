@@ -19,13 +19,20 @@ Homebrew binaries for macOS are code-signed with an Apple Developer ID certifica
 
 ## Go Install
 
-If you have Go 1.25.0+ installed:
+Earlier evidenced v2 tags used an incompatible module path and cannot be
+installed with the Go toolchain. After a corrected stable release is published
+from the `/v2` module path, install it with Go 1.25.0 or later:
 
 ```bash
-go install github.com/unbound-force/gaze/cmd/gaze@latest
+go install github.com/unbound-force/gaze/v2/cmd/gaze@latest
 ```
 
 This places the `gaze` binary in your `$GOPATH/bin` (or `$GOBIN` if set). Make sure that directory is on your `$PATH`.
+
+Install a prerelease only by selecting a published prerelease tag from GitHub
+Releases and substituting that exact tag for `@latest`. Prereleases are never
+selected through `@latest`. Until a corrected stable release is published and
+verified, use Homebrew or a binary from GitHub Releases instead.
 
 ## Build from Source
 
@@ -60,11 +67,8 @@ After installing, confirm the binary is available:
 gaze --version
 ```
 
-You should see output like:
-
-```text
-gaze version v0.x.x
-```
+The command should report the exact release you installed. A corrected stable
+installation reports a v2 version.
 
 If the command is not found, verify that the binary's location is on your `$PATH`.
 

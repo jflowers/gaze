@@ -72,15 +72,18 @@ Before running any gaze command, locate the `gaze` binary:
    ```
     Use the built binary path as the binary.
 2. **Check `$PATH`**: Run `which gaze`. If found, use it.
-3. **Install from module**: As a last resort, run:
+3. **Install a corrected stable release from the module**: As a last resort,
+   run:
    ```bash
-   go install github.com/unbound-force/gaze/cmd/gaze@latest
+   go install github.com/unbound-force/gaze/v2/cmd/gaze@latest
    ```
-   Then use `gaze` from `$GOPATH/bin`.
+   This works only after a corrected stable v2 release has been published from
+   the `/v2` module path. Install prereleases only by explicit tag, never via
+   `@latest`. Then use `gaze` from `$GOPATH/bin`.
 
 If all three methods fail, report the error clearly and suggest
-the developer install gaze via `brew install unbound-force/tap/gaze`
-or `go install github.com/unbound-force/gaze/cmd/gaze@latest`.
+the developer install gaze via `brew install unbound-force/tap/gaze` or a
+binary from GitHub Releases.
 
 ## Mode Parsing
 
