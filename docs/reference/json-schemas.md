@@ -2,7 +2,7 @@
 
 Three Gaze commands produce structured JSON output via `--format=json`: [`analyze`](cli/analyze.md), [`crap`](cli/crap.md), and [`quality`](cli/quality.md). The [`report`](cli/report.md) command also supports `--format=json`, which outputs the combined analysis payload.
 
-Gaze embeds JSON Schemas (Draft 2020-12) for the analyze and quality outputs. Use `gaze schema` to print the analyze schema.
+Gaze embeds JSON Schemas (Draft 2020-12) for the analyze, quality, and crap outputs. Use `gaze schema` to print the analyze schema.
 
 ## Analyze Output
 
@@ -116,7 +116,7 @@ Gaze embeds JSON Schemas (Draft 2020-12) for the analyze and quality outputs. Us
 
 **Command**: `gaze crap <packages> --format=json`
 
-The CRAP JSON output is not covered by a formal embedded schema but follows a stable structure.
+The CRAP JSON output follows a formal embedded schema (`CrapSchema` in `internal/report/schema.go`). When `--gate-on-change` is active, two additional top-level fields are emitted alongside `scores` and `summary`.
 
 ### Top-Level Structure
 
@@ -124,6 +124,8 @@ The CRAP JSON output is not covered by a formal embedded schema but follows a st
 |-------|------|-------------|
 | `scores` | `Score[]` | Per-function CRAP scores |
 | `summary` | `Summary` | Aggregate statistics |
+| `changed_functions` | `ChangedFunction[]` | Changed functions and their pass/fail status (only when `--gate-on-change` is active) |
+| `changed_functions_summary` | `ChangedFunctionsSummary` | Aggregate pass/fail counts for changed functions (only when `--gate-on-change` is active) |
 
 ### Score
 
