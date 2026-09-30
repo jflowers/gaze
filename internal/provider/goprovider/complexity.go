@@ -81,7 +81,14 @@ func buildEndLineMap(paths []string) map[string]map[int]int {
 				if err != nil {
 					return nil
 				}
-				if !fi.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+				if fi.IsDir() {
+					switch fi.Name() {
+					case "vendor", "testdata", ".git":
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
 					files = append(files, path)
 				}
 				return nil
