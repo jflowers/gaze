@@ -477,6 +477,10 @@ type crapParams struct {
 	// before calling crap.Analyze. When nil and no provider is already set,
 	// the production GoContractCoverageProvider is constructed.
 	contractProvider crap.ContractCoverageProvider
+
+	// differ overrides the production git differ for testing. When nil,
+	// runCrap constructs a diff.GitDiffer for change-gate evaluation.
+	differ diff.Differ
 }
 
 func newSchemaCmd() *cobra.Command {
@@ -586,7 +590,10 @@ func runCrap(p crapParams) error {
 	// Compute change gate if --gate-on-change is set.
 	var changeGateResult *crap.ChangeGateResult
 	if p.gateOnChange != "" {
-		differ := &diff.GitDiffer{}
+		differ := p.differ
+		if differ == nil {
+			differ = &diff.GitDiffer{}
+		}
 		diffOutput, err := differ.Diff(p.gateOnChange)
 		if err != nil {
 			return err
@@ -613,9 +620,9 @@ func runCrap(p crapParams) error {
 
 	// Change gate: evaluate after other gates.
 	if changeGateResult != nil && !changeGateResult.Passed {
-		_, _ = fmt.Fprintf(p.stderr, "change gate: FAIL (%d/%d changed functions exceed CRAP threshold)\n",
+		_, _ = fmt.Fprintf(p.stderr, "change gate: FAIL (%d/%d changed functions exceed CRAP or GazeCRAP threshold)\n",
 			changeGateResult.Summary.Failed, changeGateResult.Summary.Total)
-		return fmt.Errorf("change gate failed: %d/%d changed functions exceed CRAP threshold",
+		return fmt.Errorf("change gate failed: %d/%d changed functions exceed CRAP or GazeCRAP threshold",
 			changeGateResult.Summary.Failed, changeGateResult.Summary.Total)
 	}
 
@@ -772,10 +779,10 @@ func writeChangeGateText(w io.Writer, cgr *crap.ChangeGateResult) {
 
 // writeCrapComparisonReport outputs the comparison report in the
 // requested format.
-func writeCrapComparisonReport(w io.Writer, format string, result *crap.ComparisonResult) error {
+func writeCrapComparisonReport(w io.Writer, format string, result *crap.ComparisonResult, cgr *crap.ChangeGateResult) error {
 	switch format {
 	case "json":
-		return crap.WriteComparisonJSON(w, result)
+		return crap.WriteComparisonJSON(w, result, cgr)
 	default:
 		return crap.WriteComparisonText(w, result)
 	}
@@ -946,7 +953,7 @@ func writeCrapOutputAndSummary(
 	maxCrapload, maxGazeCrapload int,
 ) error {
 	if cr != nil {
-		if err := writeCrapComparisonReport(stdout, format, cr); err != nil {
+		if err := writeCrapComparisonReport(stdout, format, cr, cgr); err != nil {
 			return err
 		}
 	} else {
@@ -1043,7 +1050,7 @@ automatically.`,
 				languageFlag:    languageFlag,
 				stdout:          os.Stdout,
 				stderr:          os.Stderr,
-				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload"),
+				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("gate-on-change"),
 			})
 		},
 	}
@@ -1067,7 +1074,7 @@ automatically.`,
 	cmd.Flags().StringVar(&baselinePath, "baseline", "",
 		"path to baseline file for comparison")
 	cmd.Flags().StringVar(&gateOnChange, "gate-on-change", "",
-		"fail if changed functions exceed CRAP threshold (git ref or 'staged')")
+		"fail if changed functions exceed CRAP or GazeCRAP threshold (git ref or 'staged')")
 	cmd.Flags().StringVar(&analyzerFlag, "analyzer", "",
 		"external analyzer binary (e.g., snake-eyes)")
 	cmd.Flags().StringVar(&languageFlag, "language", "",

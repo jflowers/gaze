@@ -3839,3 +3839,114 @@ func TestRunCrap_HTMLFormat_Rejected(t *testing.T) {
 		t.Errorf("expected invalid format error mentioning html, got: %s", err)
 	}
 }
+
+// fakeDiffer implements diff.Differ for tests, returning canned diff output.
+type fakeDiffer struct {
+	output string
+	err    error
+}
+
+func (f *fakeDiffer) Diff(ref string) (string, error) {
+	return f.output, f.err
+}
+
+// TestWriteChangeGateText_NoChangedFunctions verifies the zero-changed
+// branch prints the "No changed functions detected." message.
+func TestWriteChangeGateText_NoChangedFunctions(t *testing.T) {
+	var buf bytes.Buffer
+	writeChangeGateText(&buf, &crap.ChangeGateResult{Summary: crap.ChangedFunctionsSummary{}})
+	out := buf.String()
+	if !strings.Contains(out, "No changed functions detected.") {
+		t.Errorf("output = %q, want it to contain %q", out, "No changed functions detected.")
+	}
+}
+
+// TestWriteChangeGateText_PassAndFail verifies the populated branch prints
+// the FAIL status and marks failing functions with "* ".
+func TestWriteChangeGateText_PassAndFail(t *testing.T) {
+	cgr := &crap.ChangeGateResult{
+		Passed:  false,
+		Summary: crap.ChangedFunctionsSummary{Total: 2, Passed: 1, Failed: 1},
+		ChangedFunctions: []crap.ChangedFunction{
+			{Score: crap.Score{Function: "Good", CRAP: 5}, Passed: true},
+			{Score: crap.Score{Function: "Bad", CRAP: 25}, Passed: false},
+		},
+	}
+	var buf bytes.Buffer
+	writeChangeGateText(&buf, cgr)
+	out := buf.String()
+	if !strings.Contains(out, "FAIL") {
+		t.Errorf("output = %q, want it to contain FAIL", out)
+	}
+	if !strings.Contains(out, "* ") {
+		t.Errorf("output = %q, want failing-function marker '* '", out)
+	}
+}
+
+// TestRunCrapWithExternalAnalyzer_RejectsGateOnChange verifies the
+// --gate-on-change + --analyzer flag combination is rejected.
+func TestRunCrapWithExternalAnalyzer_RejectsGateOnChange(t *testing.T) {
+	err := runCrapWithExternalAnalyzer(crapParams{
+		analyzerFlag: "snake-eyes",
+		gateOnChange: "origin/main",
+	})
+	if err == nil {
+		t.Fatal("expected error for --gate-on-change with --analyzer")
+	}
+	if !strings.Contains(err.Error(), "--gate-on-change is not supported") {
+		t.Errorf("error = %q, want it to mention --gate-on-change unsupported", err.Error())
+	}
+}
+
+// TestRunCrap_GateOnChange_Fail verifies the change gate exits with an
+// error when a changed function exceeds the CRAP threshold.
+func TestRunCrap_GateOnChange_Fail(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runCrap(crapParams{
+		patterns:     []string{"./..."},
+		format:       "text",
+		opts:         crap.DefaultOptions(),
+		moduleDir:    t.TempDir(),
+		gateOnChange: "HEAD",
+		stdout:       &stdout,
+		stderr:       &stderr,
+		analyzeFunc: func(_ []string, _ string, _ crap.Options) (*crap.Report, error) {
+			return &crap.Report{
+				Scores:  []crap.Score{{Function: "Foo", File: "pkg/foo.go", Line: 10, EndLine: 25, CRAP: 25}},
+				Summary: crap.Summary{CRAPThreshold: 15, TotalFunctions: 1},
+			}, nil
+		},
+		differ: &fakeDiffer{output: "diff --git a/pkg/foo.go b/pkg/foo.go\n--- a/pkg/foo.go\n+++ b/pkg/foo.go\n@@ -10,6 +10,6 @@ func Foo() {\n"},
+	})
+	if err == nil {
+		t.Fatal("expected error when changed function exceeds CRAP threshold")
+	}
+	if !strings.Contains(err.Error(), "change gate failed") {
+		t.Errorf("expected 'change gate failed' in error, got: %s", err)
+	}
+}
+
+// TestRunCrap_GateOnChange_Pass verifies the change gate does not error
+// when the changed function is below the CRAP threshold.
+func TestRunCrap_GateOnChange_Pass(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runCrap(crapParams{
+		patterns:     []string{"./..."},
+		format:       "text",
+		opts:         crap.DefaultOptions(),
+		moduleDir:    t.TempDir(),
+		gateOnChange: "HEAD",
+		stdout:       &stdout,
+		stderr:       &stderr,
+		analyzeFunc: func(_ []string, _ string, _ crap.Options) (*crap.Report, error) {
+			return &crap.Report{
+				Scores:  []crap.Score{{Function: "Foo", File: "pkg/foo.go", Line: 10, EndLine: 25, CRAP: 5}},
+				Summary: crap.Summary{CRAPThreshold: 15, TotalFunctions: 1},
+			}, nil
+		},
+		differ: &fakeDiffer{output: "diff --git a/pkg/foo.go b/pkg/foo.go\n--- a/pkg/foo.go\n+++ b/pkg/foo.go\n@@ -10,6 +10,6 @@ func Foo() {\n"},
+	})
+	if err != nil {
+		t.Fatalf("expected nil error when changed function passes gate, got: %v", err)
+	}
+}
