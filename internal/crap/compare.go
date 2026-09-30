@@ -197,9 +197,28 @@ func buildComparisonSummary(result *ComparisonResult, opts CompareOptions) Compa
 	return summary
 }
 
+// exceedsThreshold reports whether s meets or exceeds either the CRAP or
+// GazeCRAP threshold for the change gate. A GazeCRAP threshold of zero
+// (or less) disables GazeCRAP gating. This predicate uses the "at or
+// above threshold" convention (>=), matching writeScoreTable and CRAPload
+// counting. It is intentionally distinct from isNewFunctionViolation,
+// which enforces the baseline new-function gate's strict greater-than
+// (>) boundary defined by the extract-violation-helper spec.
+func exceedsThreshold(s Score, crapThreshold, gazeCRAPThreshold float64) bool {
+	if s.CRAP >= crapThreshold {
+		return true
+	}
+	if gazeCRAPThreshold <= 0 {
+		return false
+	}
+	return s.GazeCRAP != nil && *s.GazeCRAP >= gazeCRAPThreshold
+}
+
 // isNewFunctionViolation reports whether a new function (not present
-// in the baseline) exceeds either the CRAP threshold or the GazeCRAP
-// threshold. This centralizes the violation check used by summary
+// in the baseline) strictly exceeds either the CRAP threshold or the
+// GazeCRAP threshold. The strict greater-than boundary is mandated by
+// the extract-violation-helper spec ("Exact threshold boundary MUST
+// return false"). This centralizes the violation check used by summary
 // counting (buildComparisonSummary), JSON output (WriteComparisonJSON),
 // and text output (writeComparisonNewFunctions).
 func isNewFunctionViolation(s Score, crapThreshold, gazeCRAPThreshold float64) bool {

@@ -1,6 +1,8 @@
 package crap
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/unbound-force/gaze/internal/diff"
@@ -130,5 +132,117 @@ func TestEvaluateChangeGate_NoChangedFunctions(t *testing.T) {
 	}
 	if result.Summary.Total != 0 {
 		t.Errorf("total = %d, want 0", result.Summary.Total)
+	}
+}
+
+// TestFilterChangedFunctions_BasenameCollisionNotMatched is a regression
+// test for the basename-matching false-positive: two files in different
+// directories sharing a basename must not match.
+func TestFilterChangedFunctions_BasenameCollisionNotMatched(t *testing.T) {
+	scores := []Score{
+		{Function: "Foo", File: "internal/a/util.go", Line: 10, EndLine: 25, CRAP: 5},
+	}
+	changes := []diff.FileChange{
+		{Path: "cmd/b/util.go", Ranges: []diff.LineRange{{Start: 15, End: 15}}},
+	}
+	result := FilterChangedFunctions(scores, changes)
+	if len(result) != 0 {
+		t.Fatalf("got %d, want 0 (basename collision must not match)", len(result))
+	}
+}
+
+// TestFilterChangedFunctions_DotSlashNormalized verifies that a diff path
+// with a leading "./" still matches the same canonical score file.
+func TestFilterChangedFunctions_DotSlashNormalized(t *testing.T) {
+	scores := []Score{
+		{Function: "Foo", File: "foo.go", Line: 10, EndLine: 25, CRAP: 5},
+	}
+	changes := []diff.FileChange{
+		{Path: "./foo.go", Ranges: []diff.LineRange{{Start: 15, End: 15}}},
+	}
+	result := FilterChangedFunctions(scores, changes)
+	if len(result) != 1 {
+		t.Fatalf("got %d, want 1 (./ prefix must normalize)", len(result))
+	}
+}
+
+// TestFilterChangedFunctions_EndLineZeroFallback verifies the EndLine==0
+// fallback: a score without an end line uses s.Line as the single-line
+// range for change matching.
+func TestFilterChangedFunctions_EndLineZeroFallback(t *testing.T) {
+	scores := []Score{
+		{Function: "Foo", File: "pkg/foo.go", Line: 10, EndLine: 0, CRAP: 5},
+	}
+	changes := []diff.FileChange{
+		{Path: "pkg/foo.go", Ranges: []diff.LineRange{{Start: 10, End: 10}}},
+	}
+	result := FilterChangedFunctions(scores, changes)
+	if len(result) != 1 {
+		t.Fatalf("got %d, want 1 (EndLine 0 must fall back to Line)", len(result))
+	}
+
+	changes = []diff.FileChange{
+		{Path: "pkg/foo.go", Ranges: []diff.LineRange{{Start: 11, End: 11}}},
+	}
+	result = FilterChangedFunctions(scores, changes)
+	if len(result) != 0 {
+		t.Fatalf("got %d, want 0 (line 11 outside single-line range)", len(result))
+	}
+}
+
+// TestWriteJSONWithChangeGate_NilChangedFunctions verifies the
+// nil→[]ChangedFunction{} branch: the emitted changed_functions field must
+// be an empty array, not null.
+func TestWriteJSONWithChangeGate_NilChangedFunctions(t *testing.T) {
+	rpt := &Report{Scores: []Score{}, Summary: Summary{}}
+	cgr := &ChangeGateResult{Summary: ChangedFunctionsSummary{}}
+	var buf bytes.Buffer
+	if err := WriteJSONWithChangeGate(&buf, rpt, cgr); err != nil {
+		t.Fatalf("WriteJSONWithChangeGate: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	cf, ok := out["changed_functions"].([]interface{})
+	if !ok {
+		t.Fatalf("changed_functions is not an array: %T", out["changed_functions"])
+	}
+	if len(cf) != 0 {
+		t.Fatalf("changed_functions len = %d, want 0", len(cf))
+	}
+}
+
+// TestWriteJSONWithChangeGate_Populated verifies the populated path emits
+// changed_functions and changed_functions_summary sections.
+func TestWriteJSONWithChangeGate_Populated(t *testing.T) {
+	rpt := &Report{
+		Scores:  []Score{{Function: "Foo", File: "pkg/foo.go", Line: 10, EndLine: 25, CRAP: 5}},
+		Summary: Summary{},
+	}
+	cgr := &ChangeGateResult{
+		ChangedFunctions: []ChangedFunction{
+			{Score: Score{Function: "Foo", File: "pkg/foo.go", Line: 10, EndLine: 25, CRAP: 5}, Passed: true},
+		},
+		Summary: ChangedFunctionsSummary{Total: 1, Passed: 1, Failed: 0},
+	}
+	var buf bytes.Buffer
+	if err := WriteJSONWithChangeGate(&buf, rpt, cgr); err != nil {
+		t.Fatalf("WriteJSONWithChangeGate: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	cf, ok := out["changed_functions"].([]interface{})
+	if !ok || len(cf) != 1 {
+		t.Fatalf("changed_functions = %v, want 1 element", out["changed_functions"])
+	}
+	cs, ok := out["changed_functions_summary"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("changed_functions_summary missing or wrong type: %T", out["changed_functions_summary"])
+	}
+	if cs["total"] != float64(1) {
+		t.Errorf("changed_functions_summary.total = %v, want 1", cs["total"])
 	}
 }

@@ -1179,7 +1179,7 @@ func TestSC001_NewFunction_BothBelowThreshold(t *testing.T) {
 
 func TestSC001_NewFunction_GazeCRAPEqualToThreshold(t *testing.T) {
 	// GazeCRAP exactly at threshold (30) is NOT a violation
-	// (strict greater-than comparison).
+	// (strict greater-than comparison, per the extract-violation-helper spec).
 	baseline := &Report{Scores: []Score{
 		makeScore("a.go", "Existing", 5.0, nil),
 	}}
@@ -1191,7 +1191,7 @@ func TestSC001_NewFunction_GazeCRAPEqualToThreshold(t *testing.T) {
 	result := Compare(baseline, current, defaultNewFuncOpts())
 
 	if result.Summary.NewViolations != 0 {
-		t.Errorf("NewViolations = %d, want 0 (GazeCRAP == threshold, not >)",
+		t.Errorf("NewViolations = %d, want 0 (GazeCRAP == threshold is not a violation)",
 			result.Summary.NewViolations)
 	}
 	if !result.Summary.Passed {
@@ -1347,7 +1347,7 @@ func TestIsNewFunctionViolation(t *testing.T) {
 			want:              true,
 		},
 		{
-			name:              "exact threshold boundary, not a violation",
+			name:              "exact threshold boundary is not a violation",
 			score:             Score{CRAP: 30.0, GazeCRAP: gazeCRAP(30.0)},
 			crapThreshold:     30.0,
 			gazeCRAPThreshold: 30.0,

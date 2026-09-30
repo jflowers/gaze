@@ -49,11 +49,13 @@ type removedFunctionJSON struct {
 // output. It assembles scores with delta annotations, new/removed
 // function lists, comparison summary, and the normal CRAP summary.
 type comparisonOutputJSON struct {
-	Scores           []comparisonScoreJSON `json:"scores"`
-	NewFunctions     []newFunctionJSON     `json:"new_functions"`
-	RemovedFunctions []removedFunctionJSON `json:"removed_functions"`
-	Comparison       ComparisonSummary     `json:"comparison"`
-	Summary          Summary               `json:"summary"`
+	Scores           []comparisonScoreJSON    `json:"scores"`
+	NewFunctions     []newFunctionJSON        `json:"new_functions"`
+	RemovedFunctions []removedFunctionJSON    `json:"removed_functions"`
+	Comparison       ComparisonSummary        `json:"comparison"`
+	Summary          Summary                  `json:"summary"`
+	ChangedFunctions []ChangedFunction        `json:"changed_functions,omitempty"`
+	ChangedSummary   *ChangedFunctionsSummary `json:"changed_functions_summary,omitempty"`
 }
 
 // WriteComparisonJSON writes a merged JSON output combining the
@@ -68,7 +70,9 @@ type comparisonOutputJSON struct {
 //   - removed_functions: functions in baseline but not current (status: removed)
 //   - comparison: aggregate counts and pass/fail
 //   - summary: the normal CRAP summary from the current report
-func WriteComparisonJSON(w io.Writer, result *ComparisonResult) error {
+//   - changed_functions / changed_functions_summary: change-gate results
+//     when a change gate result is provided (optional, D8)
+func WriteComparisonJSON(w io.Writer, result *ComparisonResult, cgr ...*ChangeGateResult) error {
 	// Build the delta lookup map for fast per-score enrichment.
 	deltaMap := make(map[string]FunctionDelta, len(result.Deltas))
 	for _, d := range result.Deltas {
@@ -140,6 +144,13 @@ func WriteComparisonJSON(w io.Writer, result *ComparisonResult) error {
 		RemovedFunctions: removedFuncs,
 		Comparison:       result.Summary,
 		Summary:          result.Report.Summary,
+	}
+
+	// When a change-gate result is supplied, include its changed-functions
+	// data in the combined JSON envelope (design D8).
+	if len(cgr) > 0 && cgr[0] != nil {
+		output.ChangedFunctions = cgr[0].ChangedFunctions
+		output.ChangedSummary = &cgr[0].Summary
 	}
 
 	enc := json.NewEncoder(w)
