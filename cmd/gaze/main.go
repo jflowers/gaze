@@ -446,20 +446,21 @@ Use /gaze in OpenCode (full mode) for document-enhanced classification.`,
 
 // crapParams holds the parsed flags for the crap command.
 type crapParams struct {
-	patterns        []string
-	format          string
-	opts            crap.Options
-	maxCrapload     int
-	maxGazeCrapload int
-	moduleDir       string
-	aiMapper        string
-	aiMapperModel   string
-	baselinePath    string
-	analyzerFlag    string
-	languageFlag    string
-	gateOnChange    string
-	stdout          io.Writer
-	stderr          io.Writer
+	patterns               []string
+	format                 string
+	opts                   crap.Options
+	maxCrapload            int
+	maxGazeCrapload        int
+	maxCognitiveComplexity int
+	moduleDir              string
+	aiMapper               string
+	aiMapperModel          string
+	baselinePath           string
+	analyzerFlag           string
+	languageFlag           string
+	gateOnChange           string
+	stdout                 io.Writer
+	stderr                 io.Writer
 
 	// thresholdSet is true when any threshold flag was explicitly
 	// provided on the command line (via cmd.Flags().Changed). Used
@@ -614,7 +615,7 @@ func runCrap(p crapParams) error {
 
 	// Evaluate gates: baseline regression then CI thresholds (D7).
 	if err := evaluateCrapGates(rpt, comparisonResult, p.stderr,
-		p.maxCrapload, p.maxGazeCrapload); err != nil {
+		p.maxCrapload, p.maxGazeCrapload, p.maxCognitiveComplexity); err != nil {
 		return err
 	}
 
@@ -678,7 +679,7 @@ func finishExternalCrapReport(p crapParams, rpt *crap.Report) error {
 	}
 
 	printCISummary(p.stderr, rpt, p.maxCrapload, p.maxGazeCrapload)
-	return checkCIThresholds(rpt, p.maxCrapload, p.maxGazeCrapload)
+	return checkCIThresholds(rpt, p.maxCrapload, p.maxGazeCrapload, p.maxCognitiveComplexity)
 }
 
 // initExternalSession discovers, spawns, and initializes an external
@@ -907,19 +908,27 @@ func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload 
 }
 
 // checkCIThresholds returns an error if any CI thresholds are exceeded.
-func checkCIThresholds(rpt *crap.Report, maxCrapload, maxGazeCrapload int) error {
+func checkCIThresholds(rpt *crap.Report, maxCrapload, maxGazeCrapload, maxCognitiveComplexity int) error {
 	if maxCrapload > 0 && rpt.Summary.CRAPload > maxCrapload {
 		return fmt.Errorf("CRAPload %d exceeds maximum %d",
 			rpt.Summary.CRAPload, maxCrapload)
 	}
-	// When GazeCRAPload is nil, skip the check silently. gaze crap
-	// prints a "GazeCRAP unavailable" note separately (line ~502).
-	// This differs from gaze report's EvaluateThresholds which fails
-	// when the metric is unavailable — see #108.
 	if maxGazeCrapload > 0 && rpt.Summary.GazeCRAPload != nil &&
 		*rpt.Summary.GazeCRAPload > maxGazeCrapload {
 		return fmt.Errorf("GazeCRAPload %d exceeds maximum %d",
 			*rpt.Summary.GazeCRAPload, maxGazeCrapload)
+	}
+	if maxCognitiveComplexity > 0 {
+		exceeded := 0
+		for _, s := range rpt.Scores {
+			if s.CognitiveComplexity != nil && *s.CognitiveComplexity > maxCognitiveComplexity {
+				exceeded++
+			}
+		}
+		if exceeded > 0 {
+			return fmt.Errorf("cognitive complexity exceeds maximum %d for %d function(s)",
+				maxCognitiveComplexity, exceeded)
+		}
 	}
 	return nil
 }
@@ -977,7 +986,7 @@ func evaluateCrapGates(
 	rpt *crap.Report,
 	cr *crap.ComparisonResult,
 	stderr io.Writer,
-	maxCrapload, maxGazeCrapload int,
+	maxCrapload, maxGazeCrapload, maxCognitiveComplexity int,
 ) error {
 	// Baseline gate: evaluate first so comparison output is visible (D7).
 	if cr != nil && !cr.Summary.Passed {
@@ -990,24 +999,25 @@ func evaluateCrapGates(
 	}
 
 	// Threshold gate: evaluate only if baseline gate passed.
-	return checkCIThresholds(rpt, maxCrapload, maxGazeCrapload)
+	return checkCIThresholds(rpt, maxCrapload, maxGazeCrapload, maxCognitiveComplexity)
 }
 
 func newCrapCmd() *cobra.Command {
 	var (
-		format            string
-		coverProfile      string
-		crapThreshold     float64
-		gazeCrapThreshold float64
-		maxCrapload       int
-		maxGazeCrapload   int
-		aiMapper          string
-		aiMapperModel     string
-		baselinePath      string
-		gateOnChange      string
-		analyzerFlag      string
-		languageFlag      string
-		testShort         bool
+		format                 string
+		coverProfile           string
+		crapThreshold          float64
+		gazeCrapThreshold      float64
+		maxCrapload            int
+		maxGazeCrapload        int
+		maxCognitiveComplexity int
+		aiMapper               string
+		aiMapperModel          string
+		baselinePath           string
+		gateOnChange           string
+		analyzerFlag           string
+		languageFlag           string
+		testShort              bool
 	)
 
 	cmd := &cobra.Command{
@@ -1035,13 +1045,14 @@ automatically.`,
 			lineProv := goprovider.NewLineCoverageProvider(os.Stderr)
 			lineProv.Short = testShort
 			opts.LineCoverageProvider = lineProv
-			return runCrap(crapParams{
-				patterns:        args,
-				format:          format,
-				opts:            opts,
-				maxCrapload:     maxCrapload,
-				maxGazeCrapload: maxGazeCrapload,
-				moduleDir:       cwd,
+		return runCrap(crapParams{
+			patterns:               args,
+			format:                 format,
+			opts:                   opts,
+			maxCrapload:            maxCrapload,
+			maxGazeCrapload:        maxGazeCrapload,
+			maxCognitiveComplexity: maxCognitiveComplexity,
+			moduleDir:              cwd,
 				aiMapper:        aiMapper,
 				aiMapperModel:   aiMapperModel,
 				baselinePath:    baselinePath,
@@ -1050,7 +1061,7 @@ automatically.`,
 				languageFlag:    languageFlag,
 				stdout:          os.Stdout,
 				stderr:          os.Stderr,
-				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("gate-on-change"),
+				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("max-cognitive-complexity") || cmd.Flags().Changed("gate-on-change"),
 			})
 		},
 	}
@@ -1067,6 +1078,8 @@ automatically.`,
 		"fail if CRAPload exceeds this (0 = no limit)")
 	cmd.Flags().IntVar(&maxGazeCrapload, "max-gaze-crapload", 0,
 		"fail if GazeCRAPload exceeds this (0 = no limit)")
+	cmd.Flags().IntVar(&maxCognitiveComplexity, "max-cognitive-complexity", 0,
+		"fail if any function's cognitive complexity exceeds this (0 = no limit)")
 	cmd.Flags().StringVar(&aiMapper, "ai-mapper", "",
 		"AI backend for assertion mapping fallback: claude, gemini, ollama, or opencode")
 	cmd.Flags().StringVar(&aiMapperModel, "ai-mapper-model", "",
@@ -2006,7 +2019,7 @@ scores are included when contract coverage data is available
 				testShort:       testShort,
 				stdout:          os.Stdout,
 				stderr:          os.Stderr,
-				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload"),
+				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("max-cognitive-complexity"),
 			})
 		},
 	}

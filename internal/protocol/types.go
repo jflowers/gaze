@@ -27,11 +27,12 @@ const (
 	MethodShutdown   = "shutdown"
 
 	// Optional methods — declared via capabilities in initialize response.
-	MethodDiscover        = "discover"
-	MethodTestMapping     = "test_mapping"
-	MethodClassifySignals = "classify_signals"
-	MethodAnalyzeStream   = "analyze/stream"
-	MethodDocCoverage     = "doc_coverage"
+	MethodDiscover            = "discover"
+	MethodTestMapping         = "test_mapping"
+	MethodClassifySignals     = "classify_signals"
+	MethodAnalyzeStream       = "analyze/stream"
+	MethodDocCoverage         = "doc_coverage"
+	MethodCognitiveComplexity = "cognitive_complexity"
 )
 
 // ProtocolVersion is the current protocol version. Included in the
@@ -289,6 +290,43 @@ type FunctionComplexityData struct {
 
 	// Complexity is the cyclomatic complexity value.
 	Complexity int `json:"complexity"`
+}
+
+// CognitiveComplexityParams is the params object for the
+// "cognitive_complexity" method.
+type CognitiveComplexityParams struct {
+	// RootPath is the project root directory.
+	RootPath string `json:"root_path"`
+
+	// Patterns is the list of package/file patterns.
+	Patterns []string `json:"patterns"`
+}
+
+// CognitiveComplexityResult is the result object for the
+// "cognitive_complexity" method.
+type CognitiveComplexityResult struct {
+	// Functions is the list of functions with their cognitive
+	// complexity.
+	Functions []FunctionCognitiveComplexityData `json:"functions"`
+}
+
+// FunctionCognitiveComplexityData represents per-function cognitive
+// complexity from an external analyzer.
+type FunctionCognitiveComplexityData struct {
+	// Name is the function or method name.
+	Name string `json:"name"`
+
+	// Package is the package/module path.
+	Package string `json:"package"`
+
+	// File is the source file path.
+	File string `json:"file"`
+
+	// Line is the line number of the function declaration.
+	Line int `json:"line"`
+
+	// CognitiveComplexity is the cognitive complexity value.
+	CognitiveComplexity int `json:"cognitive_complexity"`
 }
 
 // --- Coverage method types ---

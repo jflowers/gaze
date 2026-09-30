@@ -361,7 +361,7 @@ func TestCheckCIThresholds_AllPass(t *testing.T) {
 	rpt := &crap.Report{
 		Summary: crap.Summary{CRAPload: 3},
 	}
-	err := checkCIThresholds(rpt, 5, 0)
+	err := checkCIThresholds(rpt, 5, 0, 0)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestCheckCIThresholds_NoLimits(t *testing.T) {
 	rpt := &crap.Report{
 		Summary: crap.Summary{CRAPload: 100},
 	}
-	err := checkCIThresholds(rpt, 0, 0)
+	err := checkCIThresholds(rpt, 0, 0, 0)
 	if err != nil {
 		t.Errorf("expected no error with no limits, got: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestCheckCIThresholds_CRAPloadExceeded(t *testing.T) {
 	rpt := &crap.Report{
 		Summary: crap.Summary{CRAPload: 10},
 	}
-	err := checkCIThresholds(rpt, 5, 0)
+	err := checkCIThresholds(rpt, 5, 0, 0)
 	if err == nil {
 		t.Fatal("expected error when CRAPload exceeds max")
 	}
@@ -395,7 +395,7 @@ func TestCheckCIThresholds_GazeCRAPloadExceeded(t *testing.T) {
 	rpt := &crap.Report{
 		Summary: crap.Summary{GazeCRAPload: &gc},
 	}
-	err := checkCIThresholds(rpt, 0, 5)
+	err := checkCIThresholds(rpt, 0, 5, 0)
 	if err == nil {
 		t.Fatal("expected error when GazeCRAPload exceeds max")
 	}
@@ -410,7 +410,7 @@ func TestCheckCIThresholds_GazeCRAPloadNil(t *testing.T) {
 	}
 	// Should not error even with maxGazeCrapload set, because
 	// GazeCRAPload is nil (not computed).
-	err := checkCIThresholds(rpt, 0, 5)
+	err := checkCIThresholds(rpt, 0, 5, 0)
 	if err != nil {
 		t.Errorf("expected no error when GazeCRAPload is nil, got: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestCheckCIThresholds_CRAPloadAtBoundary(t *testing.T) {
 	rpt := &crap.Report{
 		Summary: crap.Summary{CRAPload: 5},
 	}
-	err := checkCIThresholds(rpt, 5, 0)
+	err := checkCIThresholds(rpt, 5, 0, 0)
 	if err != nil {
 		t.Errorf("expected no error when CRAPload equals max, got: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestCheckCIThresholds_BothExceeded(t *testing.T) {
 			GazeCRAPload: &gc,
 		},
 	}
-	err := checkCIThresholds(rpt, 5, 5)
+	err := checkCIThresholds(rpt, 5, 5, 0)
 	if err == nil {
 		t.Fatal("expected error when both thresholds exceeded")
 	}
@@ -1174,7 +1174,7 @@ func TestEvaluateCrapGates_BaselineRegression(t *testing.T) {
 		},
 	}
 	var stderr bytes.Buffer
-	err := evaluateCrapGates(rpt, cr, &stderr, 100, 100)
+	err := evaluateCrapGates(rpt, cr, &stderr, 100, 100, 0)
 	if err == nil {
 		t.Fatal("expected error for baseline regression")
 	}
@@ -1195,7 +1195,7 @@ func TestEvaluateCrapGates_BaselinePassThenThresholds(t *testing.T) {
 		},
 	}
 	var stderr bytes.Buffer
-	err := evaluateCrapGates(rpt, cr, &stderr, 100, 0)
+	err := evaluateCrapGates(rpt, cr, &stderr, 100, 0, 0)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -1206,7 +1206,7 @@ func TestEvaluateCrapGates_ThresholdViolation(t *testing.T) {
 	rpt := stubReport()
 	rpt.Summary.CRAPload = 10 // exceeds max of 5
 	var stderr bytes.Buffer
-	err := evaluateCrapGates(rpt, nil, &stderr, 5, 0)
+	err := evaluateCrapGates(rpt, nil, &stderr, 5, 0, 0)
 	if err == nil {
 		t.Fatal("expected error for threshold violation")
 	}
@@ -1219,7 +1219,7 @@ func TestEvaluateCrapGates_AllPass(t *testing.T) {
 	// Nil comparison, no threshold violation → nil.
 	rpt := stubReport() // CRAPload=0
 	var stderr bytes.Buffer
-	err := evaluateCrapGates(rpt, nil, &stderr, 100, 0)
+	err := evaluateCrapGates(rpt, nil, &stderr, 100, 0, 0)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
