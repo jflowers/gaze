@@ -2,7 +2,6 @@ package crap
 
 import (
 	"path/filepath"
-	"strings"
 
 	"github.com/unbound-force/gaze/internal/diff"
 )
@@ -21,11 +20,13 @@ type ChangedFunctionsSummary struct {
 	Failed int `json:"failed"`
 }
 
-// ChangeGateResult is the output of the change gate evaluation.
+// ChangeGateResult is the output of the change gate evaluation. It is not
+// marshaled directly — WriteJSONWithChangeGate and the comparison JSON
+// envelope each assemble their own output shape from its fields.
 type ChangeGateResult struct {
-	ChangedFunctions []ChangedFunction       `json:"changed_functions"`
-	Summary          ChangedFunctionsSummary `json:"changed_functions_summary"`
-	Passed           bool                    `json:"passed"`
+	ChangedFunctions []ChangedFunction
+	Summary          ChangedFunctionsSummary
+	Passed           bool
 }
 
 // FilterChangedFunctions returns scores for functions whose line
@@ -53,10 +54,7 @@ func EvaluateChangeGate(scores []Score, fileChanges []diff.FileChange, crapThres
 	passed := 0
 	failed := 0
 	for _, s := range changed {
-		p := s.CRAP < crapThreshold
-		if p && s.GazeCRAP != nil && gazeCRAPThreshold > 0 {
-			p = *s.GazeCRAP < gazeCRAPThreshold
-		}
+		p := !exceedsThreshold(s, crapThreshold, gazeCRAPThreshold)
 		if !p {
 			result.Passed = false
 			failed++
@@ -83,40 +81,34 @@ type changeMap map[string][]diff.LineRange
 func buildChangeMap(fileChanges []diff.FileChange) changeMap {
 	m := make(changeMap, len(fileChanges))
 	for _, fc := range fileChanges {
-		m[fc.Path] = fc.Ranges
+		m[cleanPath(fc.Path)] = fc.Ranges
 	}
 	return m
 }
 
 func isFunctionChanged(s Score, cm changeMap) bool {
-	for diffPath, ranges := range cm {
-		if !fileMatches(s.File, diffPath) {
-			continue
-		}
-		endLine := s.EndLine
-		if endLine == 0 {
-			endLine = s.Line
-		}
-		for _, r := range ranges {
-			if r.Start <= endLine && r.End >= s.Line {
-				return true
-			}
+	ranges, ok := cm[cleanPath(s.File)]
+	if !ok {
+		return false
+	}
+	endLine := s.EndLine
+	if endLine == 0 {
+		endLine = s.Line
+	}
+	for _, r := range ranges {
+		if r.Start <= endLine && r.End >= s.Line {
+			return true
 		}
 	}
 	return false
 }
 
-func fileMatches(scoreFile, diffPath string) bool {
-	if scoreFile == diffPath {
-		return true
-	}
-	if strings.HasSuffix(scoreFile, string(filepath.Separator)+diffPath) {
-		return true
-	}
-	if strings.HasSuffix(diffPath, string(filepath.Separator)+scoreFile) {
-		return true
-	}
-	scoreRel := strings.TrimPrefix(scoreFile, "./")
-	diffRel := strings.TrimPrefix(diffPath, "./")
-	return scoreRel == diffRel
+// cleanPath normalizes a file path for map-key comparison. Both Score.File
+// (relativized to the module root in analyze) and diff.FileChange.Path
+// (emitted by git diff relative to the repository root) are module-relative
+// in production, so filepath.Clean — which strips "./" prefixes and
+// redundant separators — is sufficient for exact key equality. Exact matching
+// avoids the false positives of basename or suffix heuristics.
+func cleanPath(p string) string {
+	return filepath.Clean(p)
 }

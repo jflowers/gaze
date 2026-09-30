@@ -863,3 +863,51 @@ func TestSC005_JSONOutput_NewFunctionStatusUsesGazeCRAP(t *testing.T) {
 			status, StatusNewViolation)
 	}
 }
+
+// TestWriteComparisonJSON_WithChangeGate verifies that the combined
+// --baseline + --gate-on-change JSON envelope (design D8) emits both the
+// comparison sections and the changed_functions / changed_functions_summary
+// sections when a ChangeGateResult is supplied.
+func TestWriteComparisonJSON_WithChangeGate(t *testing.T) {
+	result := buildTestComparisonResult()
+	cgr := &ChangeGateResult{
+		ChangedFunctions: []ChangedFunction{
+			{Score: makeScore("internal/crap/analyze.go", "Analyze", 12.5, float64Ptr(18.3)), Passed: false},
+		},
+		Summary: ChangedFunctionsSummary{Total: 1, Passed: 0, Failed: 1},
+		Passed:  false,
+	}
+
+	var buf bytes.Buffer
+	if err := WriteComparisonJSON(&buf, result, cgr); err != nil {
+		t.Fatalf("WriteComparisonJSON() error: %v", err)
+	}
+
+	var output map[string]json.RawMessage
+	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	if _, ok := output["changed_functions"]; !ok {
+		t.Error("missing top-level key \"changed_functions\" in combined JSON output")
+	}
+	if _, ok := output["changed_functions_summary"]; !ok {
+		t.Error("missing top-level key \"changed_functions_summary\" in combined JSON output")
+	}
+
+	var changed []map[string]interface{}
+	if err := json.Unmarshal(output["changed_functions"], &changed); err != nil {
+		t.Fatalf("parsing changed_functions: %v", err)
+	}
+	if len(changed) != 1 {
+		t.Fatalf("len(changed_functions) = %d, want 1", len(changed))
+	}
+
+	var summary map[string]interface{}
+	if err := json.Unmarshal(output["changed_functions_summary"], &summary); err != nil {
+		t.Fatalf("parsing changed_functions_summary: %v", err)
+	}
+	if summary["total"] != float64(1) || summary["failed"] != float64(1) {
+		t.Errorf("changed_functions_summary = %v, want total=1 failed=1", summary)
+	}
+}
