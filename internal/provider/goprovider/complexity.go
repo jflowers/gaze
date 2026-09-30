@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/fzipp/gocyclo"
 	"github.com/unbound-force/gaze/v2/internal/crap"
 )
@@ -72,6 +73,7 @@ func buildEndLineMap(paths []string) map[string]map[int]int {
 	for _, p := range paths {
 		info, err := os.Stat(p)
 		if err != nil {
+			log.Warn("skipping path: stat failed", "path", p, "err", err)
 			continue
 		}
 		if info.IsDir() {
@@ -92,6 +94,7 @@ func buildEndLineMap(paths []string) map[string]map[int]int {
 	for _, file := range files {
 		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
+			log.Warn("skipping file: parse failed", "file", file, "err", err)
 			continue
 		}
 		filename := fset.Position(f.Pos()).Filename
