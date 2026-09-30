@@ -23,9 +23,9 @@ type ChangedFunctionsSummary struct {
 
 // ChangeGateResult is the output of the change gate evaluation.
 type ChangeGateResult struct {
-	ChangedFunctions []ChangedFunction        `json:"changed_functions"`
-	Summary          ChangedFunctionsSummary  `json:"changed_functions_summary"`
-	Passed           bool                     `json:"passed"`
+	ChangedFunctions []ChangedFunction       `json:"changed_functions"`
+	Summary          ChangedFunctionsSummary `json:"changed_functions_summary"`
+	Passed           bool                    `json:"passed"`
 }
 
 // FilterChangedFunctions returns scores for functions whose line
@@ -108,9 +108,6 @@ func isFunctionChanged(s Score, cm changeMap) bool {
 
 func fileMatches(scoreFile, diffPath string) bool {
 	if scoreFile == diffPath {
-		return true
-	}
-	if filepath.Base(scoreFile) == filepath.Base(diffPath) {
 		return true
 	}
 	if strings.HasSuffix(scoreFile, string(filepath.Separator)+diffPath) {

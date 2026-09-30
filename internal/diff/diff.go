@@ -114,10 +114,16 @@ func parseHunkHeader(line string) (LineRange, bool) {
 	if m == nil {
 		return LineRange{}, false
 	}
-	start, _ := strconv.Atoi(m[1])
+	start, err := strconv.Atoi(m[1])
+	if err != nil {
+		return LineRange{}, false
+	}
 	count := 1
 	if m[2] != "" {
-		count, _ = strconv.Atoi(m[2])
+		count, err = strconv.Atoi(m[2])
+		if err != nil {
+			return LineRange{}, false
+		}
 	}
 	if count == 0 {
 		return LineRange{}, false
