@@ -1071,3 +1071,92 @@ func TestWriteVerboseSignals_NoSignals(t *testing.T) {
 		t.Errorf("expected empty output for effects without signals, got %q", output)
 	}
 }
+
+// TestCrapSchema_Compiles verifies the CrapSchema constant is valid JSON
+// Schema that compiles without errors, preventing it from being orphaned
+// dead code (Zero-Waste Mandate).
+func TestCrapSchema_Compiles(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(CrapSchema))
+	if err != nil {
+		t.Fatalf("failed to parse CrapSchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("crap-schema.json", sch); err != nil {
+		t.Fatalf("failed to add crap schema resource: %v", err)
+	}
+	if _, err := compiler.Compile("crap-schema.json"); err != nil {
+		t.Fatalf("failed to compile CrapSchema: %v", err)
+	}
+}
+
+// TestCrapSchema_ValidatesChangeGateOutput validates a sample change-gate
+// CRAP JSON payload against the CrapSchema, covering the changed_functions
+// and changed_functions_summary sections.
+func TestCrapSchema_ValidatesChangeGateOutput(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(CrapSchema))
+	if err != nil {
+		t.Fatalf("failed to parse CrapSchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("crap-schema.json", sch); err != nil {
+		t.Fatalf("failed to add crap schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("crap-schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile CrapSchema: %v", err)
+	}
+
+	sample := map[string]interface{}{
+		"scores": []map[string]interface{}{
+			{
+				"package":       "pkg",
+				"function":      "Foo",
+				"file":          "pkg/foo.go",
+				"line":          10,
+				"end_line":      25,
+				"complexity":    5,
+				"line_coverage": 80.0,
+				"crap":          5.0,
+			},
+		},
+		"summary": map[string]interface{}{
+			"total_functions":   1,
+			"avg_complexity":    5.0,
+			"avg_line_coverage": 80.0,
+			"avg_crap":          5.0,
+			"crapload":          0,
+			"crap_threshold":    15.0,
+			"worst_crap":        []map[string]interface{}{},
+		},
+		"changed_functions": []map[string]interface{}{
+			{
+				"package":       "pkg",
+				"function":      "Foo",
+				"file":          "pkg/foo.go",
+				"line":          10,
+				"end_line":      25,
+				"complexity":    5,
+				"line_coverage": 80.0,
+				"crap":          5.0,
+				"passed":        true,
+			},
+		},
+		"changed_functions_summary": map[string]interface{}{
+			"total":  1,
+			"passed": 1,
+			"failed": 0,
+		},
+	}
+
+	sampleJSON, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatalf("failed to marshal sample: %v", err)
+	}
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+	if err != nil {
+		t.Fatalf("failed to parse sample JSON: %v", err)
+	}
+	if err := compiled.Validate(inst); err != nil {
+		t.Errorf("sample crap JSON does not conform to CrapSchema:\n%v", err)
+	}
+}
