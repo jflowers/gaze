@@ -3,8 +3,8 @@ package goprovider
 import (
 	"go/ast"
 
-	"github.com/unbound-force/gaze/internal/cognitive"
-	"github.com/unbound-force/gaze/internal/crap"
+	"github.com/unbound-force/gaze/v2/internal/cognitive"
+	"github.com/unbound-force/gaze/v2/internal/crap"
 	"golang.org/x/tools/go/packages"
 )
 
