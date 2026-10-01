@@ -3,7 +3,7 @@ package crap
 import (
 	"path/filepath"
 
-	"github.com/unbound-force/gaze/internal/diff"
+	"github.com/unbound-force/gaze/v2/internal/diff"
 )
 
 // ChangedFunction is a Score enriched with a pass/fail indicator
