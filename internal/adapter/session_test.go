@@ -11,7 +11,7 @@ import (
 func TestSession_DiscoverPopulatesTestFiles(t *testing.T) {
 	var stderr bytes.Buffer
 	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio"}, "/tmp/project", []string{"./..."}, &stderr, nil)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	providers, err := session.Initialize()
 	if err != nil {
@@ -70,7 +70,7 @@ func TestSession_DiscoverCapabilityDisabled(t *testing.T) {
 func TestSession_DiscoverError(t *testing.T) {
 	var stderr bytes.Buffer
 	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--discover-error"}, "/tmp/project", []string{"./..."}, &stderr, nil)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	providers, err := session.Initialize()
 	if err != nil {
@@ -114,7 +114,7 @@ func TestSession_DiscoverCalledOnce(t *testing.T) {
 func TestSession_DiscoverEmptyTestFiles(t *testing.T) {
 	var stderr bytes.Buffer
 	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--empty-discover"}, "/tmp/project", []string{"./..."}, &stderr, nil)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	providers, err := session.Initialize()
 	if err != nil {
@@ -142,7 +142,7 @@ func TestSession_DiscoverEmptyTestFiles(t *testing.T) {
 func TestSession_QualitySentinelEndToEnd(t *testing.T) {
 	var stderr bytes.Buffer
 	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio"}, "/tmp/project", []string{"./..."}, &stderr, nil)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	providers, err := session.Initialize()
 	if err != nil {
