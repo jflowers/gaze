@@ -40,9 +40,25 @@ on:
 permissions: {}
 
 jobs:
+  validate-module-major:
+    name: Validate Module Major
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Validate module path against release tag
+        run: .github/scripts/validate-module-major.sh -- "$RELEASE_TAG" go.mod
+
   preflight:
     name: Preflight
-    uses: complytime/org-infra/.github/workflows/reusable_release_preflight.yml@0c784711926c9864f027ec565fd7c06a382d80f8 # v0.7.1
+    needs: validate-module-major
+    uses: complytime/org-infra/.github/workflows/reusable_release_preflight.yml@0c784711926c9864f027ec565fd7c06a382d80f8  # v0.7.1
     with:
       tag: ${{ inputs.tag }}
       ci_checks: '["Unit + Integration Tests (Go 1.24)", "Unit + Integration Tests (Go 1.25)", "MegaLinter"]'
@@ -58,7 +74,7 @@ jobs:
     name: Release
     needs: preflight
     if: needs.preflight.outputs.tag != ''
-    uses: complytime/org-infra/.github/workflows/reusable_release_goreleaser.yml@0c784711926c9864f027ec565fd7c06a382d80f8 # v0.7.1
+    uses: complytime/org-infra/.github/workflows/reusable_release_goreleaser.yml@0c784711926c9864f027ec565fd7c06a382d80f8  # v0.7.1
     with:
       tag: ${{ needs.preflight.outputs.tag }}
     permissions:

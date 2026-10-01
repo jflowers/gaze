@@ -35,6 +35,10 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Test release module validation
+        if: matrix.go-version == '1.25'
+        run: .github/scripts/test-validate-module-major.sh
+
       - name: Build
         run: go build ./...
 

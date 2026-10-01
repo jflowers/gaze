@@ -37,9 +37,17 @@ brew install unbound-force/tap/gaze
 
 ### Go Install
 
+Earlier evidenced v2 tags used an incompatible module path and cannot be
+installed with the Go toolchain. After a corrected stable release is published
+from the `/v2` module path, install it with:
+
 ```bash
-go install github.com/unbound-force/gaze/cmd/gaze@latest
+go install github.com/unbound-force/gaze/v2/cmd/gaze@latest
 ```
+
+Install prereleases only by their explicit tag, never through `@latest`. Until
+a corrected stable release is available, use Homebrew or download a binary from
+[GitHub Releases](https://github.com/unbound-force/gaze/releases).
 
 ### Build from Source
 
