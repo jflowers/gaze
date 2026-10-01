@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/unbound-force/gaze/internal/diff"
+	"github.com/unbound-force/gaze/v2/internal/diff"
 )
 
 func TestFilterChangedFunctions_FunctionContainsChangedLine(t *testing.T) {
