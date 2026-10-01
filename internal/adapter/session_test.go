@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unbound-force/gaze/internal/adapter"
+	"github.com/unbound-force/gaze/v2/internal/adapter"
 )
 
 func TestSession_DiscoverPopulatesTestFiles(t *testing.T) {

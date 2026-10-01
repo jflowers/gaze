@@ -3,7 +3,7 @@ package adapter
 import (
 	"testing"
 
-	"github.com/unbound-force/gaze/internal/crap"
+	"github.com/unbound-force/gaze/v2/internal/crap"
 )
 
 func TestFilterTestFiles(t *testing.T) {
