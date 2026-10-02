@@ -55,7 +55,7 @@
 ## 6. External Analyzer Protocol
 
 - [x] 6.1 Add `cognitive_complexity` method constant and `FunctionCognitiveComplexityData` type to `internal/protocol/types.go`
-- [x] 6.2 Implement `FetchCognitiveComplexity` in `internal/adapter/` for external analyzer integration
+- [x] 6.2 Implement `ExternalCognitiveComplexityProvider` + `convertCognitiveComplexity` in `internal/adapter/` for external analyzer integration
 - [x] 6.3 Wire graceful degradation: nil fields when external analyzer does not implement method
 - [x] 6.4 Update fake analyzer in `internal/protocol/testdata/` to support `cognitive_complexity`
 - [ ] 6.5 Write integration tests for external analyzer cognitive complexity flow (deferred: fake analyzer now serves `cognitive_complexity`, but the end-to-end session round-trip test is not yet written)

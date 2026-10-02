@@ -80,7 +80,7 @@ Using pointer types maintains JSON `omitempty` behavior and backward compatibili
 
 ### D6: CI gate flag
 
-`--max-cognitive-complexity=<N>` on `gaze analyze` and `gaze crap`. When any function exceeds N, exit code 1. Follows the same pattern as `--max-crapload` and `--max-gaze-crapload` — `*int` + `cmd.Flags().Changed()` for zero-as-live-threshold semantics.
+`--max-cognitive-complexity=<N>` on `gaze analyze` and `gaze crap`. When any function exceeds N, exit code 1. Follows the same pattern as `--max-crapload` and `--max-gaze-crapload` — `int` + `cmd.Flags().Changed()` for zero-as-live-threshold semantics.
 
 ### D7: External analyzer protocol
 
