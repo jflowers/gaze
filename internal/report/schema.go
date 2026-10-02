@@ -553,6 +553,14 @@ const CrapSchema = `{
           "type": "number",
           "description": "CRAP score computed from contract coverage; omitted when unavailable"
         },
+        "cognitive_complexity": {
+          "type": "integer",
+          "description": "Cognitive complexity score; omitted when unavailable"
+        },
+        "gaze_crap_cc": {
+          "type": "number",
+          "description": "GazeCRAP-CC score computed from cognitive complexity and coverage; omitted when unavailable"
+        },
         "quadrant": { "type": "string" },
         "fix_strategy": {
           "type": "string",
@@ -586,6 +594,14 @@ const CrapSchema = `{
         "avg_contract_coverage": { "type": "number" },
         "quadrant_counts": { "type": "object" },
         "fix_strategy_counts": { "type": "object" },
+        "cognitive_complexity_total": {
+          "type": "integer",
+          "description": "Sum of cognitive complexity across all analyzed functions"
+        },
+        "cognitive_complexity_exceeded": {
+          "type": "integer",
+          "description": "Count of functions whose cognitive complexity exceeds the threshold"
+        },
         "worst_crap": {
           "type": "array",
           "items": { "$ref": "#/$defs/Score" }
