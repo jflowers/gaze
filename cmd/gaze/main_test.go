@@ -258,7 +258,7 @@ func TestPrintCISummary_NoThresholds(t *testing.T) {
 		Summary: crap.Summary{CRAPload: 5},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 0, 0)
+	printCISummary(&buf, rpt, 0, 0, 0)
 	if buf.Len() != 0 {
 		t.Errorf("expected no output when thresholds are 0, got: %q", buf.String())
 	}
@@ -269,7 +269,7 @@ func TestPrintCISummary_CRAPloadPass(t *testing.T) {
 		Summary: crap.Summary{CRAPload: 3},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 5, 0)
+	printCISummary(&buf, rpt, 5, 0, 0)
 	out := buf.String()
 	if !strings.Contains(out, "CRAPload: 3/5 (PASS)") {
 		t.Errorf("expected PASS summary, got: %q", out)
@@ -281,7 +281,7 @@ func TestPrintCISummary_CRAPloadFail(t *testing.T) {
 		Summary: crap.Summary{CRAPload: 10},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 5, 0)
+	printCISummary(&buf, rpt, 5, 0, 0)
 	out := buf.String()
 	if !strings.Contains(out, "CRAPload: 10/5 (FAIL)") {
 		t.Errorf("expected FAIL summary, got: %q", out)
@@ -294,7 +294,7 @@ func TestPrintCISummary_GazeCRAPloadPass(t *testing.T) {
 		Summary: crap.Summary{GazeCRAPload: &gc},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 0, 5)
+	printCISummary(&buf, rpt, 0, 5, 0)
 	out := buf.String()
 	if !strings.Contains(out, "GazeCRAPload: 2/5 (PASS)") {
 		t.Errorf("expected GazeCRAPload PASS, got: %q", out)
@@ -307,7 +307,7 @@ func TestPrintCISummary_GazeCRAPloadFail(t *testing.T) {
 		Summary: crap.Summary{GazeCRAPload: &gc},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 0, 5)
+	printCISummary(&buf, rpt, 0, 5, 0)
 	out := buf.String()
 	if !strings.Contains(out, "GazeCRAPload: 10/5 (FAIL)") {
 		t.Errorf("expected GazeCRAPload FAIL, got: %q", out)
@@ -323,7 +323,7 @@ func TestPrintCISummary_BothThresholds(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 5, 5)
+	printCISummary(&buf, rpt, 5, 5, 0)
 	out := buf.String()
 	if !strings.Contains(out, "CRAPload: 3/5 (PASS)") {
 		t.Errorf("expected CRAPload PASS in combined output, got: %q", out)
@@ -346,10 +346,34 @@ func TestPrintCISummary_GazeCRAPloadNil(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	printCISummary(&buf, rpt, 5, 5)
+	printCISummary(&buf, rpt, 5, 5, 0)
 	out := buf.String()
 	if strings.Contains(out, "GazeCRAPload") {
 		t.Errorf("should not print GazeCRAPload when nil, got: %q", out)
+	}
+}
+
+func TestPrintCISummary_CognitiveComplexityPass(t *testing.T) {
+	rpt := &crap.Report{
+		Summary: crap.Summary{CognitiveComplexityExceeded: 0},
+	}
+	var buf bytes.Buffer
+	printCISummary(&buf, rpt, 0, 0, 30)
+	out := buf.String()
+	if !strings.Contains(out, "CognitiveComplexity: 0 function(s) exceed 30 (PASS)") {
+		t.Errorf("expected cognitive PASS summary, got: %q", out)
+	}
+}
+
+func TestPrintCISummary_CognitiveComplexityFail(t *testing.T) {
+	rpt := &crap.Report{
+		Summary: crap.Summary{CognitiveComplexityExceeded: 3},
+	}
+	var buf bytes.Buffer
+	printCISummary(&buf, rpt, 0, 0, 30)
+	out := buf.String()
+	if !strings.Contains(out, "CognitiveComplexity: 3 function(s) exceed 30 (FAIL)") {
+		t.Errorf("expected cognitive FAIL summary, got: %q", out)
 	}
 }
 
@@ -1236,7 +1260,7 @@ func TestWriteCrapOutputAndSummary_WithComparison(t *testing.T) {
 		Summary: crap.ComparisonSummary{Passed: true},
 	}
 	var stdout, stderr bytes.Buffer
-	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, cr, nil, 0, 0)
+	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, cr, nil, 0, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1253,7 +1277,7 @@ func TestWriteCrapOutputAndSummary_WithComparison(t *testing.T) {
 func TestWriteCrapOutputAndSummary_WithoutComparison(t *testing.T) {
 	rpt := stubReport()
 	var stdout, stderr bytes.Buffer
-	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, nil, nil, 0, 0)
+	err := writeCrapOutputAndSummary(&stdout, &stderr, "text", rpt, nil, nil, 0, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

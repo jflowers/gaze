@@ -126,18 +126,19 @@ you can use /gaze in OpenCode to generate quality reports.`,
 
 // analyzeParams holds the parsed flags for the analyze command.
 type analyzeParams struct {
-	patterns          []string
-	format            string
-	function          string
-	includeUnexported bool
-	interactive       bool
-	classify          bool
-	verbose           bool
-	configPath        string
-	contractualThresh int
-	incidentalThresh  int
-	stdout            io.Writer
-	stderr            io.Writer
+	patterns               []string
+	format                 string
+	function               string
+	includeUnexported      bool
+	interactive            bool
+	classify               bool
+	verbose                bool
+	configPath             string
+	contractualThresh      int
+	incidentalThresh       int
+	maxCognitiveComplexity int
+	stdout                 io.Writer
+	stderr                 io.Writer
 }
 
 // loadConfig loads the GazeConfig from the given path (or searches
@@ -298,6 +299,32 @@ func runAnalyze(p analyzeParams) error {
 
 	logger.Info("analysis complete", "functions", len(allResults))
 
+	// Cognitive complexity gate (spec: --max-cognitive-complexity on analyze).
+	// Exit 1 when any analyzed function's cognitive complexity exceeds the
+	// threshold; flag absent (0) has no exit-code effect.
+	if p.maxCognitiveComplexity > 0 {
+		moduleRoot := moduleDir
+		if root, findErr := loader.FindModuleRoot(moduleDir); findErr == nil {
+			moduleRoot = root
+		}
+		stats, ccErr := goprovider.NewCognitiveComplexityProvider().Analyze(p.patterns, moduleRoot)
+		if ccErr != nil {
+			return fmt.Errorf("computing cognitive complexity: %w", ccErr)
+		}
+		var exceeded []string
+		for _, st := range stats {
+			if st.CognitiveComplexity > p.maxCognitiveComplexity {
+				exceeded = append(exceeded,
+					fmt.Sprintf("%s.%s (%d)", st.Package, st.Function, st.CognitiveComplexity))
+			}
+		}
+		if len(exceeded) > 0 {
+			return fmt.Errorf("cognitive complexity exceeds maximum %d for %d function(s): %s",
+				p.maxCognitiveComplexity, len(exceeded), strings.Join(exceeded, ", "))
+		}
+		_, _ = fmt.Fprintf(p.stderr, "cognitive complexity: PASS (max %d)\n", p.maxCognitiveComplexity)
+	}
+
 	if p.interactive {
 		return runInteractiveAnalyze(allResults)
 	}
@@ -383,15 +410,16 @@ func runClassify(
 
 func newAnalyzeCmd() *cobra.Command {
 	var (
-		function          string
-		format            string
-		includeUnexported bool
-		interactive       bool
-		classifyFlag      bool
-		verboseFlag       bool
-		configPath        string
-		contractualThresh int
-		incidentalThresh  int
+		function               string
+		format                 string
+		includeUnexported      bool
+		interactive            bool
+		classifyFlag           bool
+		verboseFlag            bool
+		configPath             string
+		contractualThresh      int
+		incidentalThresh       int
+		maxCognitiveComplexity int
 	)
 
 	cmd := &cobra.Command{
@@ -406,18 +434,19 @@ Use /gaze in OpenCode (full mode) for document-enhanced classification.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runAnalyze(analyzeParams{
-				patterns:          args,
-				format:            format,
-				function:          function,
-				includeUnexported: includeUnexported,
-				interactive:       interactive,
-				classify:          classifyFlag,
-				verbose:           verboseFlag,
-				configPath:        configPath,
-				contractualThresh: contractualThresh,
-				incidentalThresh:  incidentalThresh,
-				stdout:            os.Stdout,
-				stderr:            os.Stderr,
+				patterns:               args,
+				format:                 format,
+				function:               function,
+				includeUnexported:      includeUnexported,
+				interactive:            interactive,
+				classify:               classifyFlag,
+				verbose:                verboseFlag,
+				configPath:             configPath,
+				contractualThresh:      contractualThresh,
+				incidentalThresh:       incidentalThresh,
+				maxCognitiveComplexity: maxCognitiveComplexity,
+				stdout:                 os.Stdout,
+				stderr:                 os.Stderr,
 			})
 		},
 	}
@@ -440,6 +469,9 @@ Use /gaze in OpenCode (full mode) for document-enhanced classification.`,
 		"override contractual confidence threshold (default: from config or 80)")
 	cmd.Flags().IntVar(&incidentalThresh, "incidental-threshold", -1,
 		"override incidental confidence threshold (default: from config or 50)")
+
+	cmd.Flags().IntVar(&maxCognitiveComplexity, "max-cognitive-complexity", 0,
+		"fail if any function's cognitive complexity exceeds this (0 = no limit)")
 
 	return cmd
 }
@@ -548,6 +580,15 @@ func runCrap(p crapParams) error {
 		}
 	}
 
+	// Wire the Go cognitive complexity provider (Go-native path only).
+	// The external-analyzer path wires its own provider (or leaves it
+	// nil for graceful degradation) in wireExternalProviders.
+	if p.opts.CognitiveComplexityProvider == nil {
+		p.opts.CognitiveComplexityProvider = goprovider.NewCognitiveComplexityProvider()
+	}
+
+	p.opts.CognitiveComplexityThreshold = p.maxCognitiveComplexity
+
 	logger.Info("computing CRAP scores", "patterns", p.patterns)
 
 	analyze := p.analyzeFunc
@@ -609,7 +650,7 @@ func runCrap(p crapParams) error {
 	if err := writeCrapOutputAndSummary(
 		p.stdout, p.stderr, p.format, rpt, comparisonResult,
 		changeGateResult,
-		p.maxCrapload, p.maxGazeCrapload); err != nil {
+		p.maxCrapload, p.maxGazeCrapload, p.maxCognitiveComplexity); err != nil {
 		return err
 	}
 
@@ -653,6 +694,7 @@ func runCrapWithExternalAnalyzer(p crapParams) error {
 	defer func() { _ = session.Close() }()
 
 	wireExternalProviders(&p.opts, providers)
+	p.opts.CognitiveComplexityThreshold = p.maxCognitiveComplexity
 
 	analyze := p.analyzeFunc
 	if analyze == nil {
@@ -678,7 +720,7 @@ func finishExternalCrapReport(p crapParams, rpt *crap.Report) error {
 		return err
 	}
 
-	printCISummary(p.stderr, rpt, p.maxCrapload, p.maxGazeCrapload)
+	printCISummary(p.stderr, rpt, p.maxCrapload, p.maxGazeCrapload, p.maxCognitiveComplexity)
 	return checkCIThresholds(rpt, p.maxCrapload, p.maxGazeCrapload, p.maxCognitiveComplexity)
 }
 
@@ -719,6 +761,9 @@ func wireExternalProviders(opts *crap.Options, providers *adapter.Providers) {
 	opts.LineCoverageProvider = providers.LineCoverage
 	if providers.ContractCoverage != nil {
 		opts.ContractCoverageProvider = providers.ContractCoverage
+	}
+	if providers.CognitiveComplexity != nil {
+		opts.CognitiveComplexityProvider = providers.CognitiveComplexity
 	}
 }
 
@@ -882,8 +927,8 @@ func autoDetectMainPkg(pkgPath string, includeUnexported *bool) {
 
 // printCISummary prints a one-line CI summary to stderr when
 // threshold flags are set.
-func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload int) {
-	if maxCrapload <= 0 && maxGazeCrapload <= 0 {
+func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload, maxCognitiveComplexity int) {
+	if maxCrapload <= 0 && maxGazeCrapload <= 0 && maxCognitiveComplexity <= 0 {
 		return
 	}
 
@@ -903,6 +948,14 @@ func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload 
 		}
 		parts = append(parts, fmt.Sprintf("GazeCRAPload: %d/%d (%s)",
 			*rpt.Summary.GazeCRAPload, maxGazeCrapload, status))
+	}
+	if maxCognitiveComplexity > 0 {
+		status := "PASS"
+		if rpt.Summary.CognitiveComplexityExceeded > 0 {
+			status = "FAIL"
+		}
+		parts = append(parts, fmt.Sprintf("CognitiveComplexity: %d function(s) exceed %d (%s)",
+			rpt.Summary.CognitiveComplexityExceeded, maxCognitiveComplexity, status))
 	}
 	_, _ = fmt.Fprintln(w, strings.Join(parts, " | "))
 }
@@ -951,15 +1004,15 @@ func resolveBaselineAndCompare(
 
 // writeCrapOutputAndSummary writes the CRAP report (comparison path or
 // normal path) to stdout, then prints the CI summary line to stderr.
-// The maxCrapload and maxGazeCrapload params are forwarded to
-// printCISummary for display.
+// The maxCrapload, maxGazeCrapload, and maxCognitiveComplexity params
+// are forwarded to printCISummary for display.
 func writeCrapOutputAndSummary(
 	stdout, stderr io.Writer,
 	format string,
 	rpt *crap.Report,
 	cr *crap.ComparisonResult,
 	cgr *crap.ChangeGateResult,
-	maxCrapload, maxGazeCrapload int,
+	maxCrapload, maxGazeCrapload, maxCognitiveComplexity int,
 ) error {
 	if cr != nil {
 		if err := writeCrapComparisonReport(stdout, format, cr, cgr); err != nil {
@@ -973,7 +1026,7 @@ func writeCrapOutputAndSummary(
 	if cgr != nil {
 		writeChangeGateText(stderr, cgr)
 	}
-	printCISummary(stderr, rpt, maxCrapload, maxGazeCrapload)
+	printCISummary(stderr, rpt, maxCrapload, maxGazeCrapload, maxCognitiveComplexity)
 	return nil
 }
 
@@ -1045,23 +1098,23 @@ automatically.`,
 			lineProv := goprovider.NewLineCoverageProvider(os.Stderr)
 			lineProv.Short = testShort
 			opts.LineCoverageProvider = lineProv
-		return runCrap(crapParams{
-			patterns:               args,
-			format:                 format,
-			opts:                   opts,
-			maxCrapload:            maxCrapload,
-			maxGazeCrapload:        maxGazeCrapload,
-			maxCognitiveComplexity: maxCognitiveComplexity,
-			moduleDir:              cwd,
-				aiMapper:        aiMapper,
-				aiMapperModel:   aiMapperModel,
-				baselinePath:    baselinePath,
-				gateOnChange:    gateOnChange,
-				analyzerFlag:    analyzerFlag,
-				languageFlag:    languageFlag,
-				stdout:          os.Stdout,
-				stderr:          os.Stderr,
-				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("max-cognitive-complexity") || cmd.Flags().Changed("gate-on-change"),
+			return runCrap(crapParams{
+				patterns:               args,
+				format:                 format,
+				opts:                   opts,
+				maxCrapload:            maxCrapload,
+				maxGazeCrapload:        maxGazeCrapload,
+				maxCognitiveComplexity: maxCognitiveComplexity,
+				moduleDir:              cwd,
+				aiMapper:               aiMapper,
+				aiMapperModel:          aiMapperModel,
+				baselinePath:           baselinePath,
+				gateOnChange:           gateOnChange,
+				analyzerFlag:           analyzerFlag,
+				languageFlag:           languageFlag,
+				stdout:                 os.Stdout,
+				stderr:                 os.Stderr,
+				thresholdSet:           cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("max-cognitive-complexity") || cmd.Flags().Changed("gate-on-change"),
 			})
 		},
 	}
