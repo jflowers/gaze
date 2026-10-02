@@ -58,7 +58,7 @@
 - [x] 6.2 Implement `ExternalCognitiveComplexityProvider` + `convertCognitiveComplexity` in `internal/adapter/` for external analyzer integration
 - [x] 6.3 Wire graceful degradation: nil fields when external analyzer does not implement method
 - [x] 6.4 Update fake analyzer in `internal/protocol/testdata/` to support `cognitive_complexity`
-- [ ] 6.5 Write integration tests for external analyzer cognitive complexity flow (deferred: fake analyzer now serves `cognitive_complexity`, but the end-to-end session round-trip test is not yet written)
+- [x] 6.5 Write integration tests for external analyzer cognitive complexity flow (`TestSession_CognitiveComplexityCapability` + `_CapabilityDisabled` + `TestCrapWithExternalAnalyzer` cognitive assertions)
 
 ## 7. Documentation and Constitution Verification
 
