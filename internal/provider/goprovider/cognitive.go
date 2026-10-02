@@ -1,9 +1,10 @@
 package goprovider
 
 import (
+	"golang.org/x/tools/go/packages"
+
 	"github.com/unbound-force/gaze/v2/internal/cognitive"
 	"github.com/unbound-force/gaze/v2/internal/crap"
-	"golang.org/x/tools/go/packages"
 )
 
 // GoCognitiveComplexityProvider implements
@@ -21,18 +22,20 @@ func NewCognitiveComplexityProvider() *GoCognitiveComplexityProvider {
 // packages matched by patterns, rooted at rootDir. Test files are
 // skipped; the per-file enumeration is delegated to
 // cognitive.AnalyzeFile.
+//
+// Unlike the cyclomatic-complexity provider (which delegates to
+// gocyclo's recursive directory walk), this provider passes the
+// original package patterns (including ./...) directly to
+// packages.Load with Dir set to rootDir so that wildcard patterns
+// enumerate every matched package, not just the module-root package.
 func (p *GoCognitiveComplexityProvider) Analyze(patterns []string, rootDir string) ([]crap.FunctionCognitiveComplexity, error) {
-	absPaths, err := crap.ResolvePatterns(patterns, rootDir)
-	if err != nil {
-		return nil, err
-	}
-
 	cfg := &packages.Config{
 		Mode:  packages.NeedName | packages.NeedFiles | packages.NeedSyntax,
+		Dir:   rootDir,
 		Tests: false,
 	}
 
-	pkgs, err := packages.Load(cfg, absPaths...)
+	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return nil, err
 	}

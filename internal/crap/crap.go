@@ -275,9 +275,7 @@ func Formula(complexity int, coveragePct float64) float64 {
 // coveragePct is line coverage as a percentage (0-100).
 // Returns the GazeCRAP-CC score as a float64.
 func CognitiveFormula(complexity int, coveragePct float64) float64 {
-	comp := float64(complexity)
-	uncov := 1.0 - coveragePct/100.0
-	return comp*comp*uncov*uncov*uncov + comp
+	return Formula(complexity, coveragePct)
 }
 
 // ClassifyQuadrant determines the quadrant for a function based on

@@ -190,6 +190,115 @@ func TestFormula_75PercentCoverage(t *testing.T) {
 	}
 }
 
+func TestCognitiveFormula_ZeroCoverage(t *testing.T) {
+	// GazeCRAP-CC(10, 0%) = 10^2 * (1-0)^3 + 10 = 100 + 10 = 110
+	got := CognitiveFormula(10, 0)
+	want := 110.0
+	if math.Abs(got-want) > 0.01 {
+		t.Errorf("CognitiveFormula(10, 0) = %f, want %f", got, want)
+	}
+}
+
+func TestCognitiveFormula_HalfCoverage(t *testing.T) {
+	// GazeCRAP-CC(5, 50%) = 5^2 * (0.5)^3 + 5 = 25*0.125 + 5 = 8.125
+	got := CognitiveFormula(5, 50)
+	want := 8.125
+	if math.Abs(got-want) > 0.01 {
+		t.Errorf("CognitiveFormula(5, 50) = %f, want %f", got, want)
+	}
+}
+
+func TestCognitiveFormula_FullCoverage(t *testing.T) {
+	// GazeCRAP-CC(3, 100%) = 3^2 * (1-1)^3 + 3 = 0 + 3 = 3
+	got := CognitiveFormula(3, 100)
+	want := 3.0
+	if math.Abs(got-want) > 0.01 {
+		t.Errorf("CognitiveFormula(3, 100) = %f, want %f", got, want)
+	}
+}
+
+type testCognitiveProvider struct {
+	stats []FunctionCognitiveComplexity
+	err   error
+}
+
+func (p *testCognitiveProvider) Analyze(_ []string, _ string) ([]FunctionCognitiveComplexity, error) {
+	return p.stats, p.err
+}
+
+func TestBuildCognitiveLookup(t *testing.T) {
+	stats := []FunctionCognitiveComplexity{
+		{Package: "pkg", Function: "Foo", File: "a.go", Line: 1, CognitiveComplexity: 3},
+		{Package: "pkg", Function: "Bar", File: "a.go", Line: 10, CognitiveComplexity: 7},
+	}
+	m := buildCognitiveLookup(stats)
+	if got := m[cognitiveKey{file: "a.go", function: "Foo"}]; got != 3 {
+		t.Errorf("expected Foo=3, got %d", got)
+	}
+	if got := m[cognitiveKey{file: "a.go", function: "Bar"}]; got != 7 {
+		t.Errorf("expected Bar=7, got %d", got)
+	}
+	if _, ok := m[cognitiveKey{file: "a.go", function: "Baz"}]; ok {
+		t.Errorf("expected no entry for Baz")
+	}
+}
+
+func TestApplyCognitiveComplexity_Success(t *testing.T) {
+	scores := []Score{
+		{File: "a.go", Function: "Foo", LineCoverage: 50},
+		{File: "a.go", Function: "Bar", LineCoverage: 0},
+		{File: "a.go", Function: "Baz", LineCoverage: 100},
+	}
+	opts := DefaultOptions()
+	opts.CognitiveComplexityProvider = &testCognitiveProvider{
+		stats: []FunctionCognitiveComplexity{
+			{Package: "pkg", Function: "Foo", File: "a.go", Line: 1, CognitiveComplexity: 5},
+			{Package: "pkg", Function: "Bar", File: "a.go", Line: 10, CognitiveComplexity: 10},
+		},
+	}
+	applyCognitiveComplexity(scores, []string{"./..."}, "moddir", opts)
+
+	if scores[0].CognitiveComplexity == nil || *scores[0].CognitiveComplexity != 5 {
+		t.Errorf("expected Foo cognitive complexity 5, got %v", scores[0].CognitiveComplexity)
+	}
+	if scores[0].GazeCRAPCC == nil || math.Abs(*scores[0].GazeCRAPCC-8.125) > 0.01 {
+		t.Errorf("expected Foo gaze_crap_cc 8.125, got %v", scores[0].GazeCRAPCC)
+	}
+	if scores[1].CognitiveComplexity == nil || *scores[1].CognitiveComplexity != 10 {
+		t.Errorf("expected Bar cognitive complexity 10, got %v", scores[1].CognitiveComplexity)
+	}
+	if scores[1].GazeCRAPCC == nil || math.Abs(*scores[1].GazeCRAPCC-110.0) > 0.01 {
+		t.Errorf("expected Bar gaze_crap_cc 110.0, got %v", scores[1].GazeCRAPCC)
+	}
+	if scores[2].CognitiveComplexity != nil {
+		t.Errorf("expected Baz cognitive complexity nil, got %v", scores[2].CognitiveComplexity)
+	}
+}
+
+func TestApplyCognitiveComplexity_NilProvider(t *testing.T) {
+	scores := []Score{{File: "a.go", Function: "Foo", LineCoverage: 50}}
+	opts := DefaultOptions()
+	applyCognitiveComplexity(scores, []string{"./..."}, "moddir", opts)
+	if scores[0].CognitiveComplexity != nil {
+		t.Errorf("expected nil cognitive complexity with nil provider, got %v", scores[0].CognitiveComplexity)
+	}
+}
+
+func TestApplyCognitiveComplexity_ProviderError(t *testing.T) {
+	var stderr bytes.Buffer
+	scores := []Score{{File: "a.go", Function: "Foo", LineCoverage: 50}}
+	opts := DefaultOptions()
+	opts.Stderr = &stderr
+	opts.CognitiveComplexityProvider = &testCognitiveProvider{err: fmt.Errorf("boom")}
+	applyCognitiveComplexity(scores, []string{"./..."}, "moddir", opts)
+	if scores[0].CognitiveComplexity != nil {
+		t.Errorf("expected nil cognitive complexity on provider error, got %v", scores[0].CognitiveComplexity)
+	}
+	if !strings.Contains(stderr.String(), "cognitive complexity provider failed") {
+		t.Errorf("expected warning on stderr, got %q", stderr.String())
+	}
+}
+
 // TestFormula_BenchmarkSuite validates SC-001: CRAP scores match
 // hand-computed values for a benchmark suite of 20+ functions with
 // known complexity and coverage (tolerance: +/- 0.01).

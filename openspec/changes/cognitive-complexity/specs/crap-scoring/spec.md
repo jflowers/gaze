@@ -12,12 +12,12 @@ The system MUST compute a `GazeCRAP-CC` score per function using the formula `Ga
 #### Scenario: uncovered function with high cognitive complexity
 - **GIVEN** a function with cognitive complexity 10 and line coverage 0%
 - **WHEN** GazeCRAP-CC is computed
-- **THEN** the GazeCRAP-CC score MUST be 1010.0 (10^2 * 1^3 + 10)
+- **THEN** the GazeCRAP-CC score MUST be 110.0 (10^2 * 1^3 + 10)
 
 #### Scenario: partially covered function
 - **GIVEN** a function with cognitive complexity 5 and line coverage 50%
 - **WHEN** GazeCRAP-CC is computed
-- **THEN** the GazeCRAP-CC score MUST be 131.25 (5^2 * 0.5^3 + 5)
+- **THEN** the GazeCRAP-CC score MUST be 8.125 (5^2 * 0.5^3 + 5)
 
 #### Scenario: cognitive complexity unavailable
 - **GIVEN** a function where cognitive complexity was not computed
