@@ -460,9 +460,10 @@ func TestCompactForAI_DocscanNil(t *testing.T) {
 	}
 }
 
-// TestCompactForAI_QualityGapsReducedToIDs verifies that contract
-// coverage gaps are replaced with gap_ids (string array).
-func TestCompactForAI_QualityGapsReducedToIDs(t *testing.T) {
+// TestCompactForAI_QualityGapsProjected verifies that contract coverage
+// gaps are projected to self-contained objects (id/type/description) with
+// no classification.
+func TestCompactForAI_QualityGapsProjected(t *testing.T) {
 	payload := buildFullPayload(t)
 	data, err := payload.CompactForAI()
 	if err != nil {
@@ -480,29 +481,38 @@ func TestCompactForAI_QualityGapsReducedToIDs(t *testing.T) {
 		t.Fatal("contract_coverage is not an object")
 	}
 
-	// Must have gap_ids, not gaps.
-	if _, ok := cc["gaps"]; ok {
-		t.Error("compact quality still has 'gaps' field (should be 'gap_ids')")
+	// Must have gaps (self-contained objects), not gap_ids.
+	if _, ok := cc["gap_ids"]; ok {
+		t.Error("compact quality still has 'gap_ids' field (should be 'gaps')")
 	}
-	gapIDs, ok := cc["gap_ids"].([]interface{})
+	gaps, ok := cc["gaps"].([]interface{})
 	if !ok {
-		t.Fatal("compact quality missing 'gap_ids' field")
+		t.Fatal("compact quality missing 'gaps' field")
 	}
-	if len(gapIDs) != 1 {
-		t.Fatalf("gap_ids length = %d, want 1", len(gapIDs))
+	if len(gaps) != 1 {
+		t.Fatalf("gaps length = %d, want 1", len(gaps))
 	}
-	gapID, ok := gapIDs[0].(string)
+	gap, ok := gaps[0].(map[string]interface{})
 	if !ok {
-		t.Fatal("gap_ids[0] is not a string")
+		t.Fatal("gaps[0] is not an object")
 	}
-	if gapID != "se-aabbccdd" {
-		t.Errorf("gap_ids[0] = %v, want se-aabbccdd", gapID)
+	if gap["id"] != "se-aabbccdd" {
+		t.Errorf("gaps[0].id = %v, want se-aabbccdd", gap["id"])
+	}
+	if gap["type"] != "ErrorReturn" {
+		t.Errorf("gaps[0].type = %v, want ErrorReturn", gap["type"])
+	}
+	if gap["description"] != "returns error" {
+		t.Errorf("gaps[0].description = %v, want 'returns error'", gap["description"])
+	}
+	if _, ok := gap["classification"]; ok {
+		t.Error("gap still has 'classification' field")
 	}
 }
 
-// TestCompactForAI_QualityDiscardedReturnsReducedToIDs verifies that
-// discarded_returns are replaced with discarded_return_ids.
-func TestCompactForAI_QualityDiscardedReturnsReducedToIDs(t *testing.T) {
+// TestCompactForAI_QualityDiscardedReturnsProjected verifies that
+// discarded returns are projected to self-contained objects.
+func TestCompactForAI_QualityDiscardedReturnsProjected(t *testing.T) {
 	payload := buildFullPayload(t)
 	data, err := payload.CompactForAI()
 	if err != nil {
@@ -519,28 +529,34 @@ func TestCompactForAI_QualityDiscardedReturnsReducedToIDs(t *testing.T) {
 		t.Fatal("contract_coverage is not an object")
 	}
 
-	if _, ok := cc["discarded_returns"]; ok {
-		t.Error("compact quality still has 'discarded_returns' field")
+	if _, ok := cc["discarded_return_ids"]; ok {
+		t.Error("compact quality still has 'discarded_return_ids' field (should be 'discarded_returns')")
 	}
-	drIDs, ok := cc["discarded_return_ids"].([]interface{})
+	drs, ok := cc["discarded_returns"].([]interface{})
 	if !ok {
-		t.Fatal("compact quality missing 'discarded_return_ids' field")
+		t.Fatal("compact quality missing 'discarded_returns' field")
 	}
-	if len(drIDs) != 1 {
-		t.Fatalf("discarded_return_ids length = %d, want 1", len(drIDs))
+	if len(drs) != 1 {
+		t.Fatalf("discarded_returns length = %d, want 1", len(drs))
 	}
-	drID, ok := drIDs[0].(string)
+	dr, ok := drs[0].(map[string]interface{})
 	if !ok {
-		t.Fatal("discarded_return_ids[0] is not a string")
+		t.Fatal("discarded_returns[0] is not an object")
 	}
-	if drID != "se-11223344" {
-		t.Errorf("discarded_return_ids[0] = %v, want se-11223344", drIDs[0])
+	if dr["id"] != "se-11223344" {
+		t.Errorf("discarded_returns[0].id = %v, want se-11223344", dr["id"])
+	}
+	if dr["type"] != "ReturnValue" {
+		t.Errorf("discarded_returns[0].type = %v, want ReturnValue", dr["type"])
+	}
+	if _, ok := dr["classification"]; ok {
+		t.Error("discarded return still has 'classification' field")
 	}
 }
 
-// TestCompactForAI_QualityAmbiguousEffectsReducedToIDs verifies that
-// ambiguous_effects are replaced with ambiguous_effect_ids.
-func TestCompactForAI_QualityAmbiguousEffectsReducedToIDs(t *testing.T) {
+// TestCompactForAI_QualityAmbiguousEffectsProjected verifies that
+// ambiguous effects are projected to self-contained objects.
+func TestCompactForAI_QualityAmbiguousEffectsProjected(t *testing.T) {
 	payload := buildFullPayload(t)
 	data, err := payload.CompactForAI()
 	if err != nil {
@@ -552,22 +568,28 @@ func TestCompactForAI_QualityAmbiguousEffectsReducedToIDs(t *testing.T) {
 		t.Fatal("no quality reports in compact output")
 	}
 
-	if _, ok := reports[0]["ambiguous_effects"]; ok {
-		t.Error("compact quality still has 'ambiguous_effects' field")
+	if _, ok := reports[0]["ambiguous_effect_ids"]; ok {
+		t.Error("compact quality still has 'ambiguous_effect_ids' field (should be 'ambiguous_effects')")
 	}
-	aeIDs, ok := reports[0]["ambiguous_effect_ids"].([]interface{})
+	aes, ok := reports[0]["ambiguous_effects"].([]interface{})
 	if !ok {
-		t.Fatal("compact quality missing 'ambiguous_effect_ids' field")
+		t.Fatal("compact quality missing 'ambiguous_effects' field")
 	}
-	if len(aeIDs) != 1 {
-		t.Fatalf("ambiguous_effect_ids length = %d, want 1", len(aeIDs))
+	if len(aes) != 1 {
+		t.Fatalf("ambiguous_effects length = %d, want 1", len(aes))
 	}
-	aeID, ok := aeIDs[0].(string)
+	ae, ok := aes[0].(map[string]interface{})
 	if !ok {
-		t.Fatal("ambiguous_effect_ids[0] is not a string")
+		t.Fatal("ambiguous_effects[0] is not an object")
 	}
-	if aeID != "se-55667788" {
-		t.Errorf("ambiguous_effect_ids[0] = %v, want se-55667788", aeID)
+	if ae["id"] != "se-55667788" {
+		t.Errorf("ambiguous_effects[0].id = %v, want se-55667788", ae["id"])
+	}
+	if ae["type"] != "LogWrite" {
+		t.Errorf("ambiguous_effects[0].type = %v, want LogWrite", ae["type"])
+	}
+	if _, ok := ae["classification"]; ok {
+		t.Error("ambiguous effect still has 'classification' field")
 	}
 }
 
@@ -636,18 +658,19 @@ func TestCompactForAI_QualityCrossRefResilience(t *testing.T) {
 	if !ok {
 		t.Fatal("contract_coverage is not an object")
 	}
-	gapIDs, ok := cc["gap_ids"].([]interface{})
+	gaps, ok := cc["gaps"].([]interface{})
 	if !ok {
-		t.Fatal("compact quality missing 'gap_ids' when classify is nil")
+		t.Fatal("compact quality missing 'gaps' when classify is nil")
 	}
-	if len(gapIDs) != 1 {
-		t.Errorf("gap_ids length = %d, want 1 (resilient to nil classify)", len(gapIDs))
+	if len(gaps) != 1 {
+		t.Errorf("gaps length = %d, want 1 (resilient to nil classify)", len(gaps))
 	}
 }
 
-// TestCompactForAI_ClassifySignalsStripped verifies that classification
-// signals are omitted while label, confidence, and reasoning are preserved.
-func TestCompactForAI_ClassifySignalsStripped(t *testing.T) {
+// TestCompactForAI_ClassifyCountsOnly verifies that the compact classify
+// output is a counts-only object (no results array), with the counts sourced
+// from the top-level summary.
+func TestCompactForAI_ClassifyCountsOnly(t *testing.T) {
 	payload := buildFullPayload(t)
 	data, err := payload.CompactForAI()
 	if err != nil {
@@ -664,53 +687,34 @@ func TestCompactForAI_ClassifySignalsStripped(t *testing.T) {
 		t.Fatalf("Unmarshal classify: %v", err)
 	}
 
-	results, ok := classify["results"].([]interface{})
-	if !ok || len(results) == 0 {
-		t.Fatal("no classify results in compact output")
+	// Results array must be absent.
+	if _, ok := classify["results"]; ok {
+		t.Error("compact classify still has 'results' field")
 	}
 
-	result, ok := results[0].(map[string]interface{})
-	if !ok {
-		t.Fatal("classify result is not an object")
+	// Counts must be present and sourced from the top-level summary.
+	contractual, ok := classify["contractual"].(float64)
+	if !ok || int(contractual) != 1 {
+		t.Errorf("classify contractual = %v, want 1", classify["contractual"])
 	}
-	effects, ok := result["side_effects"].([]interface{})
-	if !ok || len(effects) == 0 {
-		t.Fatal("no side effects in compact classify")
+	ambiguous, ok := classify["ambiguous"].(float64)
+	if !ok || int(ambiguous) != 1 {
+		t.Errorf("classify ambiguous = %v, want 1", classify["ambiguous"])
 	}
-
-	effect, ok := effects[0].(map[string]interface{})
-	if !ok {
-		t.Fatal("side effect is not an object")
+	incidental, ok := classify["incidental"].(float64)
+	if !ok || int(incidental) != 0 {
+		t.Errorf("classify incidental = %v, want 0", classify["incidental"])
 	}
-	cls, ok := effect["classification"].(map[string]interface{})
-	if !ok {
-		t.Fatal("classification is not an object")
-	}
-
-	// Signals must be absent.
-	if _, ok := cls["signals"]; ok {
-		t.Error("compact classify still has 'signals' field")
-	}
-
-	// Label, confidence, reasoning must be present.
-	label, ok := cls["label"].(string)
-	if !ok || label != "contractual" {
-		t.Errorf("label = %v, want contractual", cls["label"])
-	}
-	conf, ok := cls["confidence"].(float64)
-	if !ok || int(conf) != 90 {
-		t.Errorf("confidence = %v, want 90", cls["confidence"])
-	}
-	reasoning, ok := cls["reasoning"].(string)
-	if !ok || reasoning != "error return is contractual" {
-		t.Errorf("reasoning = %v, want 'error return is contractual'", cls["reasoning"])
+	version, ok := classify["version"].(string)
+	if !ok || version != "dev" {
+		t.Errorf("classify version = %v, want 'dev'", classify["version"])
 	}
 }
 
-// TestCompactForAI_CRAPWorstOffendersOmitted verifies that worst_crap,
-// worst_gaze_crap, and recommended_actions are omitted from the compact
-// CRAP summary.
-func TestCompactForAI_CRAPWorstOffendersOmitted(t *testing.T) {
+// TestCompactForAI_CRAPWorstOffendersPreserved verifies that worst_crap,
+// worst_gaze_crap, and recommended_actions are preserved in the compact
+// CRAP summary, while the full scores array is omitted.
+func TestCompactForAI_CRAPWorstOffendersPreserved(t *testing.T) {
 	payload := buildFullPayload(t)
 	data, err := payload.CompactForAI()
 	if err != nil {
@@ -718,17 +722,17 @@ func TestCompactForAI_CRAPWorstOffendersOmitted(t *testing.T) {
 	}
 
 	s := string(data)
-	if strings.Contains(s, "worst_crap") {
-		t.Error("compact CRAP still contains 'worst_crap'")
+	if !strings.Contains(s, "worst_crap") {
+		t.Error("compact CRAP missing 'worst_crap'")
 	}
-	if strings.Contains(s, "worst_gaze_crap") {
-		t.Error("compact CRAP still contains 'worst_gaze_crap'")
+	if !strings.Contains(s, "worst_gaze_crap") {
+		t.Error("compact CRAP missing 'worst_gaze_crap'")
 	}
-	if strings.Contains(s, "recommended_actions") {
-		t.Error("compact CRAP still contains 'recommended_actions'")
+	if !strings.Contains(s, "recommended_actions") {
+		t.Error("compact CRAP missing 'recommended_actions'")
 	}
 
-	// Verify other summary fields are preserved.
+	// Verify other summary fields are preserved and scores is absent.
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
@@ -736,6 +740,9 @@ func TestCompactForAI_CRAPWorstOffendersOmitted(t *testing.T) {
 	var crapData map[string]json.RawMessage
 	if err := json.Unmarshal(m["crap"], &crapData); err != nil {
 		t.Fatalf("Unmarshal crap: %v", err)
+	}
+	if _, ok := crapData["scores"]; ok {
+		t.Error("compact CRAP still contains 'scores' field")
 	}
 	var summary map[string]interface{}
 	if err := json.Unmarshal(crapData["summary"], &summary); err != nil {
@@ -747,17 +754,17 @@ func TestCompactForAI_CRAPWorstOffendersOmitted(t *testing.T) {
 	}
 }
 
-// TestCompactForAI_QualitySummaryDedup verifies that worst_coverage_tests
-// is omitted from the compact quality summary.
-func TestCompactForAI_QualitySummaryDedup(t *testing.T) {
+// TestCompactForAI_QualitySummaryPreserved verifies that worst_coverage_tests
+// is preserved in the compact quality summary.
+func TestCompactForAI_QualitySummaryPreserved(t *testing.T) {
 	payload := buildFullPayload(t)
 	data, err := payload.CompactForAI()
 	if err != nil {
 		t.Fatalf("CompactForAI: %v", err)
 	}
 
-	if strings.Contains(string(data), "worst_coverage_tests") {
-		t.Error("compact quality still contains 'worst_coverage_tests'")
+	if !strings.Contains(string(data), "worst_coverage_tests") {
+		t.Error("compact quality missing 'worst_coverage_tests'")
 	}
 
 	// Verify quality summary scalar fields are preserved.
@@ -877,11 +884,11 @@ func TestCompactForAI_StepFailurePreserved(t *testing.T) {
 }
 
 // TestCompactForAI_SizeBudget verifies that a synthetic payload with
-// ~200 functions, ~100 test-target pairs, and ~30 docs compacts under
-// 300KB.
+// ~2000 functions, ~1500 test-target pairs, and ~5000 side effects
+// compacts under 300KB.
 func TestCompactForAI_SizeBudget(t *testing.T) {
-	// Build a large CRAP section with 200 scores.
-	scores := make([]map[string]interface{}, 200)
+	// Build a large CRAP section with 2000 scores.
+	scores := make([]map[string]interface{}, 2000)
 	for i := range scores {
 		scores[i] = map[string]interface{}{
 			"package":  fmt.Sprintf("github.com/example/pkg%d", i),
@@ -895,7 +902,7 @@ func TestCompactForAI_SizeBudget(t *testing.T) {
 	crapJSON := mustMarshal(t, map[string]interface{}{
 		"scores": scores,
 		"summary": map[string]interface{}{
-			"total_functions": 200, "avg_complexity": 15.0,
+			"total_functions": 2000, "avg_complexity": 15.0,
 			"avg_line_coverage": 75.0, "avg_crap": 20.0,
 			"crapload": 50, "crap_threshold": 15.0,
 			"worst_crap":          scores[:10],
@@ -904,8 +911,8 @@ func TestCompactForAI_SizeBudget(t *testing.T) {
 		},
 	})
 
-	// Build quality with 100 test-target pairs, each with gaps.
-	qualReports := make([]map[string]interface{}, 100)
+	// Build quality with 1500 test-target pairs, each with gaps.
+	qualReports := make([]map[string]interface{}, 1500)
 	for i := range qualReports {
 		qualReports[i] = map[string]interface{}{
 			"test_function": fmt.Sprintf("TestFunc%d", i),
@@ -944,7 +951,7 @@ func TestCompactForAI_SizeBudget(t *testing.T) {
 	qualityJSON := mustMarshal(t, map[string]interface{}{
 		"quality_reports": qualReports,
 		"quality_summary": map[string]interface{}{
-			"total_tests": 100, "average_contract_coverage": 50.0,
+			"total_tests": 1500, "average_contract_coverage": 50.0,
 			"total_over_specifications":      0,
 			"assertion_detection_confidence": 90,
 			"ssa_degraded":                   false,
@@ -967,8 +974,8 @@ func TestCompactForAI_SizeBudget(t *testing.T) {
 		"api_coverage": nil,
 	})
 
-	// Classify with 200 results, each with 3 signals.
-	classifyResults := make([]map[string]interface{}, 200)
+	// Classify with 5000 results, each with 3 signals.
+	classifyResults := make([]map[string]interface{}, 5000)
 	for i := range classifyResults {
 		classifyResults[i] = map[string]interface{}{
 			"target": map[string]interface{}{
@@ -1042,6 +1049,75 @@ func TestCompactForAI_SizeBudget(t *testing.T) {
 	}
 }
 
+// TestCompactForAI_QualityReportsBounded verifies that the compact quality
+// output caps quality_reports at qualityReportCap and includes only
+// actionable reports (those with gaps, discarded returns, ambiguous
+// effects, or unmapped assertions).
+func TestCompactForAI_QualityReportsBounded(t *testing.T) {
+	const total = qualityReportCap + 10 // 60 reports: 55 actionable, 5 non-actionable.
+
+	reports := make([]map[string]interface{}, total)
+	for i := 0; i < total; i++ {
+		report := map[string]interface{}{
+			"test_function": fmt.Sprintf("TestFunc%d", i),
+			"test_location": fmt.Sprintf("pkg/file_test.go:%d", i+1),
+			"target_function": map[string]interface{}{
+				"package": "pkg", "function": fmt.Sprintf("Func%d", i),
+				"signature": "func()", "location": fmt.Sprintf("pkg/file.go:%d", i+1),
+			},
+			"contract_coverage": map[string]interface{}{
+				"percentage": 100.0 - float64(i), "covered_count": 1, "total_contractual": 2,
+				"gaps":              []interface{}{},
+				"discarded_returns": []interface{}{},
+			},
+			"over_specification":             map[string]interface{}{"count": 0, "ratio": 0.0},
+			"ambiguous_effects":              []interface{}{},
+			"unmapped_assertions":            []interface{}{},
+			"assertion_count":                0,
+			"assertion_detection_confidence": 0,
+			"metadata":                       map[string]interface{}{"gaze_version": "dev", "language": "go"},
+		}
+		// Make the first (total-5) actionable by giving them a coverage gap.
+		if i < total-5 {
+			report["contract_coverage"].(map[string]interface{})["gaps"] = []map[string]interface{}{
+				{"id": fmt.Sprintf("se-%08x", i), "type": "ErrorReturn", "tier": "P0", "location": "pkg/file.go:10", "description": "returns error", "target": "error"},
+			}
+		}
+		reports[i] = report
+	}
+
+	qualityJSON := mustMarshal(t, map[string]interface{}{
+		"quality_reports": reports,
+		"quality_summary": map[string]interface{}{
+			"total_tests": total, "average_contract_coverage": 50.0,
+			"total_over_specifications":      0,
+			"assertion_detection_confidence": 0,
+			"ssa_degraded":                   false,
+		},
+	})
+
+	payload := &ReportPayload{Quality: qualityJSON, Errors: PayloadErrors{}}
+	data, err := payload.CompactForAI()
+	if err != nil {
+		t.Fatalf("CompactForAI: %v", err)
+	}
+
+	compacted := extractQualityReports(t, data)
+	if len(compacted) != qualityReportCap {
+		t.Fatalf("quality_reports length = %d, want %d", len(compacted), qualityReportCap)
+	}
+	for i, r := range compacted {
+		cc, ok := r["contract_coverage"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("report %d: contract_coverage missing", i)
+		}
+		gaps, _ := cc["gaps"].([]interface{})
+		if len(gaps) == 0 {
+			t.Errorf("report %d: non-actionable report included (no gaps)", i)
+		}
+	}
+}
+
 // TestCompactForAI_FullMarshalUnchanged verifies that json.Marshal on
 // the same payload still produces the full output with content, signals,
 // and worst offender lists — CompactForAI does not mutate the payload.
@@ -1083,65 +1159,85 @@ func TestCompactForAI_FullMarshalUnchanged(t *testing.T) {
 	}
 }
 
-// TestExtractEffectIDs verifies the nil/empty/populated behavior of
-// extractEffectIDs, which must preserve the distinction between nil
-// (JSON null) and empty (JSON []) slices.
-func TestExtractEffectIDs(t *testing.T) {
+// TestProjectSideEffects verifies the nil/empty/populated behavior of
+// projectSideEffects, which must preserve the distinction between nil
+// (JSON null) and empty (JSON []) slices and project id/type/tier/
+// location/description/target while omitting classification.
+func TestProjectSideEffects(t *testing.T) {
 	tests := []struct {
 		name   string
 		input  []taxonomy.SideEffect
-		want   []string // nil means expect nil output
-		wantNl bool     // true = expect nil result (vs non-nil empty)
+		wantNl bool // true = expect nil result (vs non-nil empty)
 	}{
 		{
 			name:   "nil input returns nil output",
 			input:  nil,
-			want:   nil,
 			wantNl: true,
 		},
 		{
 			name:   "empty slice returns empty non-nil slice",
 			input:  []taxonomy.SideEffect{},
-			want:   []string{},
 			wantNl: false,
 		},
 		{
-			name: "populated slice extracts ID strings",
+			name: "populated slice projects fields",
 			input: []taxonomy.SideEffect{
-				{ID: "se-aabbccdd", Type: "ErrorReturn", Tier: "P0"},
-				{ID: "se-11223344", Type: "ReturnValue", Tier: "P0"},
-				{ID: "se-55667788", Type: "LogWrite", Tier: "P2"},
+				{
+					ID:          "se-aabbccdd",
+					Type:        taxonomy.ErrorReturn,
+					Tier:        taxonomy.TierP0,
+					Location:    "file.go:42",
+					Description: "returns error",
+					Target:      "DoThing",
+				},
 			},
-			want:   []string{"se-aabbccdd", "se-11223344", "se-55667788"},
 			wantNl: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractEffectIDs(tt.input)
+			got := projectSideEffects(tt.input)
 
 			// Check nil vs non-nil distinction.
 			if tt.wantNl {
 				if got != nil {
-					t.Fatalf("extractEffectIDs(%v) = %v, want nil", tt.input, got)
+					t.Fatalf("projectSideEffects(%v) = %v, want nil", tt.input, got)
 				}
 				return
 			}
 			if got == nil {
-				t.Fatalf("extractEffectIDs(%v) = nil, want non-nil empty slice", tt.input)
+				t.Fatalf("projectSideEffects(%v) = nil, want non-nil empty slice", tt.input)
 			}
 
 			// Check length.
-			if len(got) != len(tt.want) {
-				t.Fatalf("extractEffectIDs length = %d, want %d", len(got), len(tt.want))
+			if len(got) != len(tt.input) {
+				t.Fatalf("projectSideEffects length = %d, want %d", len(got), len(tt.input))
 			}
 
-			// Check values.
-			for i, wantID := range tt.want {
-				if got[i] != wantID {
-					t.Errorf("extractEffectIDs[%d] = %q, want %q", i, got[i], wantID)
-				}
+			if len(tt.input) == 0 {
+				return
+			}
+
+			// Check field projection for the populated element.
+			want := tt.input[0]
+			if got[0].ID != want.ID {
+				t.Errorf("got[0].ID = %q, want %q", got[0].ID, want.ID)
+			}
+			if got[0].Type != want.Type {
+				t.Errorf("got[0].Type = %q, want %q", got[0].Type, want.Type)
+			}
+			if got[0].Tier != want.Tier {
+				t.Errorf("got[0].Tier = %q, want %q", got[0].Tier, want.Tier)
+			}
+			if got[0].Location != want.Location {
+				t.Errorf("got[0].Location = %q, want %q", got[0].Location, want.Location)
+			}
+			if got[0].Description != want.Description {
+				t.Errorf("got[0].Description = %q, want %q", got[0].Description, want.Description)
+			}
+			if got[0].Target != want.Target {
+				t.Errorf("got[0].Target = %q, want %q", got[0].Target, want.Target)
 			}
 		})
 	}
@@ -1203,38 +1299,24 @@ func TestRunTextPath_CompactPayloadReceived(t *testing.T) {
 		}
 	}
 
-	// Assertion 2: no "signals" in classify side effect classifications.
+	// Assertion 2: classify is counts-only (no "results" array).
 	var classify map[string]interface{}
 	if err := json.Unmarshal(m["classify"], &classify); err != nil {
 		t.Fatalf("Unmarshal classify: %v", err)
 	}
-	results, ok := classify["results"].([]interface{})
-	if !ok || len(results) == 0 {
-		t.Fatal("no classify results in adapter payload")
+	if _, ok := classify["results"]; ok {
+		t.Error("classify still has 'results' in adapter payload")
 	}
-	result, ok := results[0].(map[string]interface{})
-	if !ok {
-		t.Fatal("classify result is not an object")
-	}
-	effects, ok := result["side_effects"].([]interface{})
-	if !ok || len(effects) == 0 {
-		t.Fatal("no side effects in classify result")
-	}
-	effect, ok := effects[0].(map[string]interface{})
-	if !ok {
-		t.Fatal("side effect is not an object")
-	}
-	cls, ok := effect["classification"].(map[string]interface{})
-	if !ok {
-		t.Fatal("classification is not an object")
-	}
-	if _, ok := cls["signals"]; ok {
-		t.Error("classify classification still has 'signals' in adapter payload")
+	if _, ok := classify["contractual"]; !ok {
+		t.Error("classify missing 'contractual' count in adapter payload")
 	}
 
-	// Assertion 3: no "worst_crap" in CRAP summary.
-	if strings.Contains(string(m["crap"]), `"worst_crap"`) {
-		t.Error("CRAP section still contains 'worst_crap' in adapter payload")
+	// Assertion 3: "worst_crap" present and "scores" absent in CRAP summary.
+	if !strings.Contains(string(m["crap"]), `"worst_crap"`) {
+		t.Error("CRAP section missing 'worst_crap' in adapter payload")
+	}
+	if strings.Contains(string(m["crap"]), `"scores"`) {
+		t.Error("CRAP section still contains 'scores' in adapter payload")
 	}
 
 	// Assertion 4: "summary" key present at top level.
