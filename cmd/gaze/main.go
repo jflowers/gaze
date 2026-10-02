@@ -311,6 +311,9 @@ func runAnalyze(p analyzeParams) error {
 		if ccErr != nil {
 			return fmt.Errorf("computing cognitive complexity: %w", ccErr)
 		}
+		if len(stats) == 0 {
+			return fmt.Errorf("cognitive complexity unavailable; cannot enforce maximum %d (no functions measured)", p.maxCognitiveComplexity)
+		}
 		var exceeded []string
 		for _, st := range stats {
 			if st.CognitiveComplexity > p.maxCognitiveComplexity {
