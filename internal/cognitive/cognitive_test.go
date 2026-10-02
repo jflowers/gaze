@@ -221,6 +221,50 @@ func b() {
 	}
 }
 
+func TestFunctionName(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"plain", "package p\nfunc Foo() {}", "Foo"},
+		{"pointer receiver", "package p\nfunc (s *Store) Save() {}", "(*Store).Save"},
+		{"value receiver", "package p\nfunc (s Store) Save() {}", "(Store).Save"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "test.go", tc.src, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got string
+			for _, decl := range file.Decls {
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					got = functionName(fd)
+					break
+				}
+			}
+			if got != tc.want {
+				t.Errorf("functionName: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCaseBodyTraversal(t *testing.T) {
+	got := cc(t, `package p
+func f(x int) {
+	switch x {
+	case 1:
+		if true {}
+	}
+}`)
+	if got != 3 {
+		t.Errorf("switch case with if: got %d, want 3", got)
+	}
+}
+
 func TestNestedForIf(t *testing.T) {
 	got := cc(t, `package p
 func f(items []int) {

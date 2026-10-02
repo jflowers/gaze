@@ -2,13 +2,14 @@
 // binaries used in protocol client integration tests.
 //
 // It reads JSON-RPC 2.0 requests from stdin (line-delimited JSON)
-// and writes canned JSON-RPC responses to stdout. Supports all 9
+// and writes canned JSON-RPC responses to stdout. Supports all 11
 // protocol methods with deterministic test data matching the spec:
 //
 //   - complexity: 3 functions (add/2, multiply/3, divide/5)
 //   - coverage: 3 functions (add/90%, multiply/60%, divide/0%)
 //   - analyze: divide has ReturnValue+ErrorReturn, multiply has ReturnValue
 //   - doc_coverage: 3 symbols (divide/documented, multiply/documented, add/undocumented)
+//   - cognitive_complexity: 3 functions (add/2, multiply/3, divide/5)
 //
 // Flags:
 //
@@ -19,6 +20,7 @@
 //	--error-response      Return a JSON-RPC error for the first non-initialize request
 //	--no-doc-coverage     Disable doc_coverage capability in initialize response
 //	--no-classify-signals Disable classify_signals capability in initialize response
+//	--no-cognitive-complexity Disable cognitive_complexity capability in initialize response
 //	--unclassified-effect Add an unclassified ContainerMutation effect to "add" in the analyze response
 package main
 
@@ -69,6 +71,7 @@ func main() {
 	malformedJSON := flag.Bool("malformed-json", false, "return malformed JSON for first non-initialize request")
 	errorResponse := flag.Bool("error-response", false, "return JSON-RPC error for first non-initialize request")
 	noDocCoverage := flag.Bool("no-doc-coverage", false, "disable doc_coverage capability in initialize response")
+	noCognitiveComplexity := flag.Bool("no-cognitive-complexity", false, "disable cognitive_complexity capability in initialize response")
 	flag.BoolVar(&options.noDiscover, "no-discover", false, "disable discover capability in initialize response")
 	flag.BoolVar(&options.discoverError, "discover-error", false, "return a JSON-RPC error for discover requests")
 	flag.BoolVar(&options.emptyDiscover, "empty-discover", false, "return an empty test_files list for discover requests")
@@ -139,7 +142,7 @@ func main() {
 			time.Sleep(24 * time.Hour)
 		}
 
-		resp := handleRequest(req, *hangStream, *noDocCoverage, *noClassifySignals, *unclassifiedEffect, options)
+		resp := handleRequest(req, *hangStream, *noDocCoverage, *noClassifySignals, *noCognitiveComplexity, *unclassifiedEffect, options)
 		writeResponse(resp)
 
 		if req.Method == "initialize" {
@@ -163,7 +166,7 @@ func main() {
 	}
 }
 
-func handleRequest(req request, streaming, noDocCoverage, noClassifySignals, unclassifiedEffect bool, options analyzerOptions) response {
+func handleRequest(req request, streaming, noDocCoverage, noClassifySignals, noCognitiveComplexity, unclassifiedEffect bool, options analyzerOptions) response {
 	switch req.Method {
 	case "initialize":
 		return response{
@@ -171,13 +174,14 @@ func handleRequest(req request, streaming, noDocCoverage, noClassifySignals, unc
 			ID:      req.ID,
 			Result: map[string]any{
 				"capabilities": map[string]any{
-					"discover":         !options.noDiscover,
-					"test_mapping":     true,
-					"classify_signals": !noClassifySignals,
-					"streaming":        streaming,
-					"doc_coverage":     !noDocCoverage,
+					"discover":             !options.noDiscover,
+					"test_mapping":         true,
+					"classify_signals":     !noClassifySignals,
+					"streaming":            streaming,
+					"doc_coverage":         !noDocCoverage,
+					"cognitive_complexity": !noCognitiveComplexity,
 				},
-				"protocol_version": "1.1.0",
+				"protocol_version": "1.2.0",
 				"analyzer_name":    "fake-analyzer",
 				"language":         "python",
 				"language_version": "3.12.0",
@@ -393,6 +397,19 @@ func handleRequest(req request, streaming, noDocCoverage, noClassifySignals, unc
 					{"name": "divide", "package": "math_utils", "file": "math_utils/ops.py", "line": 20, "kind": "function", "documented": true, "doc_snippet": "Divides two numbers."},
 					{"name": "multiply", "package": "math_utils", "file": "math_utils/ops.py", "line": 10, "kind": "function", "documented": true, "doc_snippet": "Multiplies two numbers."},
 					{"name": "add", "package": "math_utils", "file": "math_utils/ops.py", "line": 1, "kind": "function", "documented": false, "doc_snippet": ""},
+				},
+			},
+		}
+
+	case "cognitive_complexity":
+		return response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: map[string]any{
+				"functions": []map[string]any{
+					{"name": "add", "package": "math_utils", "file": "math_utils/ops.py", "line": 1, "cognitive_complexity": 2},
+					{"name": "multiply", "package": "math_utils", "file": "math_utils/ops.py", "line": 10, "cognitive_complexity": 3},
+					{"name": "divide", "package": "math_utils", "file": "math_utils/ops.py", "line": 20, "cognitive_complexity": 5},
 				},
 			},
 		}

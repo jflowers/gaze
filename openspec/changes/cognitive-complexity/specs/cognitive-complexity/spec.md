@@ -17,7 +17,7 @@ The system MUST compute per-function cognitive complexity following the SonarSou
 #### Scenario: else if chain
 - **GIVEN** a function containing `if` / `else if` / `else if` / `else`
 - **WHEN** cognitive complexity is computed
-- **THEN** the cognitive complexity MUST be 3 (1 for `if` + 1 for first `else if` + 1 for second `else if`; `else` does not increment per Sonar spec when it is a flat chain)
+- **THEN** the cognitive complexity MUST be 4 (1 for `if` + 1 for first `else if` + 1 for second `else if` + 1 for `else`)
 
 #### Scenario: for loop
 - **GIVEN** a function containing a `for` loop at nesting level 0

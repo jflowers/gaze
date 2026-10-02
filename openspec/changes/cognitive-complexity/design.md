@@ -97,4 +97,4 @@ New method `cognitive_complexity` in the JSON-RPC protocol. Request: same shape 
 
 - **Algorithm fidelity**: The Sonar specification is designed for Java/C-family languages. Some constructs (e.g., Go's `select`, `defer`) are not covered by the spec. Decision: `select` gets a switch-like increment; `defer` does not increment (it is a resource management statement, not a control flow branch). Document these Go-specific decisions.
 - **Performance**: Cognitive complexity requires a full AST walk per function. Mitigation: the AST is already loaded for side effect analysis; the cognitive walk is lightweight compared to SSA construction.
-- **User confusion**: Adding a third complexity metric (cyclomatic, cognitive, GazeCRAP-CC) may overwhelm users. Mitigation: text report shows cognitive complexity only in verbose mode; JSON always includes it for machine consumption.
+- **User confusion**: Adding a third complexity metric (cyclomatic, cognitive, GazeCRAP-CC) may overwhelm users. Mitigation: the text report omits cognitive complexity (the `crap` text report does not gain a cognitive/GazeCRAP-CC column); JSON always includes it for machine consumption.

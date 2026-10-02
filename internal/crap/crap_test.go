@@ -299,6 +299,59 @@ func TestApplyCognitiveComplexity_ProviderError(t *testing.T) {
 	}
 }
 
+func TestWriteJSON_CognitiveComplexityFields(t *testing.T) {
+	cc := 5
+	ccTotal := 15
+	ccExceeded := 1
+	rpt := &Report{
+		Scores: []Score{
+			{
+				Function:            "Foo",
+				File:                "a.go",
+				LineCoverage:        50,
+				CognitiveComplexity: &cc,
+			},
+		},
+		Summary: Summary{
+			CognitiveComplexityTotal:    &ccTotal,
+			CognitiveComplexityExceeded: &ccExceeded,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, rpt); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"cognitive_complexity": 5`) {
+		t.Errorf("expected cognitive_complexity in JSON, got:\n%s", out)
+	}
+	if strings.Contains(out, "gaze_crap_cc") {
+		t.Errorf("expected gaze_crap_cc omitted when nil, got:\n%s", out)
+	}
+	if !strings.Contains(out, `"cognitive_complexity_total": 15`) {
+		t.Errorf("expected cognitive_complexity_total in JSON, got:\n%s", out)
+	}
+	if !strings.Contains(out, `"cognitive_complexity_exceeded": 1`) {
+		t.Errorf("expected cognitive_complexity_exceeded in JSON, got:\n%s", out)
+	}
+
+	// Nil cognitive fields must be omitted entirely.
+	rpt.Scores[0].CognitiveComplexity = nil
+	rpt.Summary = Summary{}
+	buf.Reset()
+	if err := WriteJSON(&buf, rpt); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	out = buf.String()
+	if strings.Contains(out, "cognitive_complexity") {
+		t.Errorf("expected cognitive_complexity omitted when nil, got:\n%s", out)
+	}
+	if strings.Contains(out, "gaze_crap_cc") {
+		t.Errorf("expected gaze_crap_cc omitted when nil, got:\n%s", out)
+	}
+}
+
 // TestFormula_BenchmarkSuite validates SC-001: CRAP scores match
 // hand-computed values for a benchmark suite of 20+ functions with
 // known complexity and coverage (tolerance: +/- 0.01).

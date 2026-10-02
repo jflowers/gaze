@@ -9,6 +9,7 @@
 package cognitive
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 )
@@ -73,13 +74,43 @@ func AnalyzeFile(fset *token.FileSet, file *ast.File) []FuncCognitiveComplexity 
 		fp := fset.Position(funcDecl.Pos())
 		results = append(results, FuncCognitiveComplexity{
 			Package:             pkgName,
-			Function:            funcDecl.Name.Name,
+			Function:            functionName(funcDecl),
 			File:                fileName,
 			Line:                fp.Line,
 			CognitiveComplexity: cc,
 		})
 	}
 	return results
+}
+
+// functionName returns the name of a function or method in the same
+// receiver-qualified format used by the cyclomatic-complexity provider
+// (gocyclo): "(T).Name" for methods and "Name" for plain functions. Pointer
+// receivers are rendered as "(*T).Name". Matching this format exactly is
+// required so cognitive complexity data joins correctly with cyclomatic
+// complexity data on the (file, function) key.
+func functionName(fn *ast.FuncDecl) string {
+	if fn.Recv != nil && fn.Recv.NumFields() > 0 {
+		typ := fn.Recv.List[0].Type
+		return fmt.Sprintf("(%s).%s", recvString(typ), fn.Name.Name)
+	}
+	return fn.Name.Name
+}
+
+// recvString renders a receiver type the way gocyclo does, eliding generic
+// type parameters so that Store[T] and Store both resolve to "Store".
+func recvString(recv ast.Expr) string {
+	switch t := recv.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return "*" + recvString(t.X)
+	case *ast.IndexExpr:
+		return recvString(t.X)
+	case *ast.IndexListExpr:
+		return recvString(t.X)
+	}
+	return "BADRECV"
 }
 
 type analyzer struct {
@@ -120,6 +151,20 @@ func (a *analyzer) walkStmt(stmt ast.Stmt, nesting int) {
 	case *ast.BranchStmt:
 		if s.Tok == token.GOTO {
 			a.total++
+		}
+	case *ast.CaseClause:
+		for _, expr := range s.List {
+			a.walkExpr(expr, nesting, token.ILLEGAL)
+		}
+		for _, stmt := range s.Body {
+			a.walkStmt(stmt, nesting)
+		}
+	case *ast.CommClause:
+		if s.Comm != nil {
+			a.walkStmt(s.Comm, nesting)
+		}
+		for _, stmt := range s.Body {
+			a.walkStmt(stmt, nesting)
 		}
 	default:
 		a.walkExprStmt(stmt, nesting)
@@ -248,8 +293,13 @@ func (a *analyzer) walkExpr(expr ast.Expr, nesting int, parentLogOp token.Token)
 }
 
 func (a *analyzer) walkCallExpr(e *ast.CallExpr, nesting int) {
-	if ident, ok := e.Fun.(*ast.Ident); ok {
-		if ident.Name == a.funcName {
+	switch fun := e.Fun.(type) {
+	case *ast.Ident:
+		if fun.Name == a.funcName {
+			a.total++
+		}
+	case *ast.SelectorExpr:
+		if fun.Sel.Name == a.funcName {
 			a.total++
 		}
 	}

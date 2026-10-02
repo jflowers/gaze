@@ -75,6 +75,73 @@ func TestRunAnalyze_CognitiveComplexityPass(t *testing.T) {
 	}
 }
 
+type stubCognitiveProvider struct {
+	stats []crap.FunctionCognitiveComplexity
+	err   error
+}
+
+func (p *stubCognitiveProvider) Analyze(_ []string, _ string) ([]crap.FunctionCognitiveComplexity, error) {
+	return p.stats, p.err
+}
+
+func TestRunAnalyze_CognitiveComplexityExceeded(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		patterns:               []string{"github.com/unbound-force/gaze/v2/internal/analysis/testdata/src/returns"},
+		format:                 "text",
+		maxCognitiveComplexity: 1,
+		cognitiveProvider: &stubCognitiveProvider{
+			stats: []crap.FunctionCognitiveComplexity{
+				{Package: "pkg", Function: "Foo", File: "a.go", Line: 1, CognitiveComplexity: 5},
+			},
+		},
+		stdout: &stdout,
+		stderr: &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error when cognitive complexity exceeds max")
+	}
+	if !strings.Contains(err.Error(), "cognitive complexity exceeds maximum 1 for 1 function(s)") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunAnalyze_CognitiveComplexityNoFunctions(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		patterns:               []string{"github.com/unbound-force/gaze/v2/internal/analysis/testdata/src/returns"},
+		format:                 "text",
+		maxCognitiveComplexity: 1,
+		cognitiveProvider:      &stubCognitiveProvider{},
+		stdout:                 &stdout,
+		stderr:                 &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error when no functions measured")
+	}
+	if !strings.Contains(err.Error(), "cognitive complexity unavailable; cannot enforce maximum 1") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunAnalyze_CognitiveComplexityProviderError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		patterns:               []string{"github.com/unbound-force/gaze/v2/internal/analysis/testdata/src/returns"},
+		format:                 "text",
+		maxCognitiveComplexity: 1,
+		cognitiveProvider:      &stubCognitiveProvider{err: fmt.Errorf("boom")},
+		stdout:                 &stdout,
+		stderr:                 &stderr,
+	})
+	if err == nil {
+		t.Fatal("expected error when provider fails")
+	}
+	if !strings.Contains(err.Error(), "computing cognitive complexity: boom") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestRunAnalyze_JSONFormat(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := runAnalyze(analyzeParams{

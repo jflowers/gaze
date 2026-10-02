@@ -1160,3 +1160,60 @@ func TestCrapSchema_ValidatesChangeGateOutput(t *testing.T) {
 		t.Errorf("sample crap JSON does not conform to CrapSchema:\n%v", err)
 	}
 }
+
+// TestCrapSchema_ValidatesCognitiveFields verifies a report carrying the
+// cognitive-complexity fields conforms to CrapSchema.
+func TestCrapSchema_ValidatesCognitiveFields(t *testing.T) {
+	sch, err := jsonschema.UnmarshalJSON(strings.NewReader(CrapSchema))
+	if err != nil {
+		t.Fatalf("failed to parse CrapSchema JSON: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("crap-schema.json", sch); err != nil {
+		t.Fatalf("failed to add crap schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile("crap-schema.json")
+	if err != nil {
+		t.Fatalf("failed to compile CrapSchema: %v", err)
+	}
+
+	sample := map[string]interface{}{
+		"scores": []map[string]interface{}{
+			{
+				"package":              "pkg",
+				"function":             "Foo",
+				"file":                 "pkg/foo.go",
+				"line":                 10,
+				"end_line":             25,
+				"complexity":           5,
+				"line_coverage":        80.0,
+				"crap":                 5.0,
+				"cognitive_complexity": 3,
+				"gaze_crap_cc":         3.0,
+			},
+		},
+		"summary": map[string]interface{}{
+			"total_functions":               1,
+			"avg_complexity":                5.0,
+			"avg_line_coverage":             80.0,
+			"avg_crap":                      5.0,
+			"crapload":                      0,
+			"crap_threshold":                15.0,
+			"cognitive_complexity_total":    3,
+			"cognitive_complexity_exceeded": 0,
+			"worst_crap":                    []map[string]interface{}{},
+		},
+	}
+
+	sampleJSON, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatalf("failed to marshal sample: %v", err)
+	}
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(sampleJSON))
+	if err != nil {
+		t.Fatalf("failed to parse sample JSON: %v", err)
+	}
+	if err := compiled.Validate(inst); err != nil {
+		t.Errorf("sample cognitive crap JSON does not conform to CrapSchema:\n%v", err)
+	}
+}
