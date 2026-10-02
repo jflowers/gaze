@@ -144,21 +144,7 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 	scores := computeScores(complexityStats, coverMap, opts, ccFunc)
 
 	// Step 5a: Compute cognitive complexity and GazeCRAP-CC if provider is set.
-	if opts.CognitiveComplexityProvider != nil {
-		ccStats, ccErr := opts.CognitiveComplexityProvider.Analyze(patterns, moduleDir)
-		if ccErr == nil {
-			ccLookup := buildCognitiveLookup(ccStats)
-			for i := range scores {
-				if cc, ok := ccLookup[cognitiveKey{file: scores[i].File, function: scores[i].Function}]; ok {
-					scores[i].CognitiveComplexity = &cc
-					gazeCRAPCC := CognitiveFormula(cc, scores[i].LineCoverage)
-					scores[i].GazeCRAPCC = &gazeCRAPCC
-				}
-			}
-		} else if opts.Stderr != nil {
-			_, _ = fmt.Fprintf(opts.Stderr, "warning: cognitive complexity provider failed: %v\n", ccErr)
-		}
-	}
+	applyCognitiveComplexity(scores, patterns, moduleDir, opts)
 
 	// Step 5b: Relativize file paths for portable JSON output.
 	// computeScores uses absolute paths for coverage lookups, but the
@@ -176,6 +162,35 @@ func Analyze(patterns []string, moduleDir string, opts Options) (*Report, error)
 		Scores:  scores,
 		Summary: summary,
 	}, nil
+}
+
+// applyCognitiveComplexity enriches scores with cognitive complexity and
+// GazeCRAP-CC when a cognitive complexity provider is configured. When the
+// provider fails, it logs a warning and leaves cognitive fields unset
+// (graceful degradation).
+func applyCognitiveComplexity(scores []Score, patterns []string, moduleDir string, opts Options) {
+	if opts.CognitiveComplexityProvider == nil {
+		return
+	}
+
+	ccStats, ccErr := opts.CognitiveComplexityProvider.Analyze(patterns, moduleDir)
+	if ccErr != nil {
+		if opts.Stderr != nil {
+			_, _ = fmt.Fprintf(opts.Stderr, "warning: cognitive complexity provider failed: %v\n", ccErr)
+		}
+		return
+	}
+
+	ccLookup := buildCognitiveLookup(ccStats)
+	for i := range scores {
+		cc, ok := ccLookup[cognitiveKey{file: scores[i].File, function: scores[i].Function}]
+		if !ok {
+			continue
+		}
+		scores[i].CognitiveComplexity = &cc
+		gazeCRAPCC := CognitiveFormula(cc, scores[i].LineCoverage)
+		scores[i].GazeCRAPCC = &gazeCRAPCC
+	}
 }
 
 // ResolvePatterns converts Go package patterns (./...) to filesystem
