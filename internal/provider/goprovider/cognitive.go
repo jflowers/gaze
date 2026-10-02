@@ -1,8 +1,6 @@
 package goprovider
 
 import (
-	"go/ast"
-
 	"github.com/unbound-force/gaze/v2/internal/cognitive"
 	"github.com/unbound-force/gaze/v2/internal/crap"
 	"golang.org/x/tools/go/packages"
@@ -20,7 +18,9 @@ func NewCognitiveComplexityProvider() *GoCognitiveComplexityProvider {
 }
 
 // Analyze computes cognitive complexity for all functions in the
-// packages matched by patterns, rooted at rootDir.
+// packages matched by patterns, rooted at rootDir. Test files are
+// skipped; the per-file enumeration is delegated to
+// cognitive.AnalyzeFile.
 func (p *GoCognitiveComplexityProvider) Analyze(patterns []string, rootDir string) ([]crap.FunctionCognitiveComplexity, error) {
 	absPaths, err := crap.ResolvePatterns(patterns, rootDir)
 	if err != nil {
@@ -40,33 +40,20 @@ func (p *GoCognitiveComplexityProvider) Analyze(patterns []string, rootDir strin
 	var results []crap.FunctionCognitiveComplexity
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
-			fresults := analyzeCognitiveFile(pkg, file)
-			results = append(results, fresults...)
+			if testFileRegexp.MatchString(pkg.Fset.Position(file.Pos()).Filename) {
+				continue
+			}
+			for _, fr := range cognitive.AnalyzeFile(pkg.Fset, file) {
+				results = append(results, crap.FunctionCognitiveComplexity{
+					Package:             fr.Package,
+					Function:            fr.Function,
+					File:                fr.File,
+					Line:                fr.Line,
+					CognitiveComplexity: fr.CognitiveComplexity,
+				})
+			}
 		}
 	}
 
 	return results, nil
-}
-
-func analyzeCognitiveFile(pkg *packages.Package, file *ast.File) []crap.FunctionCognitiveComplexity {
-	var results []crap.FunctionCognitiveComplexity
-	for _, decl := range file.Decls {
-		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok || funcDecl.Body == nil {
-			continue
-		}
-		if testFileRegexp.MatchString(pkg.Fset.Position(file.Pos()).Filename) {
-			continue
-		}
-		cc := cognitive.AnalyzeFunc(pkg.Fset, funcDecl)
-		pos := pkg.Fset.Position(funcDecl.Pos())
-		results = append(results, crap.FunctionCognitiveComplexity{
-			Package:             pkg.Name,
-			Function:            funcDecl.Name.Name,
-			File:                pos.Filename,
-			Line:                pos.Line,
-			CognitiveComplexity: cc,
-		})
-	}
-	return results
 }

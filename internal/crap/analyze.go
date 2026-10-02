@@ -436,6 +436,7 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 	hasGazeCRAP := false
 	cognitiveTotal := 0
 	cognitiveExceeded := 0
+	hasCognitiveComplexity := false
 
 	for _, s := range scores {
 		totalComp += float64(s.Complexity)
@@ -463,6 +464,7 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 		}
 		if s.CognitiveComplexity != nil {
 			cognitiveTotal += *s.CognitiveComplexity
+			hasCognitiveComplexity = true
 			if opts.CognitiveComplexityThreshold > 0 && *s.CognitiveComplexity > opts.CognitiveComplexityThreshold {
 				cognitiveExceeded++
 			}
@@ -483,15 +485,20 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 	}
 
 	summary := Summary{
-		TotalFunctions:              len(scores),
-		AvgComplexity:               totalComp / n,
-		AvgLineCoverage:             totalCov / n,
-		AvgCRAP:                     totalCRAP / n,
-		CRAPload:                    crapload,
-		CRAPThreshold:               opts.CRAPThreshold,
-		WorstCRAP:                   worst,
-		CognitiveComplexityTotal:    cognitiveTotal,
-		CognitiveComplexityExceeded: cognitiveExceeded,
+		TotalFunctions:  len(scores),
+		AvgComplexity:   totalComp / n,
+		AvgLineCoverage: totalCov / n,
+		AvgCRAP:         totalCRAP / n,
+		CRAPload:        crapload,
+		CRAPThreshold:   opts.CRAPThreshold,
+		WorstCRAP:       worst,
+	}
+
+	if hasCognitiveComplexity {
+		summary.CognitiveComplexityTotal = &cognitiveTotal
+		if opts.CognitiveComplexityThreshold > 0 {
+			summary.CognitiveComplexityExceeded = &cognitiveExceeded
+		}
 	}
 
 	if len(fixStrategyCounts) > 0 {

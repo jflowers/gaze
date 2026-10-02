@@ -58,6 +58,23 @@ func TestRunAnalyze_TextFormat(t *testing.T) {
 	}
 }
 
+func TestRunAnalyze_CognitiveComplexityPass(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runAnalyze(analyzeParams{
+		patterns:               []string{"github.com/unbound-force/gaze/v2/internal/analysis/testdata/src/returns"},
+		format:                 "text",
+		maxCognitiveComplexity: 100,
+		stdout:                 &stdout,
+		stderr:                 &stderr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "cognitive complexity: PASS") {
+		t.Errorf("expected 'cognitive complexity: PASS' on stderr, got:\n%s", stderr.String())
+	}
+}
+
 func TestRunAnalyze_JSONFormat(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := runAnalyze(analyzeParams{
@@ -354,8 +371,9 @@ func TestPrintCISummary_GazeCRAPloadNil(t *testing.T) {
 }
 
 func TestPrintCISummary_CognitiveComplexityPass(t *testing.T) {
+	exceeded := 0
 	rpt := &crap.Report{
-		Summary: crap.Summary{CognitiveComplexityExceeded: 0},
+		Summary: crap.Summary{CognitiveComplexityExceeded: &exceeded},
 	}
 	var buf bytes.Buffer
 	printCISummary(&buf, rpt, 0, 0, 30)
@@ -366,14 +384,27 @@ func TestPrintCISummary_CognitiveComplexityPass(t *testing.T) {
 }
 
 func TestPrintCISummary_CognitiveComplexityFail(t *testing.T) {
+	exceeded := 3
 	rpt := &crap.Report{
-		Summary: crap.Summary{CognitiveComplexityExceeded: 3},
+		Summary: crap.Summary{CognitiveComplexityExceeded: &exceeded},
 	}
 	var buf bytes.Buffer
 	printCISummary(&buf, rpt, 0, 0, 30)
 	out := buf.String()
 	if !strings.Contains(out, "CognitiveComplexity: 3 function(s) exceed 30 (FAIL)") {
 		t.Errorf("expected cognitive FAIL summary, got: %q", out)
+	}
+}
+
+func TestPrintCISummary_CognitiveComplexityUnavailable(t *testing.T) {
+	rpt := &crap.Report{
+		Summary: crap.Summary{CognitiveComplexityExceeded: nil},
+	}
+	var buf bytes.Buffer
+	printCISummary(&buf, rpt, 0, 0, 30)
+	out := buf.String()
+	if !strings.Contains(out, "CognitiveComplexity: unavailable (max 30)") {
+		t.Errorf("expected cognitive unavailable summary, got: %q", out)
 	}
 }
 
@@ -467,6 +498,44 @@ func TestCheckCIThresholds_BothExceeded(t *testing.T) {
 	// CRAPload check runs first, so the error should mention CRAPload.
 	if !strings.Contains(err.Error(), "CRAPload") {
 		t.Errorf("expected CRAPload error (checked first), got: %s", err)
+	}
+}
+
+func TestCheckCIThresholds_CognitiveComplexityExceeded(t *testing.T) {
+	exceeded := 1
+	rpt := &crap.Report{
+		Summary: crap.Summary{CognitiveComplexityExceeded: &exceeded},
+	}
+	err := checkCIThresholds(rpt, 0, 0, 30)
+	if err == nil {
+		t.Fatal("expected error when cognitive complexity exceeds max")
+	}
+	if !strings.Contains(err.Error(), "cognitive complexity exceeds maximum 30 for 1 function") {
+		t.Errorf("unexpected error: %s", err)
+	}
+}
+
+func TestCheckCIThresholds_CognitiveComplexityUnavailable(t *testing.T) {
+	rpt := &crap.Report{
+		Summary: crap.Summary{CognitiveComplexityExceeded: nil},
+	}
+	err := checkCIThresholds(rpt, 0, 0, 30)
+	if err == nil {
+		t.Fatal("expected error when cognitive complexity is unavailable")
+	}
+	if !strings.Contains(err.Error(), "cognitive complexity unavailable") {
+		t.Errorf("unexpected error: %s", err)
+	}
+}
+
+func TestCheckCIThresholds_CognitiveComplexityAtBoundary(t *testing.T) {
+	exceeded := 0
+	rpt := &crap.Report{
+		Summary: crap.Summary{CognitiveComplexityExceeded: &exceeded},
+	}
+	err := checkCIThresholds(rpt, 0, 0, 30)
+	if err != nil {
+		t.Errorf("expected no error when cognitive complexity equals max, got: %v", err)
 	}
 }
 

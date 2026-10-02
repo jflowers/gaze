@@ -1,8 +1,9 @@
 // Package protocol implements a JSON-RPC 2.0 client for communicating
 // with external analyzer binaries over stdin/stdout. The protocol
-// defines 10 methods for gaze ↔ analyzer communication: 5 required
-// (initialize, analyze, complexity, coverage, shutdown) and 5 optional
-// (discover, test_mapping, classify_signals, analyze/stream, doc_coverage).
+// defines 11 methods for gaze ↔ analyzer communication: 5 required
+// (initialize, analyze, complexity, coverage, shutdown) and 6 optional
+// (discover, test_mapping, classify_signals, analyze/stream, doc_coverage,
+// cognitive_complexity).
 //
 // Design decision D1: JSON-RPC 2.0 over stdin/stdout, consistent
 // with the LSP transport model. No HTTP, no gRPC — subprocess
@@ -17,7 +18,7 @@ import (
 	"fmt"
 )
 
-// Protocol method constants for the 10 methods defined in the protocol.
+// Protocol method constants for the 11 methods defined in the protocol.
 const (
 	// Required methods — analyzer must implement all of these.
 	MethodInitialize = "initialize"
@@ -37,7 +38,7 @@ const (
 
 // ProtocolVersion is the current protocol version. Included in the
 // initialize handshake for compatibility checking.
-const ProtocolVersion = "1.1.0"
+const ProtocolVersion = "1.2.0"
 
 // JSON-RPC 2.0 version string.
 const jsonRPCVersion = "2.0"

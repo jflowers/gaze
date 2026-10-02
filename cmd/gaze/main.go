@@ -950,12 +950,16 @@ func printCISummary(w io.Writer, rpt *crap.Report, maxCrapload, maxGazeCrapload,
 			*rpt.Summary.GazeCRAPload, maxGazeCrapload, status))
 	}
 	if maxCognitiveComplexity > 0 {
-		status := "PASS"
-		if rpt.Summary.CognitiveComplexityExceeded > 0 {
-			status = "FAIL"
+		if rpt.Summary.CognitiveComplexityExceeded == nil {
+			parts = append(parts, fmt.Sprintf("CognitiveComplexity: unavailable (max %d)", maxCognitiveComplexity))
+		} else {
+			status := "PASS"
+			if *rpt.Summary.CognitiveComplexityExceeded > 0 {
+				status = "FAIL"
+			}
+			parts = append(parts, fmt.Sprintf("CognitiveComplexity: %d function(s) exceed %d (%s)",
+				*rpt.Summary.CognitiveComplexityExceeded, maxCognitiveComplexity, status))
 		}
-		parts = append(parts, fmt.Sprintf("CognitiveComplexity: %d function(s) exceed %d (%s)",
-			rpt.Summary.CognitiveComplexityExceeded, maxCognitiveComplexity, status))
 	}
 	_, _ = fmt.Fprintln(w, strings.Join(parts, " | "))
 }
@@ -972,15 +976,13 @@ func checkCIThresholds(rpt *crap.Report, maxCrapload, maxGazeCrapload, maxCognit
 			*rpt.Summary.GazeCRAPload, maxGazeCrapload)
 	}
 	if maxCognitiveComplexity > 0 {
-		exceeded := 0
-		for _, s := range rpt.Scores {
-			if s.CognitiveComplexity != nil && *s.CognitiveComplexity > maxCognitiveComplexity {
-				exceeded++
-			}
+		if rpt.Summary.CognitiveComplexityExceeded == nil {
+			return fmt.Errorf("cognitive complexity unavailable; cannot enforce maximum %d",
+				maxCognitiveComplexity)
 		}
-		if exceeded > 0 {
+		if *rpt.Summary.CognitiveComplexityExceeded > 0 {
 			return fmt.Errorf("cognitive complexity exceeds maximum %d for %d function(s)",
-				maxCognitiveComplexity, exceeded)
+				maxCognitiveComplexity, *rpt.Summary.CognitiveComplexityExceeded)
 		}
 	}
 	return nil
@@ -2072,7 +2074,7 @@ scores are included when contract coverage data is available
 				testShort:       testShort,
 				stdout:          os.Stdout,
 				stderr:          os.Stderr,
-				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload") || cmd.Flags().Changed("max-cognitive-complexity"),
+				thresholdSet:    cmd.Flags().Changed("max-crapload") || cmd.Flags().Changed("max-gaze-crapload"),
 			})
 		},
 	}

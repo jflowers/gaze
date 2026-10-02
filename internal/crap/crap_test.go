@@ -451,11 +451,11 @@ func TestBuildSummary_CognitiveComplexityAggregates(t *testing.T) {
 	opts.CognitiveComplexityThreshold = 30
 	summary := buildSummary(scores, opts, nil)
 
-	if summary.CognitiveComplexityTotal != 65 {
-		t.Errorf("expected cognitive total 65, got %d", summary.CognitiveComplexityTotal)
+	if summary.CognitiveComplexityTotal == nil || *summary.CognitiveComplexityTotal != 65 {
+		t.Errorf("expected cognitive total 65, got %v", summary.CognitiveComplexityTotal)
 	}
-	if summary.CognitiveComplexityExceeded != 1 {
-		t.Errorf("expected 1 function exceeding threshold, got %d", summary.CognitiveComplexityExceeded)
+	if summary.CognitiveComplexityExceeded == nil || *summary.CognitiveComplexityExceeded != 1 {
+		t.Errorf("expected 1 function exceeding threshold, got %v", summary.CognitiveComplexityExceeded)
 	}
 }
 
@@ -466,11 +466,24 @@ func TestBuildSummary_CognitiveComplexityNoThreshold(t *testing.T) {
 	opts := DefaultOptions()
 	summary := buildSummary(scores, opts, nil)
 
-	if summary.CognitiveComplexityTotal != 40 {
-		t.Errorf("expected cognitive total 40, got %d", summary.CognitiveComplexityTotal)
+	if summary.CognitiveComplexityTotal == nil || *summary.CognitiveComplexityTotal != 40 {
+		t.Errorf("expected cognitive total 40, got %v", summary.CognitiveComplexityTotal)
 	}
-	if summary.CognitiveComplexityExceeded != 0 {
-		t.Errorf("expected 0 exceeded without threshold, got %d", summary.CognitiveComplexityExceeded)
+	if summary.CognitiveComplexityExceeded != nil {
+		t.Errorf("expected nil exceeded without threshold, got %v", summary.CognitiveComplexityExceeded)
+	}
+}
+
+func TestBuildSummary_CognitiveComplexityAtThreshold(t *testing.T) {
+	cc := 30
+	scores := []Score{{Function: "A", CognitiveComplexity: &cc}}
+
+	opts := DefaultOptions()
+	opts.CognitiveComplexityThreshold = 30
+	summary := buildSummary(scores, opts, nil)
+
+	if summary.CognitiveComplexityExceeded == nil || *summary.CognitiveComplexityExceeded != 0 {
+		t.Errorf("expected 0 exceeded when CC equals threshold, got %v", summary.CognitiveComplexityExceeded)
 	}
 }
 
