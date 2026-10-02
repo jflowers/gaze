@@ -40,7 +40,7 @@
 
 ## 4. Report Output
 
-- [x] 4.1 Update `crap.WriteText` to include cognitive complexity column in verbose mode
+- [ ] 4.1 Update `crap.WriteText` to include cognitive complexity column in verbose mode (deferred: `gaze crap` has no `--verbose` flag; cognitive complexity is JSON-only for now)
 - [x] 4.2 Update JSON reporter to include `cognitive_complexity` and `gaze_crap_cc` per function
 - [x] 4.3 Update `internal/report/schema.go` JSON Schema with new fields
 - [x] 4.4 Write tests for JSON schema validation with new fields
@@ -58,7 +58,7 @@
 - [x] 6.2 Implement `FetchCognitiveComplexity` in `internal/adapter/` for external analyzer integration
 - [x] 6.3 Wire graceful degradation: nil fields when external analyzer does not implement method
 - [x] 6.4 Update fake analyzer in `internal/protocol/testdata/` to support `cognitive_complexity`
-- [x] 6.5 Write integration tests for external analyzer cognitive complexity flow
+- [ ] 6.5 Write integration tests for external analyzer cognitive complexity flow (deferred: fake analyzer now serves `cognitive_complexity`, but the end-to-end session round-trip test is not yet written)
 
 ## 7. Documentation and Constitution Verification
 

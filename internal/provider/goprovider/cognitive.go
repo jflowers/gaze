@@ -1,6 +1,8 @@
 package goprovider
 
 import (
+	"fmt"
+
 	"golang.org/x/tools/go/packages"
 
 	"github.com/unbound-force/gaze/v2/internal/cognitive"
@@ -37,7 +39,7 @@ func (p *GoCognitiveComplexityProvider) Analyze(patterns []string, rootDir strin
 
 	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading packages for cognitive complexity: %w", err)
 	}
 
 	var results []crap.FunctionCognitiveComplexity

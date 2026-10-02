@@ -105,6 +105,8 @@ gaze crap --gate-on-change=origin/main ./...        # Fail if changed functions 
 gaze crap --gate-on-change=staged ./...             # Check staged changes only
 ```
 
+`gaze crap` also reports each function's **cognitive complexity** (SonarSource-style, AST-based) and a **GazeCRAP-CC** score (a GazeCRAP variant substituting cognitive complexity for cyclomatic complexity). Enforce an upper bound with `--max-cognitive-complexity=<N>`. `gaze analyze` accepts the same flag as a gate-only check.
+
 For the CRAP formula, GazeCRAP, quadrants, and fix strategies, see [Scoring](docs/concepts/scoring.md). For all flags, see [`gaze crap` reference](docs/reference/cli/crap.md).
 
 ### `gaze quality` -- Test Quality Assessment
@@ -146,7 +148,7 @@ For adapter setup, CI integration, and all flags, see [`gaze report` reference](
 Use threshold flags for CI enforcement. Gaze exits non-zero when limits are exceeded:
 
 ```bash
-gaze crap --max-crapload=5 --max-gaze-crapload=3 ./...
+gaze crap --max-crapload=5 --max-gaze-crapload=3 --max-cognitive-complexity=15 ./...
 ```
 
 For complete GitHub Actions workflow examples, coverage profile reuse, and threshold selection guidance, see the [CI Integration guide](docs/guides/ci-integration.md).

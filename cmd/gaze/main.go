@@ -137,6 +137,7 @@ type analyzeParams struct {
 	contractualThresh      int
 	incidentalThresh       int
 	maxCognitiveComplexity int
+	cognitiveProvider      crap.CognitiveComplexityProvider
 	stdout                 io.Writer
 	stderr                 io.Writer
 }
@@ -307,7 +308,11 @@ func runAnalyze(p analyzeParams) error {
 		if root, findErr := loader.FindModuleRoot(moduleDir); findErr == nil {
 			moduleRoot = root
 		}
-		stats, ccErr := goprovider.NewCognitiveComplexityProvider().Analyze(p.patterns, moduleRoot)
+		provider := p.cognitiveProvider
+		if provider == nil {
+			provider = goprovider.NewCognitiveComplexityProvider()
+		}
+		stats, ccErr := provider.Analyze(p.patterns, moduleRoot)
 		if ccErr != nil {
 			return fmt.Errorf("computing cognitive complexity: %w", ccErr)
 		}
