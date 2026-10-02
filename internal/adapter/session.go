@@ -27,6 +27,10 @@ type Providers struct {
 	// Nil when test_mapping capability is false.
 	ContractCoverage crap.ContractCoverageProvider
 
+	// CognitiveComplexity is the external cognitive complexity
+	// provider. Nil when the cognitive_complexity capability is false.
+	CognitiveComplexity crap.CognitiveComplexityProvider
+
 	// SideEffects provides access to the side effect analyzer for
 	// commands (like gaze quality) that need direct access to
 	// per-function analysis results beyond what the contract
@@ -158,15 +162,21 @@ func (s *Session) Initialize() (*Providers, error) {
 		)
 	}
 
+	var cognitiveProvider crap.CognitiveComplexityProvider
+	if s.caps.CognitiveComplexity {
+		cognitiveProvider = NewExternalCognitiveComplexityProvider(s.client)
+	}
+
 	return &Providers{
-		Complexity:       complexityProvider,
-		LineCoverage:     coverageProvider,
-		ContractCoverage: contractProvider,
-		SideEffects:      sideEffectAnalyzer,
-		Capabilities:     initResult.Capabilities,
-		AnalyzerName:     initResult.AnalyzerName,
-		Language:         initResult.Language,
-		LanguageVersion:  initResult.LanguageVersion,
+		Complexity:          complexityProvider,
+		LineCoverage:        coverageProvider,
+		ContractCoverage:    contractProvider,
+		CognitiveComplexity: cognitiveProvider,
+		SideEffects:         sideEffectAnalyzer,
+		Capabilities:        initResult.Capabilities,
+		AnalyzerName:        initResult.AnalyzerName,
+		Language:            initResult.Language,
+		LanguageVersion:     initResult.LanguageVersion,
 	}, nil
 }
 
