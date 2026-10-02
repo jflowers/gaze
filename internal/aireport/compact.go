@@ -3,10 +3,10 @@ package aireport
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/unbound-force/gaze/v2/internal/crap"
 	"github.com/unbound-force/gaze/v2/internal/docscan"
-	"github.com/unbound-force/gaze/v2/internal/report"
 	"github.com/unbound-force/gaze/v2/internal/taxonomy"
 )
 
@@ -43,79 +43,56 @@ type compactDocscanEntry struct {
 	Priority docscan.Priority `json:"priority"`
 }
 
-// compactQualityReport mirrors taxonomy.QualityReport but uses
-// compactContractCoverage (ID arrays instead of full SideEffect objects)
-// and AmbiguousEffectIDs instead of AmbiguousEffects.
+// compactQualityReport mirrors taxonomy.QualityReport but projects
+// SideEffect slices to minimal self-contained objects (no classification).
 type compactQualityReport struct {
 	TestFunction                 string                          `json:"test_function"`
 	TestLocation                 string                          `json:"test_location"`
 	TargetFunction               taxonomy.FunctionTarget         `json:"target_function"`
 	ContractCoverage             compactContractCoverage         `json:"contract_coverage"`
 	OverSpecification            taxonomy.OverSpecificationScore `json:"over_specification"`
-	AmbiguousEffectIDs           []string                        `json:"ambiguous_effect_ids"`
+	AmbiguousEffects             []compactSideEffect             `json:"ambiguous_effects"`
 	UnmappedAssertions           []taxonomy.AssertionMapping     `json:"unmapped_assertions"`
 	AssertionCount               int                             `json:"assertion_count"`
 	AssertionDetectionConfidence int                             `json:"assertion_detection_confidence"`
 	Metadata                     taxonomy.Metadata               `json:"metadata"`
 }
 
-// compactContractCoverage replaces Gaps and DiscardedReturns (full
-// SideEffect slices) with GapIDs and DiscardedReturnIDs (string slices),
+// compactContractCoverage projects Gaps and DiscardedReturns (full
+// SideEffect slices) to minimal self-contained side-effect objects,
 // preserving hints and scalar fields.
 type compactContractCoverage struct {
-	Percentage           float64  `json:"percentage"`
-	CoveredCount         int      `json:"covered_count"`
-	TotalContractual     int      `json:"total_contractual"`
-	GapIDs               []string `json:"gap_ids"`
-	GapHints             []string `json:"gap_hints,omitempty"`
-	DiscardedReturnIDs   []string `json:"discarded_return_ids"`
-	DiscardedReturnHints []string `json:"discarded_return_hints,omitempty"`
+	Percentage           float64             `json:"percentage"`
+	CoveredCount         int                 `json:"covered_count"`
+	TotalContractual     int                 `json:"total_contractual"`
+	Gaps                 []compactSideEffect `json:"gaps"`
+	GapHints             []string            `json:"gap_hints,omitempty"`
+	DiscardedReturns     []compactSideEffect `json:"discarded_returns"`
+	DiscardedReturnHints []string            `json:"discarded_return_hints,omitempty"`
 }
 
-// compactClassifyResult mirrors report.JSONReport but uses
-// compactAnalysisResult with compactClassification on side effects.
-type compactClassifyResult struct {
-	Version string                  `json:"version"`
-	Results []compactAnalysisResult `json:"results"`
-}
-
-// compactAnalysisResult mirrors taxonomy.AnalysisResult but uses
-// compactSideEffect with stripped classification signals.
-type compactAnalysisResult struct {
-	Target      taxonomy.FunctionTarget `json:"target"`
-	SideEffects []compactSideEffect     `json:"side_effects"`
-	Metadata    taxonomy.Metadata       `json:"metadata"`
-}
-
-// compactSideEffect mirrors taxonomy.SideEffect but uses
-// compactClassification (no Signals).
+// compactSideEffect is a minimal projection of taxonomy.SideEffect that
+// carries id, type, tier, location, description, and target — enough for
+// the reporter to render gaps and ambiguous effects without the Classify
+// output — and omits the classification object entirely.
 type compactSideEffect struct {
-	ID             string                  `json:"id"`
-	Type           taxonomy.SideEffectType `json:"type"`
-	Tier           taxonomy.Tier           `json:"tier"`
-	Location       string                  `json:"location"`
-	Description    string                  `json:"description"`
-	Target         string                  `json:"target"`
-	Classification *compactClassification  `json:"classification,omitempty"`
+	ID          string                  `json:"id"`
+	Type        taxonomy.SideEffectType `json:"type"`
+	Tier        taxonomy.Tier           `json:"tier"`
+	Location    string                  `json:"location"`
+	Description string                  `json:"description"`
+	Target      string                  `json:"target"`
 }
 
-// compactClassification retains Label, Confidence, and Reasoning
-// but omits Signals to reduce payload size.
-type compactClassification struct {
-	Label      taxonomy.ClassificationLabel `json:"label"`
-	Confidence int                          `json:"confidence"`
-	Reasoning  string                       `json:"reasoning,omitempty"`
-}
-
-// compactCRAPReport mirrors crap.Report but uses compactCRAPSummary
-// which omits WorstCrap, WorstGazeCrap, and RecommendedActions.
+// compactCRAPReport mirrors crap.Report but omits the full Scores array,
+// keeping only the summary (including the bounded worst-offender lists).
 type compactCRAPReport struct {
-	Scores  []crap.Score       `json:"scores"`
 	Summary compactCRAPSummary `json:"summary"`
 }
 
-// compactCRAPSummary mirrors crap.Summary but omits WorstCRAP,
-// WorstGazeCRAP, and RecommendedActions to reduce payload size.
+// compactCRAPSummary mirrors crap.Summary, preserving the bounded
+// worst-offender lists (WorstCRAP, WorstGazeCRAP, RecommendedActions)
+// while the unbounded Scores array is dropped by the parent struct.
 type compactCRAPSummary struct {
 	TotalFunctions      int                      `json:"total_functions"`
 	AvgComplexity       float64                  `json:"avg_complexity"`
@@ -129,6 +106,9 @@ type compactCRAPSummary struct {
 	AvgContractCoverage *float64                 `json:"avg_contract_coverage,omitempty"`
 	QuadrantCounts      map[crap.Quadrant]int    `json:"quadrant_counts,omitempty"`
 	FixStrategyCounts   map[crap.FixStrategy]int `json:"fix_strategy_counts,omitempty"`
+	WorstCRAP           []crap.Score             `json:"worst_crap"`
+	WorstGazeCRAP       []crap.Score             `json:"worst_gaze_crap,omitempty"`
+	RecommendedActions  []crap.RecommendedAction `json:"recommended_actions,omitempty"`
 	SSADegradedPackages []string                 `json:"ssa_degraded_packages,omitempty"`
 }
 
@@ -139,23 +119,31 @@ type compactQualityOutput struct {
 	Summary *compactPackageSummary `json:"quality_summary"`
 }
 
-// compactPackageSummary mirrors taxonomy.PackageSummary but omits
-// WorstCoverageTests to reduce payload size.
+// compactPackageSummary mirrors taxonomy.PackageSummary, preserving the
+// bounded WorstCoverageTests list (bottom 5 by coverage).
 type compactPackageSummary struct {
-	TotalTests                   int      `json:"total_tests"`
-	AverageContractCoverage      float64  `json:"average_contract_coverage"`
-	TotalOverSpecifications      int      `json:"total_over_specifications"`
-	AssertionDetectionConfidence int      `json:"assertion_detection_confidence"`
-	SSADegraded                  bool     `json:"ssa_degraded"`
-	SSADegradedPackages          []string `json:"ssa_degraded_packages,omitempty"`
-	SkippedTests                 int      `json:"skipped_tests"`
-	SkippedTestNames             []string `json:"skipped_test_names,omitempty"`
+	TotalTests                   int                    `json:"total_tests"`
+	AverageContractCoverage      float64                `json:"average_contract_coverage"`
+	TotalOverSpecifications      int                    `json:"total_over_specifications"`
+	AssertionDetectionConfidence int                    `json:"assertion_detection_confidence"`
+	SSADegraded                  bool                   `json:"ssa_degraded"`
+	SSADegradedPackages          []string               `json:"ssa_degraded_packages,omitempty"`
+	SkippedTests                 int                    `json:"skipped_tests"`
+	SkippedTestNames             []string               `json:"skipped_test_names,omitempty"`
+	WorstCoverageTests           []compactQualityReport `json:"worst_coverage_tests,omitempty"`
 }
 
+// qualityReportCap bounds the number of actionable quality reports
+// included in the compact payload. Combined with the dropped unbounded
+// arrays (crap.scores, classify.results) it keeps the payload within the
+// model context window regardless of total codebase size.
+const qualityReportCap = 50
+
 // CompactForAI produces a reduced JSON representation of the payload
-// for the AI adapter text path. It strips large fields (docscan content,
-// classification signals, worst offender lists) and replaces full
-// SideEffect objects with ID strings to fit within model context windows.
+// for the AI adapter text path. It drops the unbounded full arrays
+// (crap scores, classify results), bounds the quality reports to the most
+// actionable entries, and preserves the bounded worst-offender lists the
+// reporter actually reads. It also strips large docscan content.
 //
 // The full json.Marshal output is unaffected — this method produces a
 // separate compact encoding.
@@ -178,7 +166,8 @@ func (p *ReportPayload) CompactForAI() ([]byte, error) {
 		Errors: p.Errors,
 	}
 
-	// CRAP: unmarshal, strip worst offender lists, re-marshal.
+	// CRAP: unmarshal, drop the full Scores array, keep the summary with
+	// worst offender lists.
 	if p.CRAP != nil {
 		compactCRAP, err := compactCRAPField(p.CRAP)
 		if err != nil {
@@ -187,8 +176,9 @@ func (p *ReportPayload) CompactForAI() ([]byte, error) {
 		cp.CRAP = compactCRAP
 	}
 
-	// Quality: unmarshal, replace gaps/discarded returns with IDs,
-	// replace ambiguous effects with IDs, strip worst coverage tests.
+	// Quality: unmarshal, project gaps/discarded/ambiguous effects to
+	// self-contained objects, bound reports to actionable entries, and
+	// keep the worst coverage tests.
 	if p.Quality != nil {
 		compactQuality, err := compactQualityField(p.Quality)
 		if err != nil {
@@ -197,9 +187,10 @@ func (p *ReportPayload) CompactForAI() ([]byte, error) {
 		cp.Quality = compactQuality
 	}
 
-	// Classify: unmarshal, strip signals from classifications.
+	// Classify: emit counts only (sourced from the top-level summary),
+	// dropping the full results array.
 	if p.Classify != nil {
-		compactClassify, err := compactClassifyField(p.Classify)
+		compactClassify, err := compactClassifyField(p.Classify, p.Summary.Contractual, p.Summary.Ambiguous, p.Summary.Incidental)
 		if err != nil {
 			return nil, fmt.Errorf("compacting classify: %w", err)
 		}
@@ -218,8 +209,8 @@ func (p *ReportPayload) CompactForAI() ([]byte, error) {
 	return json.Marshal(cp)
 }
 
-// compactCRAPField unmarshals a crap.Report, strips WorstCRAP,
-// WorstGazeCRAP, and RecommendedActions, and re-marshals.
+// compactCRAPField unmarshals a crap.Report, drops the full Scores array,
+// and re-marshals the summary (preserving worst offender lists).
 func compactCRAPField(raw json.RawMessage) (json.RawMessage, error) {
 	var full crap.Report
 	if err := json.Unmarshal(raw, &full); err != nil {
@@ -227,7 +218,6 @@ func compactCRAPField(raw json.RawMessage) (json.RawMessage, error) {
 	}
 
 	compact := compactCRAPReport{
-		Scores: full.Scores,
 		Summary: compactCRAPSummary{
 			TotalFunctions:      full.Summary.TotalFunctions,
 			AvgComplexity:       full.Summary.AvgComplexity,
@@ -241,6 +231,9 @@ func compactCRAPField(raw json.RawMessage) (json.RawMessage, error) {
 			AvgContractCoverage: full.Summary.AvgContractCoverage,
 			QuadrantCounts:      full.Summary.QuadrantCounts,
 			FixStrategyCounts:   full.Summary.FixStrategyCounts,
+			WorstCRAP:           full.Summary.WorstCRAP,
+			WorstGazeCRAP:       full.Summary.WorstGazeCRAP,
+			RecommendedActions:  full.Summary.RecommendedActions,
 			SSADegradedPackages: full.Summary.SSADegradedPackages,
 		},
 	}
@@ -255,29 +248,31 @@ type qualityOutput struct {
 	Summary *taxonomy.PackageSummary `json:"quality_summary"`
 }
 
-// compactQualityField unmarshals quality reports, replaces Gaps and
-// DiscardedReturns with ID arrays, replaces AmbiguousEffects with ID
-// arrays, strips WorstCoverageTests, and re-marshals.
+// compactQualityField unmarshals quality reports, projects gaps,
+// discarded returns, and ambiguous effects to self-contained objects,
+// bounds reports to actionable entries ordered by ascending contract
+// coverage, preserves worst coverage tests, and re-marshals.
 func compactQualityField(raw json.RawMessage) (json.RawMessage, error) {
 	var full qualityOutput
 	if err := json.Unmarshal(raw, &full); err != nil {
 		return nil, fmt.Errorf("unmarshalling quality report: %w", err)
 	}
 
-	compactReports := make([]compactQualityReport, len(full.Reports))
-	for i, r := range full.Reports {
-		compactReports[i] = compactQualityReport{
-			TestFunction:                 r.TestFunction,
-			TestLocation:                 r.TestLocation,
-			TargetFunction:               r.TargetFunction,
-			ContractCoverage:             projectContractCoverage(r.ContractCoverage),
-			OverSpecification:            r.OverSpecification,
-			AmbiguousEffectIDs:           extractEffectIDs(r.AmbiguousEffects),
-			UnmappedAssertions:           r.UnmappedAssertions,
-			AssertionCount:               r.AssertionCount,
-			AssertionDetectionConfidence: r.AssertionDetectionConfidence,
-			Metadata:                     r.Metadata,
+	compactReports := make([]compactQualityReport, 0, len(full.Reports))
+	for _, r := range full.Reports {
+		cr := projectQualityReport(r)
+		if !isActionable(cr) {
+			continue
 		}
+		compactReports = append(compactReports, cr)
+	}
+
+	sort.Slice(compactReports, func(i, j int) bool {
+		return compactReports[i].ContractCoverage.Percentage < compactReports[j].ContractCoverage.Percentage
+	})
+
+	if len(compactReports) > qualityReportCap {
+		compactReports = compactReports[:qualityReportCap]
 	}
 
 	var compactSummary *compactPackageSummary
@@ -291,6 +286,7 @@ func compactQualityField(raw json.RawMessage) (json.RawMessage, error) {
 			SSADegradedPackages:          full.Summary.SSADegradedPackages,
 			SkippedTests:                 full.Summary.SkippedTests,
 			SkippedTestNames:             full.Summary.SkippedTestNames,
+			WorstCoverageTests:           projectQualityReports(full.Summary.WorstCoverageTests),
 		}
 	}
 
@@ -301,71 +297,105 @@ func compactQualityField(raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(out)
 }
 
+// projectQualityReport converts a full taxonomy.QualityReport into a
+// compact form, projecting side-effect slices to self-contained objects.
+func projectQualityReport(r taxonomy.QualityReport) compactQualityReport {
+	return compactQualityReport{
+		TestFunction:                 r.TestFunction,
+		TestLocation:                 r.TestLocation,
+		TargetFunction:               r.TargetFunction,
+		ContractCoverage:             projectContractCoverage(r.ContractCoverage),
+		OverSpecification:            r.OverSpecification,
+		AmbiguousEffects:             projectSideEffects(r.AmbiguousEffects),
+		UnmappedAssertions:           r.UnmappedAssertions,
+		AssertionCount:               r.AssertionCount,
+		AssertionDetectionConfidence: r.AssertionDetectionConfidence,
+		Metadata:                     r.Metadata,
+	}
+}
+
+// projectQualityReports converts a slice of full taxonomy.QualityReport
+// into compact form. Returns nil for nil input.
+func projectQualityReports(reports []taxonomy.QualityReport) []compactQualityReport {
+	if reports == nil {
+		return nil
+	}
+	out := make([]compactQualityReport, len(reports))
+	for i, r := range reports {
+		out[i] = projectQualityReport(r)
+	}
+	return out
+}
+
+// isActionable reports whether a compact quality report carries anything
+// the reporter can act on: coverage gaps, discarded returns, ambiguous
+// effects, or unmapped assertions.
+func isActionable(r compactQualityReport) bool {
+	return len(r.ContractCoverage.Gaps) > 0 ||
+		len(r.ContractCoverage.DiscardedReturns) > 0 ||
+		len(r.AmbiguousEffects) > 0 ||
+		len(r.UnmappedAssertions) > 0
+}
+
 // projectContractCoverage converts a full ContractCoverage into a
-// compact form with ID arrays instead of full SideEffect objects.
+// compact form with self-contained side-effect objects instead of full
+// SideEffect objects.
 func projectContractCoverage(cc taxonomy.ContractCoverage) compactContractCoverage {
 	return compactContractCoverage{
 		Percentage:           cc.Percentage,
 		CoveredCount:         cc.CoveredCount,
 		TotalContractual:     cc.TotalContractual,
-		GapIDs:               extractEffectIDs(cc.Gaps),
+		Gaps:                 projectSideEffects(cc.Gaps),
 		GapHints:             cc.GapHints,
-		DiscardedReturnIDs:   extractEffectIDs(cc.DiscardedReturns),
+		DiscardedReturns:     projectSideEffects(cc.DiscardedReturns),
 		DiscardedReturnHints: cc.DiscardedReturnHints,
 	}
 }
 
-// extractEffectIDs extracts the ID field from a slice of SideEffect.
-// Returns an empty non-nil slice when effects is empty, and nil when
-// effects is nil, preserving the distinction in JSON output.
-func extractEffectIDs(effects []taxonomy.SideEffect) []string {
+// projectSideEffects converts a slice of taxonomy.SideEffect into minimal
+// self-contained compactSideEffect objects. Returns an empty non-nil
+// slice when effects is empty, and nil when effects is nil, preserving
+// the distinction in JSON output.
+func projectSideEffects(effects []taxonomy.SideEffect) []compactSideEffect {
 	if effects == nil {
 		return nil
 	}
-	ids := make([]string, len(effects))
+	out := make([]compactSideEffect, len(effects))
 	for i, e := range effects {
-		ids[i] = e.ID
+		out[i] = compactSideEffect{
+			ID:          e.ID,
+			Type:        e.Type,
+			Tier:        e.Tier,
+			Location:    e.Location,
+			Description: e.Description,
+			Target:      e.Target,
+		}
 	}
-	return ids
+	return out
 }
 
-// compactClassifyField unmarshals a classify result, strips Signals
-// from each side effect's classification, and re-marshals.
-func compactClassifyField(raw json.RawMessage) (json.RawMessage, error) {
-	var full report.JSONReport
-	if err := json.Unmarshal(raw, &full); err != nil {
+// compactClassifyField emits a counts-only classify object, sourcing the
+// contractual/ambiguous/incidental counts from the top-level summary and
+// preserving only the version string from the full classify result. The
+// full results array is dropped to bound payload size.
+func compactClassifyField(raw json.RawMessage, contractual, ambiguous, incidental int) (json.RawMessage, error) {
+	var header struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
 		return nil, fmt.Errorf("unmarshalling classify result: %w", err)
 	}
 
-	compact := compactClassifyResult{
-		Version: full.Version,
-		Results: make([]compactAnalysisResult, len(full.Results)),
-	}
-
-	for i, r := range full.Results {
-		compactEffects := make([]compactSideEffect, len(r.SideEffects))
-		for j, se := range r.SideEffects {
-			compactEffects[j] = compactSideEffect{
-				ID:          se.ID,
-				Type:        se.Type,
-				Tier:        se.Tier,
-				Location:    se.Location,
-				Description: se.Description,
-				Target:      se.Target,
-			}
-			if se.Classification != nil {
-				compactEffects[j].Classification = &compactClassification{
-					Label:      se.Classification.Label,
-					Confidence: se.Classification.Confidence,
-					Reasoning:  se.Classification.Reasoning,
-				}
-			}
-		}
-		compact.Results[i] = compactAnalysisResult{
-			Target:      r.Target,
-			SideEffects: compactEffects,
-			Metadata:    r.Metadata,
-		}
+	compact := struct {
+		Version     string `json:"version"`
+		Contractual int    `json:"contractual"`
+		Ambiguous   int    `json:"ambiguous"`
+		Incidental  int    `json:"incidental"`
+	}{
+		Version:     header.Version,
+		Contractual: contractual,
+		Ambiguous:   ambiguous,
+		Incidental:  incidental,
 	}
 
 	return json.Marshal(compact)
