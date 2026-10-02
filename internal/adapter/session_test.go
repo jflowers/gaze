@@ -187,3 +187,54 @@ func TestSession_QualitySentinelEndToEnd(t *testing.T) {
 		t.Errorf("summary.TotalTests = %d, want 4", summary.TotalTests)
 	}
 }
+
+func TestSession_CognitiveComplexityCapability(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+	defer func() { _ = session.Close() }()
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	if providers.CognitiveComplexity == nil {
+		t.Fatal("providers.CognitiveComplexity = nil, want non-nil when analyzer advertises cognitive_complexity")
+	}
+
+	stats, err := providers.CognitiveComplexity.Analyze([]string{"./..."}, "/tmp/project")
+	if err != nil {
+		t.Fatalf("cognitive Analyze: %v", err)
+	}
+
+	byFunc := make(map[string]int, len(stats))
+	for _, st := range stats {
+		byFunc[st.Function] = st.CognitiveComplexity
+	}
+	want := map[string]int{"add": 2, "multiply": 3, "divide": 5}
+	for fn, wantCC := range want {
+		got, ok := byFunc[fn]
+		if !ok {
+			t.Errorf("function %q missing from cognitive results, got %v", fn, byFunc)
+			continue
+		}
+		if got != wantCC {
+			t.Errorf("%s cognitive_complexity = %d, want %d", fn, got, wantCC)
+		}
+	}
+}
+
+func TestSession_CognitiveComplexityCapabilityDisabled(t *testing.T) {
+	var stderr bytes.Buffer
+	session := adapter.NewSession(fakeBinaryPath, []string{"--stdio", "--no-cognitive-complexity"}, "/tmp/project", []string{"./..."}, &stderr, nil)
+	defer func() { _ = session.Close() }()
+
+	providers, err := session.Initialize()
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	if providers.CognitiveComplexity != nil {
+		t.Error("providers.CognitiveComplexity = non-nil, want nil when analyzer lacks cognitive_complexity capability")
+	}
+}
