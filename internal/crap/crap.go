@@ -150,13 +150,14 @@ type Summary struct {
 	SSADegradedPackages []string `json:"ssa_degraded_packages,omitempty"`
 
 	// CognitiveComplexityTotal is the sum of cognitive complexity
-	// across all functions. Zero when cognitive complexity was not
+	// across all functions. Nil when cognitive complexity was not
 	// computed.
-	CognitiveComplexityTotal int `json:"cognitive_complexity_total,omitempty"`
+	CognitiveComplexityTotal *int `json:"cognitive_complexity_total,omitempty"`
 
 	// CognitiveComplexityExceeded is the count of functions whose
-	// cognitive complexity exceeds the configured threshold.
-	CognitiveComplexityExceeded int `json:"cognitive_complexity_exceeded,omitempty"`
+	// cognitive complexity exceeds the configured threshold. Nil when
+	// cognitive complexity was not computed or no threshold was set.
+	CognitiveComplexityExceeded *int `json:"cognitive_complexity_exceeded,omitempty"`
 }
 
 // Report is the complete CRAP analysis output.

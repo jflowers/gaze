@@ -104,7 +104,7 @@ The system MUST include `cognitive_complexity` per function in JSON output.
 
 ### Requirement: CI Gate Flag
 
-The system MUST support a `--max-cognitive-complexity=<N>` flag on `gaze analyze` and `gaze crap` commands.
+The system MUST support a `--max-cognitive-complexity=<N>` flag on `gaze analyze` and `gaze crap` commands. On `gaze analyze` the flag is a gate only: cognitive complexity is computed for the gate and reported on stderr, but is not added to the side-effect analysis output. On `gaze crap` and `gaze report` cognitive complexity is computed and reported in the score output regardless of the flag.
 
 #### Scenario: all functions within threshold
 - **GIVEN** `--max-cognitive-complexity=15` and all functions have cognitive complexity <= 15
@@ -119,4 +119,4 @@ The system MUST support a `--max-cognitive-complexity=<N>` flag on `gaze analyze
 #### Scenario: flag not provided
 - **GIVEN** no `--max-cognitive-complexity` flag
 - **WHEN** the command runs
-- **THEN** cognitive complexity values MUST be computed and reported but MUST NOT affect the exit code
+- **THEN** the command MUST NOT fail on account of cognitive complexity. `gaze crap` and `gaze report` MUST still compute and report cognitive complexity; `gaze analyze` MUST NOT compute cognitive complexity (the gate is skipped).

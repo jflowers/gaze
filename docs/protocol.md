@@ -1,6 +1,6 @@
 # Gaze Analyzer Protocol Specification
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Transport**: JSON-RPC 2.0 over stdin/stdout
 
 ## Overview
@@ -24,8 +24,9 @@ gaze {crap,quality,report} --analyzer snake-eyes ./src
 +-- 8. test_mapping --> map assertions to effects (optional)
 +-- 9. classify_signals --> classification signals (optional)
 +-- 10. doc_coverage --> documentation coverage (optional)
-+-- 11. shutdown --> clean exit
-+-- 12. Gaze computes CRAP, GazeCRAP, quadrants, fix strategies
++-- 11. cognitive_complexity --> cognitive complexity per function (optional)
++-- 12. shutdown --> clean exit
++-- 13. Gaze computes CRAP, GazeCRAP, quadrants, fix strategies
 ```
 
 ### Discovery
@@ -127,9 +128,10 @@ Handshake method. Must be the first method called. Returns the analyzer's capabi
     "test_mapping": true,
     "classify_signals": false,
     "streaming": false,
-    "doc_coverage": false
+    "doc_coverage": false,
+    "cognitive_complexity": false
   },
-  "protocol_version": "1.1.0",
+  "protocol_version": "1.2.0",
   "analyzer_name": "snake-eyes",
   "language": "python",
   "language_version": "3.12.0"
@@ -143,6 +145,7 @@ Handshake method. Must be the first method called. Returns the analyzer's capabi
 | `capabilities.classify_signals` | boolean | Supports the `classify_signals` method |
 | `capabilities.streaming` | boolean | Supports the `analyze/stream` method |
 | `capabilities.doc_coverage` | boolean | Supports the `doc_coverage` method |
+| `capabilities.cognitive_complexity` | boolean | Supports the `cognitive_complexity` method |
 | `protocol_version` | string | Protocol version (semver) |
 | `analyzer_name` | string | Human-readable analyzer name |
 | `language` | string | Primary language (e.g., "python", "rust") |
@@ -630,6 +633,54 @@ Report documentation coverage for public symbols. When supported, Gaze uses the 
 
 ---
 
+### `cognitive_complexity` (optional)
+
+Report SonarSource cognitive complexity per function. When supported, Gaze uses the analyzer's native cognitive complexity values to compute GazeCRAP-CC scores. When the analyzer does not declare this capability, cognitive complexity is unavailable and Gaze degrades gracefully (no cognitive complexity is reported, and the `--max-cognitive-complexity` gate fails with an "unavailable" message if set).
+
+**Capability**: `cognitive_complexity`
+
+**Timeout**: 5 minutes
+
+**Request params**:
+
+```json
+{
+  "root_path": "/path/to/project",
+  "patterns": ["./..."]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root_path` | string | yes | Absolute path to the project root |
+| `patterns` | string[] | yes | Package patterns to analyze |
+
+**Response result**:
+
+```json
+{
+  "functions": [
+    {
+      "package": "math_utils",
+      "function": "divide",
+      "file": "math_utils/ops.py",
+      "line": 20,
+      "cognitive_complexity": 14
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `functions[].package` | string | Package/module path |
+| `functions[].function` | string | Function name |
+| `functions[].file` | string | Source file path |
+| `functions[].line` | integer | Line number of the function declaration |
+| `functions[].cognitive_complexity` | integer | SonarSource cognitive complexity score |
+
+---
+
 ## Error Handling
 
 ### Required method errors
@@ -638,12 +689,13 @@ When a required method (`analyze`, `complexity`, `coverage`) returns a JSON-RPC 
 
 ### Optional method errors
 
-When an optional method (`discover`, `test_mapping`, `classify_signals`, `doc_coverage`) returns an error, Gaze logs a warning to stderr and degrades gracefully:
+When an optional method (`discover`, `test_mapping`, `classify_signals`, `doc_coverage`, `cognitive_complexity`) returns an error, Gaze logs a warning to stderr and degrades gracefully:
 
 - `discover` error: no test-file filtering is applied, so test functions are scored normally (potentially inflating CRAP/quadrant/fix-strategy counts); Gaze warns and falls back to unfiltered scoring
 - `test_mapping` error: GazeCRAP is unavailable and `gaze quality` degrades to zero contract coverage (JSON summary sets `reason` to `test_mapping_error`)
 - `classify_signals` error: uses pre-classified effects from `analyze`, supplemented by doc-derived signals from Markdown annotations and the sidecar file for external analyzers (see [classification concepts](concepts/classification.md))
 - `doc_coverage` error: falls back to heuristic documentation coverage from `analyze` output
+- `cognitive_complexity` error: cognitive complexity is unavailable; GazeCRAP-CC is not computed, and a `--max-cognitive-complexity` gate (if set) fails with an "unavailable" message
 
 ### Process crashes
 
@@ -680,7 +732,7 @@ To build a Gaze-compatible analyzer:
 
 1. **Accept `--stdio` flag**: Read JSON-RPC requests from stdin, write responses to stdout, diagnostics to stderr.
 2. **Implement the 5 required methods**: `initialize`, `analyze`, `complexity`, `coverage`, `shutdown`.
-3. **Declare capabilities**: In the `initialize` response, set `test_mapping: true` if you can map assertions to effects (enables GazeCRAP), and `doc_coverage: true` if you can report documentation status per symbol.
+3. **Declare capabilities**: In the `initialize` response, set `test_mapping: true` if you can map assertions to effects (enables GazeCRAP), `doc_coverage: true` if you can report documentation status per symbol, and `cognitive_complexity: true` if you can report SonarSource cognitive complexity per function (enables GazeCRAP-CC).
 4. **Map to Gaze's taxonomy**: Use Gaze's `SideEffectType` constants for the `type` field in `analyze` responses.
 5. **Follow naming convention**: Name your binary `gaze-analyzer-<language>` for automatic PATH discovery.
 
@@ -698,8 +750,8 @@ def handle(request):
 
     if method == "initialize":
         return {"jsonrpc": "2.0", "id": rid, "result": {
-            "capabilities": {"discover": False, "test_mapping": False, "classify_signals": False, "streaming": False, "doc_coverage": False},
-            "protocol_version": "1.1.0",
+            "capabilities": {"discover": False, "test_mapping": False, "classify_signals": False, "streaming": False, "doc_coverage": False, "cognitive_complexity": False},
+            "protocol_version": "1.2.0",
             "analyzer_name": "minimal-python",
             "language": "python"
         }}
