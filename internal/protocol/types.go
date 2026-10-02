@@ -172,6 +172,11 @@ type Capabilities struct {
 	// of public symbols. When false, gaze uses heuristic
 	// documentation coverage.
 	DocCoverage bool `json:"doc_coverage"`
+
+	// CognitiveComplexity indicates whether the analyzer supports the
+	// "cognitive_complexity" method for computing per-function cognitive
+	// complexity. When false, cognitive complexity is unavailable.
+	CognitiveComplexity bool `json:"cognitive_complexity"`
 }
 
 // --- Analyze method types ---
