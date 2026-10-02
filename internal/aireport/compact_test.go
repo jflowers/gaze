@@ -1058,6 +1058,11 @@ func TestCompactForAI_QualityReportsBounded(t *testing.T) {
 
 	reports := make([]map[string]interface{}, total)
 	for i := 0; i < total; i++ {
+		contractCoverage := map[string]interface{}{
+			"percentage": 100.0 - float64(i), "covered_count": 1, "total_contractual": 2,
+			"gaps":              []interface{}{},
+			"discarded_returns": []interface{}{},
+		}
 		report := map[string]interface{}{
 			"test_function": fmt.Sprintf("TestFunc%d", i),
 			"test_location": fmt.Sprintf("pkg/file_test.go:%d", i+1),
@@ -1065,11 +1070,7 @@ func TestCompactForAI_QualityReportsBounded(t *testing.T) {
 				"package": "pkg", "function": fmt.Sprintf("Func%d", i),
 				"signature": "func()", "location": fmt.Sprintf("pkg/file.go:%d", i+1),
 			},
-			"contract_coverage": map[string]interface{}{
-				"percentage": 100.0 - float64(i), "covered_count": 1, "total_contractual": 2,
-				"gaps":              []interface{}{},
-				"discarded_returns": []interface{}{},
-			},
+			"contract_coverage":              contractCoverage,
 			"over_specification":             map[string]interface{}{"count": 0, "ratio": 0.0},
 			"ambiguous_effects":              []interface{}{},
 			"unmapped_assertions":            []interface{}{},
@@ -1079,7 +1080,7 @@ func TestCompactForAI_QualityReportsBounded(t *testing.T) {
 		}
 		// Make the first (total-5) actionable by giving them a coverage gap.
 		if i < total-5 {
-			report["contract_coverage"].(map[string]interface{})["gaps"] = []map[string]interface{}{
+			contractCoverage["gaps"] = []map[string]interface{}{
 				{"id": fmt.Sprintf("se-%08x", i), "type": "ErrorReturn", "tier": "P0", "location": "pkg/file.go:10", "description": "returns error", "target": "error"},
 			}
 		}
