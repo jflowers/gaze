@@ -96,6 +96,29 @@ func TestCrapWithExternalAnalyzer(t *testing.T) {
 		}
 	}
 
+	// Verify cognitive complexity + GazeCRAP-CC are populated from the
+	// external analyzer's cognitive_complexity method (add=2, multiply=3,
+	// divide=5). GazeCRAP-CC uses the same formula as CRAP, so with the
+	// fake analyzer's identical complexity/cognitive values the two
+	// metrics coincide.
+	wantCC := map[string]int{"add": 2, "multiply": 3, "divide": 5}
+	for _, s := range report.Scores {
+		w, ok := wantCC[s.Function]
+		if !ok {
+			continue
+		}
+		if s.CognitiveComplexity == nil {
+			t.Errorf("%s: cognitive_complexity is nil, want %d", s.Function, w)
+			continue
+		}
+		if *s.CognitiveComplexity != w {
+			t.Errorf("%s: cognitive_complexity = %d, want %d", s.Function, *s.CognitiveComplexity, w)
+		}
+		if s.GazeCRAPCC == nil {
+			t.Errorf("%s: gaze_crap_cc is nil, want populated", s.Function)
+		}
+	}
+
 	// Verify the test-file function (tests/test_ops.py::test_add) was
 	// filtered out of CRAP scoring entirely (spec Scenario 1).
 	if len(report.Scores) != 3 {

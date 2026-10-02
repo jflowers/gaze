@@ -290,19 +290,16 @@ func runAnalyze(p analyzeParams) error {
 		allResults = append(allResults, results...)
 	}
 
-	if len(allResults) == 0 {
-		if p.function != "" {
-			return fmt.Errorf("function %q not found in packages %v", p.function, p.patterns)
-		}
-		logger.Warn("no functions found to analyze")
-		return nil
+	if len(allResults) == 0 && p.function != "" {
+		return fmt.Errorf("function %q not found in packages %v", p.function, p.patterns)
 	}
-
-	logger.Info("analysis complete", "functions", len(allResults))
 
 	// Cognitive complexity gate (spec: --max-cognitive-complexity on analyze).
 	// Exit 1 when any analyzed function's cognitive complexity exceeds the
-	// threshold; flag absent (0) has no exit-code effect.
+	// threshold; flag absent (0) has no exit-code effect. Runs before the
+	// empty-results early return so the gate cannot silently pass when no
+	// functions were reported (e.g. exported-only default on an unexported
+	// package).
 	if p.maxCognitiveComplexity > 0 {
 		moduleRoot := moduleDir
 		if root, findErr := loader.FindModuleRoot(moduleDir); findErr == nil {
@@ -332,6 +329,13 @@ func runAnalyze(p analyzeParams) error {
 		}
 		_, _ = fmt.Fprintf(p.stderr, "cognitive complexity: PASS (max %d)\n", p.maxCognitiveComplexity)
 	}
+
+	if len(allResults) == 0 {
+		logger.Warn("no functions found to analyze")
+		return nil
+	}
+
+	logger.Info("analysis complete", "functions", len(allResults))
 
 	if p.interactive {
 		return runInteractiveAnalyze(allResults)
