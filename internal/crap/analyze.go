@@ -51,6 +51,11 @@ type Options struct {
 	// complexity. When nil, cognitive complexity fields remain
 	// unavailable.
 	CognitiveComplexityProvider CognitiveComplexityProvider
+
+	// CognitiveComplexityThreshold is the threshold used to count
+	// functions exceeding the cognitive complexity gate. When 0, the
+	// exceeded count is not tracked. Default: 0.
+	CognitiveComplexityThreshold int
 }
 
 // ContractCoverageInfo carries contract coverage data from the
@@ -458,6 +463,9 @@ func buildSummary(scores []Score, opts Options, ssaDegradedPkgs []string) Summar
 		}
 		if s.CognitiveComplexity != nil {
 			cognitiveTotal += *s.CognitiveComplexity
+			if opts.CognitiveComplexityThreshold > 0 && *s.CognitiveComplexity > opts.CognitiveComplexityThreshold {
+				cognitiveExceeded++
+			}
 		}
 	}
 

@@ -435,6 +435,45 @@ func TestBuildSummary_Empty(t *testing.T) {
 	}
 }
 
+func TestBuildSummary_CognitiveComplexityAggregates(t *testing.T) {
+	cc1 := 10
+	cc2 := 40
+	cc3 := 15
+
+	scores := []Score{
+		{Function: "A", CognitiveComplexity: &cc1},
+		{Function: "B", CognitiveComplexity: &cc2},
+		{Function: "C", CognitiveComplexity: &cc3},
+		{Function: "D"}, // nil CognitiveComplexity
+	}
+
+	opts := DefaultOptions()
+	opts.CognitiveComplexityThreshold = 30
+	summary := buildSummary(scores, opts, nil)
+
+	if summary.CognitiveComplexityTotal != 65 {
+		t.Errorf("expected cognitive total 65, got %d", summary.CognitiveComplexityTotal)
+	}
+	if summary.CognitiveComplexityExceeded != 1 {
+		t.Errorf("expected 1 function exceeding threshold, got %d", summary.CognitiveComplexityExceeded)
+	}
+}
+
+func TestBuildSummary_CognitiveComplexityNoThreshold(t *testing.T) {
+	cc := 40
+	scores := []Score{{Function: "A", CognitiveComplexity: &cc}}
+
+	opts := DefaultOptions()
+	summary := buildSummary(scores, opts, nil)
+
+	if summary.CognitiveComplexityTotal != 40 {
+		t.Errorf("expected cognitive total 40, got %d", summary.CognitiveComplexityTotal)
+	}
+	if summary.CognitiveComplexityExceeded != 0 {
+		t.Errorf("expected 0 exceeded without threshold, got %d", summary.CognitiveComplexityExceeded)
+	}
+}
+
 func TestWriteJSON_ValidOutput(t *testing.T) {
 	report := &Report{
 		Scores: []Score{
