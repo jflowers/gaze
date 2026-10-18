@@ -129,6 +129,89 @@ This pattern splits the quality gate into two steps:
 1. **Threshold check** (`--format=json`) — runs on every PR, no secrets needed, fails the build if thresholds are exceeded
 2. **AI report** (`--ai=opencode`) — runs only on push to main, requires an API key secret, produces a human-readable report in the GitHub Step Summary
 
+## Reusable Workflow
+
+Gaze publishes a provider-agnostic reusable workflow at
+[`.github/workflows/reusable_gaze_ai_report.yml`](https://github.com/unbound-force/gaze/blob/main/.github/workflows/reusable_gaze_ai_report.yml)
+so consumers don't have to duplicate the opencode installation and provider
+configuration machinery. The caller supplies the model, the provider
+configuration, and a coverage profile artifact; the workflow installs pinned
+toolchains, runs `gaze report --ai=opencode`, and enforces the supplied
+thresholds.
+
+### Inputs and secrets
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `model` | string | yes | — | Full opencode model slug (`provider/model`). |
+| `opencode-config` | string | yes | — | Strict-JSON opencode config; the provider `apiKey` must reference `{env:OPENCODE_PROVIDER_KEY}`. |
+| `coverage-artifact` | string | yes | — | Artifact name (uploaded earlier in the same run) containing the coverprofile. |
+| `coverprofile` | string | no | `coverage.out` | Coverprofile path inside the checked-out repository. |
+| `max-crapload` | number | no | — | Fail when the CRAPload exceeds this value. |
+| `max-gaze-crapload` | number | no | — | Fail when the GazeCRAPload exceeds this value. |
+| `min-contract-coverage` | number | no | — | Fail when average contract coverage falls below this percentage. |
+| `opencode-version` | string | no | `1.19.0` | opencode-ai npm version to install. |
+| `gaze-version` | string | no | `v2.2.0` | gaze release tag to install. |
+| `go-version` | string | no | `1.25` | Go toolchain version for the report job. |
+
+Secret `provider-key` (optional): the provider API key. The workflow exports
+it to the report step as `OPENCODE_PROVIDER_KEY`, and the `opencode-config`
+JSON references it as `{env:OPENCODE_PROVIDER_KEY}`. The config input itself
+carries no secret material — it can live in the caller's workflow file and
+stay reviewable. Any custom opencode provider works; the workflow does not
+hardcode one.
+
+When `provider-key` is unavailable (for example on fork PRs, where secrets
+are never exposed), the workflow downloads the artifact and installs gaze,
+then skips the opencode install and report with a notice — so every PR run
+still validates the artifact handoff wiring.
+
+### Consumer example
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Test with coverage
+        run: go test -race -count=1 -short -coverprofile=coverage.out ./...
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-out
+          path: coverage.out
+
+  gaze-ai-report:
+    needs: test
+    permissions:
+      contents: read
+    uses: unbound-force/gaze/.github/workflows/reusable_gaze_ai_report.yml@v2.2.0
+    with:
+      model: enmaas/rits/zai-org/glm-5-3
+      opencode-config: >-
+        {"model": "enmaas/rits/zai-org/glm-5-3",
+        "permission": {"edit": "deny", "bash": "deny", "webfetch": "deny", "websearch": "deny"},
+        "provider": {"enmaas": {"npm": "@ai-sdk/openai-compatible", "name": "EnMaaS",
+        "options": {"baseURL": "https://api.enmaas.devshift.net/v1", "apiKey": "{env:OPENCODE_PROVIDER_KEY}"},
+        "models": {"rits/zai-org/glm-5-3": {"name": "GLM 5.3",
+        "limit": {"context": 262144, "output": 65536}}}}}}
+      coverage-artifact: coverage-out
+      max-crapload: 38
+      max-gaze-crapload: 6
+      min-contract-coverage: 8
+    secrets:
+      provider-key: ${{ secrets.ENMAAS_KEY }}
+```
+
+The coverage profile must come from the same run and commit: both jobs
+check out the same SHA, so the profile's import paths map onto identical
+source files. See [Troubleshooting](#troubleshooting) for the limits of
+profile portability.
+
 ## Coverage Profile Reuse
 
 The `--coverprofile` flag is the key to avoiding double test runs. Without it, [`gaze report`](../reference/cli/report.md) spawns its own `go test -coverprofile` internally — meaning your tests run twice per CI job.
@@ -284,7 +367,7 @@ You're not using `--coverprofile`. Add `-coverprofile=coverage.out` to your test
 
 ### Threshold check passes locally but fails in CI
 
-Coverage profiles are not portable across machines. Always generate the coverage profile and run Gaze in the same CI job. Don't cache or upload coverage profiles between jobs.
+Coverage profiles are not portable across machines or runs. Generate the profile from the same commit you analyze, and don't cache profiles across runs. Uploading a profile for a later job in the same run — as the [reusable workflow](#reusable-workflow) does — is safe: both jobs check out the same commit, so the profile's import paths map to identical source files.
 
 ### AI report step fails with "empty output"
 

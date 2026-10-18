@@ -2,7 +2,7 @@
 
 ## 1. Reusable workflow
 
-- [ ] 1.1 Create `.github/workflows/reusable_gaze_ai_report.yml` with a
+- [x] 1.1 Create `.github/workflows/reusable_gaze_ai_report.yml` with a
   `workflow_call` trigger exposing inputs: `model` (string, required),
   `opencode-config` (string, required), `coverage-artifact` (string,
   required), `coverprofile` (string, default `coverage.out`),
@@ -10,7 +10,7 @@
   optional), `opencode-version` (string, default `1.19.0`),
   `gaze-version` (string, default `v2.2.0`), `go-version` (string,
   default `1.25`), and secret `provider-key` (optional).
-- [ ] 1.2 Add the `gaze-ai-report` job (ubuntu-latest, `permissions:
+- [x] 1.2 Add the `gaze-ai-report` job (ubuntu-latest, `permissions:
   contents: read`, `timeout-minutes: 30`, job env `HAS_PROVIDER_KEY:
   ${{ secrets.provider-key != '' }}`) with steps: Checkout
   (actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2),
@@ -21,7 +21,7 @@
   `coverage.out` extracts to the repository root), and Install gaze
   (`go install github.com/unbound-force/gaze/v2/cmd/gaze` at the
   `gaze-version` input).
-- [ ] 1.3 Add the report steps gated on `env.HAS_PROVIDER_KEY ==
+- [x] 1.3 Add the report steps gated on `env.HAS_PROVIDER_KEY ==
   'true'`: Install OpenCode (`npm install -g opencode-ai` at the
   `opencode-version` input) and Run gaze AI report, which unsets
   `GITHUB_TOKEN`/`GH_TOKEN`, exports `OPENCODE_CONFIG_CONTENT` (from
@@ -29,22 +29,22 @@
   `provider-key` secret), assembles threshold flags from env vars only
   when the inputs are set, and runs `gaze report ./... --ai=opencode
   --model=<model> --coverprofile=<coverprofile> [thresholds]`.
-- [ ] 1.4 Add a skip-notice step (`if: env.HAS_PROVIDER_KEY != 'true'`)
+- [x] 1.4 Add a skip-notice step (`if: env.HAS_PROVIDER_KEY != 'true'`)
   stating that the AI report is skipped because no provider key is
   available.
 
 ## 2. Dogfood in test.yml
 
-- [ ] 2.1 In `unit-and-integration`, after the "Gaze threshold check"
+- [x] 2.1 In `unit-and-integration`, after the "Gaze threshold check"
   step, add an "Upload coverage" step (`if: matrix.go-version ==
   '1.24'`) uploading `coverage.out` via
   actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 #
   v4.6.2 with `name: coverage-out`.
-- [ ] 2.2 Remove from `unit-and-integration`: "Authenticate to Google
+- [x] 2.2 Remove from `unit-and-integration`: "Authenticate to Google
   Cloud", "Setup GCloud", "Install OpenCode", and "Gaze quality report"
   steps; the GCP/Vertex/Anthropic env vars and `HAS_GCP_SECRETS`; and
   `id-token: write` from the job permissions.
-- [ ] 2.3 Add the `gaze-ai-report` job: `needs: unit-and-integration`,
+- [x] 2.3 Add the `gaze-ai-report` job: `needs: unit-and-integration`,
   `permissions: contents: read`, `uses:
   ./.github/workflows/reusable_gaze_ai_report.yml`, `with`: `model:
   enmaas/rits/zai-org/glm-5-3`, `opencode-config` set to the EnMaaS
@@ -57,18 +57,18 @@
 
 ## 3. Documentation
 
-- [ ] 3.1 Add a "Reusable workflow" section to
+- [x] 3.1 Add a "Reusable workflow" section to
   `docs/guides/ci-integration.md` documenting the inputs, the
   `provider-key` secret, the coverage artifact contract, and a consumer
   example.
 
 ## 4. Verification
 
-- [ ] 4.1 `openspec validate reusable-gaze-ai-report` passes.
-- [ ] 4.2 The changed workflow YAML passes yamllint (MegaLinter
+- [x] 4.1 `openspec validate reusable-gaze-ai-report` passes.
+- [x] 4.2 The changed workflow YAML passes yamllint (MegaLinter
   parity).
-- [ ] 4.3 `go build ./...` still passes (no Go changes; sanity).
-- [ ] 4.4 Spec artifacts committed and pushed before implementation.
+- [x] 4.3 `go build ./...` still passes (no Go changes; sanity).
+- [x] 4.4 Spec artifacts committed and pushed before implementation.
 - [ ] 4.5 After PR: verify the PR run executes the artifact handoff
   and skips the report steps (fork PR, no secret); after merge, verify
   the push run produces the EnMaaS quality report.
