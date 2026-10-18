@@ -83,18 +83,9 @@ jobs:
       contents: read
     uses: ./.github/workflows/reusable_gaze_ai_report.yml
     with:
-      model: enmaas/rits/zai-org/glm-5-3
-      opencode-config: >-
-        {"model": "enmaas/rits/zai-org/glm-5-3",
-        "permission": {"edit": "deny", "bash": "deny", "webfetch": "deny", "websearch": "deny"},
-        "provider": {"enmaas": {"npm": "@ai-sdk/openai-compatible", "name": "EnMaaS",
-        "options": {"baseURL": "https://api.enmaas.devshift.net/v1",
-        "apiKey": "{env:OPENCODE_PROVIDER_KEY}"},
-        "models": {"rits/zai-org/glm-5-3": {"name": "GLM 5.3",
-        "limit": {"context": 262144, "output": 65536}}}}}}
       coverage-artifact: coverage-out
       max-crapload: 38
       max-gaze-crapload: 6
       min-contract-coverage: 8
     secrets:
-      provider-key: ${{ secrets.ENMAAS_KEY }}
+      opencode-config: ${{ secrets.OPENCODE_CONFIG_CONTENT }}

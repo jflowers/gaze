@@ -134,8 +134,10 @@ This pattern splits the quality gate into two steps:
 Gaze publishes a provider-agnostic reusable workflow at
 [`.github/workflows/reusable_gaze_ai_report.yml`](https://github.com/unbound-force/gaze/blob/main/.github/workflows/reusable_gaze_ai_report.yml)
 so consumers don't have to duplicate the opencode installation and provider
-configuration machinery. The caller supplies the model, the provider
-configuration, and a coverage profile artifact; the workflow installs pinned
+configuration machinery. The caller supplies a coverage profile artifact (plus
+optional model and thresholds); the entire opencode configuration — provider,
+model, permissions, and API key — arrives through a single secret, so the
+consumer controls the whole configuration. The workflow installs pinned
 toolchains, runs `gaze report --ai=opencode`, and enforces the supplied
 thresholds.
 
@@ -143,8 +145,7 @@ thresholds.
 
 | Input | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `model` | string | yes | — | Full opencode model slug (`provider/model`). |
-| `opencode-config` | string | yes | — | Strict-JSON opencode config; the provider `apiKey` must reference `{env:OPENCODE_PROVIDER_KEY}`. |
+| `model` | string | no | — | Optional model override; when unset, opencode uses the config's top-level `model`. |
 | `coverage-artifact` | string | yes | — | Artifact name (uploaded earlier in the same run) containing the coverprofile. |
 | `coverprofile` | string | no | `coverage.out` | Coverprofile path inside the checked-out repository. |
 | `max-crapload` | number | no | — | Fail when the CRAPload exceeds this value. |
@@ -154,14 +155,44 @@ thresholds.
 | `gaze-version` | string | no | `v2.2.0` | gaze release tag to install. |
 | `go-version` | string | no | `1.25` | Go toolchain version for the report job. |
 
-Secret `provider-key` (optional): the provider API key. The workflow exports
-it to the report step as `OPENCODE_PROVIDER_KEY`, and the `opencode-config`
-JSON references it as `{env:OPENCODE_PROVIDER_KEY}`. The config input itself
-carries no secret material — it can live in the caller's workflow file and
-stay reviewable. Any custom opencode provider works; the workflow does not
-hardcode one.
+Secret `opencode-config` (optional): the consumer's entire strict-JSON
+opencode configuration — provider, model, permissions, and the literal API
+key. The workflow exports it verbatim to the report step as
+`OPENCODE_CONFIG_CONTENT`. Because the config carries key material, keep it
+in an org- or repo-level secret (never in a workflow file) and include
+permission denials so the report step cannot edit files or reach the network
+beyond the provider call:
 
-When `provider-key` is unavailable (for example on fork PRs, where secrets
+```json
+{
+  "model": "enmaas/rits/zai-org/glm-5-3",
+  "permission": { "edit": "deny", "bash": "deny", "webfetch": "deny", "websearch": "deny" },
+  "provider": {
+    "enmaas": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "EnMaaS",
+      "options": {
+        "baseURL": "https://api.enmaas.devshift.net/v1",
+        "apiKey": "<LITERAL API KEY>"
+      },
+      "models": {
+        "rits/zai-org/glm-5-3": {
+          "name": "GLM 5.3",
+          "limit": { "context": 262144, "output": 65536 }
+        }
+      }
+    }
+  }
+}
+```
+
+The value must be strict JSON (no comments). The `apiKey` is the literal key:
+the config is injected as one unit, so there is no separate env-var secret to
+resolve. Any custom opencode provider works; the workflow does not hardcode
+one. The trade-off is that the config leaves code review — it is a write-only
+secret controlled by the org or repo administrator.
+
+When `opencode-config` is unavailable (for example on fork PRs, where secrets
 are never exposed), the workflow downloads the artifact and installs gaze,
 then skips the opencode install and report with a notice — so every PR run
 still validates the artifact handoff wiring.
@@ -191,20 +222,12 @@ jobs:
       contents: read
     uses: unbound-force/gaze/.github/workflows/reusable_gaze_ai_report.yml@v2.2.0
     with:
-      model: enmaas/rits/zai-org/glm-5-3
-      opencode-config: >-
-        {"model": "enmaas/rits/zai-org/glm-5-3",
-        "permission": {"edit": "deny", "bash": "deny", "webfetch": "deny", "websearch": "deny"},
-        "provider": {"enmaas": {"npm": "@ai-sdk/openai-compatible", "name": "EnMaaS",
-        "options": {"baseURL": "https://api.enmaas.devshift.net/v1", "apiKey": "{env:OPENCODE_PROVIDER_KEY}"},
-        "models": {"rits/zai-org/glm-5-3": {"name": "GLM 5.3",
-        "limit": {"context": 262144, "output": 65536}}}}}}
       coverage-artifact: coverage-out
       max-crapload: 38
       max-gaze-crapload: 6
       min-contract-coverage: 8
     secrets:
-      provider-key: ${{ secrets.ENMAAS_KEY }}
+      opencode-config: ${{ secrets.OPENCODE_CONFIG_CONTENT }}
 ```
 
 The coverage profile must come from the same run and commit: both jobs

@@ -7,12 +7,14 @@
 # Contract:
 # - The caller uploads a coverprofile artifact in a prior job and
 #   passes its name via `coverage-artifact`.
-# - The opencode provider configuration arrives via the
-#   `opencode-config` input (strict JSON, exported as
-#   OPENCODE_CONFIG_CONTENT). It contains no secret material: the
-#   provider apiKey MUST reference {env:OPENCODE_PROVIDER_KEY},
-#   which this workflow exports from the `provider-key` secret.
-# - When `provider-key` is unavailable (e.g. fork PRs), the
+# - The entire opencode configuration — provider, model,
+#   permissions, and literal API key — arrives via the
+#   `opencode-config` secret (strict JSON) and is exported
+#   verbatim as OPENCODE_CONFIG_CONTENT. The consumer controls
+#   the whole configuration; this workflow dictates no provider
+#   specifics. Permission denials (edit/bash/webfetch/websearch)
+#   are recommended since the config carries key material.
+# - When `opencode-config` is unavailable (e.g. fork PRs), the
 #   install and report steps are skipped with a notice so the
 #   wiring still validates without secrets.
 name: Reusable Gaze AI Report
@@ -21,12 +23,8 @@ on:
   workflow_call:
     inputs:
       model:
-        description: "Full opencode model slug (provider/model)."
-        required: true
-        type: string
-      opencode-config:
-        description: "Strict-JSON opencode config; apiKey must reference {env:OPENCODE_PROVIDER_KEY}."
-        required: true
+        description: "Optional model override; when unset, opencode uses the config's top-level model."
+        required: false
         type: string
       coverage-artifact:
         description: "Artifact name in the calling run that contains the coverprofile."
@@ -65,8 +63,8 @@ on:
         default: "1.25"
         type: string
     secrets:
-      provider-key:
-        description: "Provider API key, exported to the report step as OPENCODE_PROVIDER_KEY."
+      opencode-config:
+        description: "Full strict-JSON opencode config (provider, model, permissions, literal API key); exported verbatim as OPENCODE_CONFIG_CONTENT."
         required: false
 
 permissions:
@@ -80,7 +78,7 @@ jobs:
     permissions:
       contents: read
     env:
-      HAS_PROVIDER_KEY: ${{ secrets.provider-key != '' }}
+      HAS_OPENCODE_CONFIG: ${{ secrets.opencode-config != '' }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -102,16 +100,15 @@ jobs:
         run: go install github.com/unbound-force/gaze/v2/cmd/gaze@"$GAZE_RELEASE"
 
       - name: Install OpenCode
-        if: env.HAS_PROVIDER_KEY == 'true'
+        if: env.HAS_OPENCODE_CONFIG == 'true'
         env:
           OPENCODE_RELEASE: ${{ inputs.opencode-version }}
         run: npm install -g opencode-ai@"$OPENCODE_RELEASE"
 
       - name: Run gaze AI report
-        if: env.HAS_PROVIDER_KEY == 'true'
+        if: env.HAS_OPENCODE_CONFIG == 'true'
         env:
-          OPENCODE_CONFIG_CONTENT: ${{ inputs.opencode-config }}
-          OPENCODE_PROVIDER_KEY: ${{ secrets.provider-key }}
+          OPENCODE_CONFIG_CONTENT: ${{ secrets.opencode-config }}
           GAZE_MODEL: ${{ inputs.model }}
           COVERPROFILE: ${{ inputs.coverprofile }}
           MAX_CRAPLOAD: ${{ inputs.max-crapload }}
@@ -119,6 +116,10 @@ jobs:
           MIN_CONTRACT_COVERAGE: ${{ inputs.min-contract-coverage }}
         run: |
           unset GITHUB_TOKEN GH_TOKEN
+          MODEL_ARG=""
+          if [ -n "$GAZE_MODEL" ]; then
+            MODEL_ARG="--model=$GAZE_MODEL"
+          fi
           THRESHOLDS=""
           if [ -n "$MAX_CRAPLOAD" ]; then
             THRESHOLDS="$THRESHOLDS --max-crapload=$MAX_CRAPLOAD"
@@ -131,11 +132,11 @@ jobs:
           fi
           gaze report ./... \
             --ai=opencode \
-            --model="$GAZE_MODEL" \
+            $MODEL_ARG \
             --coverprofile="$COVERPROFILE" \
             $THRESHOLDS
 
       - name: Report skipped
-        if: env.HAS_PROVIDER_KEY != 'true'
+        if: env.HAS_OPENCODE_CONFIG != 'true'
         run: |
-          echo "Skipping the gaze AI report: no provider key available (secrets are unavailable on fork PRs)." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Skipping the gaze AI report: no opencode config secret available (secrets are unavailable on fork PRs)." | tee -a "$GITHUB_STEP_SUMMARY"
