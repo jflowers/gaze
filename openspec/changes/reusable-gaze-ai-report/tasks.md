@@ -3,16 +3,17 @@
 ## 1. Reusable workflow
 
 - [x] 1.1 Create `.github/workflows/reusable_gaze_ai_report.yml` with a
-  `workflow_call` trigger exposing inputs: `model` (string, required),
-  `opencode-config` (string, required), `coverage-artifact` (string,
-  required), `coverprofile` (string, default `coverage.out`),
-  `max-crapload`, `max-gaze-crapload`, `min-contract-coverage` (number,
-  optional), `opencode-version` (string, default `1.19.0`),
-  `gaze-version` (string, default `v2.2.0`), `go-version` (string,
-  default `1.25`), and secret `provider-key` (optional).
+  `workflow_call` trigger exposing inputs: `model` (string, optional),
+  `coverage-artifact` (string, required), `coverprofile` (string,
+  default `coverage.out`), `max-crapload`, `max-gaze-crapload`,
+  `min-contract-coverage` (number, optional), `opencode-version`
+  (string, default `1.19.0`), `gaze-version` (string, default
+  `v2.2.0`), `go-version` (string, default `1.25`), and secret
+  `opencode-config` (optional) carrying the consumer's full opencode
+  config as strict JSON, including the literal API key.
 - [x] 1.2 Add the `gaze-ai-report` job (ubuntu-latest, `permissions:
-  contents: read`, `timeout-minutes: 30`, job env `HAS_PROVIDER_KEY:
-  ${{ secrets.provider-key != '' }}`) with steps: Checkout
+  contents: read`, `timeout-minutes: 30`, job env `HAS_OPENCODE_CONFIG:
+  ${{ secrets.opencode-config != '' }}`) with steps: Checkout
   (actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2),
   Setup Go (actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff #
   v5.6.0, `go-version` from the input), Download coverage
@@ -21,17 +22,17 @@
   `coverage.out` extracts to the repository root), and Install gaze
   (`go install github.com/unbound-force/gaze/v2/cmd/gaze` at the
   `gaze-version` input).
-- [x] 1.3 Add the report steps gated on `env.HAS_PROVIDER_KEY ==
+- [x] 1.3 Add the report steps gated on `env.HAS_OPENCODE_CONFIG ==
   'true'`: Install OpenCode (`npm install -g opencode-ai` at the
   `opencode-version` input) and Run gaze AI report, which unsets
   `GITHUB_TOKEN`/`GH_TOKEN`, exports `OPENCODE_CONFIG_CONTENT` (from
-  the `opencode-config` input) and `OPENCODE_PROVIDER_KEY` (from the
-  `provider-key` secret), assembles threshold flags from env vars only
-  when the inputs are set, and runs `gaze report ./... --ai=opencode
-  --model=<model> --coverprofile=<coverprofile> [thresholds]`.
-- [x] 1.4 Add a skip-notice step (`if: env.HAS_PROVIDER_KEY != 'true'`)
-  stating that the AI report is skipped because no provider key is
-  available.
+  the `opencode-config` secret) and `GAZE_MODEL` (from the optional
+  `model` input), assembles the `--model` arg and threshold flags from
+  env vars only when set, and runs `gaze report ./... --ai=opencode
+  [--model=<model>] --coverprofile=<coverprofile> [thresholds]`.
+- [x] 1.4 Add a skip-notice step (`if: env.HAS_OPENCODE_CONFIG !=
+  'true'`) stating that the AI report is skipped because no opencode
+  config secret is available.
 
 ## 2. Dogfood in test.yml
 
@@ -46,21 +47,20 @@
   `id-token: write` from the job permissions.
 - [x] 2.3 Add the `gaze-ai-report` job: `needs: unit-and-integration`,
   `permissions: contents: read`, `uses:
-  ./.github/workflows/reusable_gaze_ai_report.yml`, `with`: `model:
-  enmaas/rits/zai-org/glm-5-3`, `opencode-config` set to the EnMaaS
-  JSON (options-nested baseURL/apiKey referencing
-  `{env:OPENCODE_PROVIDER_KEY}`, model limits context 262144 / output
-  65536, permission denials for edit/bash/webfetch/websearch),
+  ./.github/workflows/reusable_gaze_ai_report.yml`, `with`:
   `coverage-artifact: coverage-out`, `max-crapload: 38`,
   `max-gaze-crapload: 6`, `min-contract-coverage: 8`; `secrets`:
-  `provider-key: ENMAAS_KEY`.
+  `opencode-config: ${{ secrets.OPENCODE_CONFIG_CONTENT }}` (org
+  secret carrying the EnMaaS/GLM 5.3 config with permission denials
+  and the literal API key).
 
 ## 3. Documentation
 
 - [x] 3.1 Add a "Reusable workflow" section to
   `docs/guides/ci-integration.md` documenting the inputs, the
-  `provider-key` secret, the coverage artifact contract, and a consumer
-  example.
+  `opencode-config` secret (canonical config shape, strict-JSON and
+  permission-denial and literal-key notes), the coverage artifact
+  contract, and a consumer example.
 
 ## 4. Verification
 
@@ -72,3 +72,25 @@
 - [ ] 4.5 After PR: verify the PR run executes the artifact handoff
   and skips the report steps (fork PR, no secret); after merge, verify
   the push run produces the EnMaaS quality report.
+
+## 5. Amendment: config as the single org secret
+
+The contract was amended before merge: the consumer's entire opencode
+config — provider, model, permissions, and the literal API key —
+travels as one `opencode-config` secret exported verbatim as
+`OPENCODE_CONFIG_CONTENT`. The `opencode-config` input, the
+`provider-key` secret, and the `OPENCODE_PROVIDER_KEY` env var are
+eliminated; `model` becomes an optional input. Tasks 1.1-1.4, 2.3,
+and 3.1 above describe the final contract.
+
+- [x] 5.1 Dry run the amended contract end-to-end: strict-JSON config
+  with the literal API key and permission denials, fresh `HOME`, only
+  `OPENCODE_CONFIG_CONTENT` exported (no `OPENCODE_PROVIDER_KEY`, no
+  `ENMAAS_KEY`, no `--model` flag); gaze produced the full report
+  using the config's top-level model.
+- [x] 5.2 Amend `.github/workflows/reusable_gaze_ai_report.yml`,
+  `test.yml`, and `docs/guides/ci-integration.md` to the amended
+  contract.
+- [x] 5.3 `openspec validate reusable-gaze-ai-report --strict`,
+  yamllint on both changed workflows, and a JSON parse of the
+  canonical config example pass after the amendment.

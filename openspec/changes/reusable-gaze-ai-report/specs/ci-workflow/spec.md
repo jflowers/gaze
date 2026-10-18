@@ -5,23 +5,25 @@
 ### Requirement: Reusable AI report MUST be provider-agnostic
 
 `.github/workflows/reusable_gaze_ai_report.yml` MUST expose a
-`workflow_call` interface where the model, the opencode provider
-configuration, the coverage artifact name, and the thresholds are
-caller-supplied inputs, and the provider API key is passed as the
-`provider-key` secret. The workflow MUST NOT hard-code any provider,
-model, or credentials, and MUST NOT run the caller's test suite.
+`workflow_call` contract where the coverage artifact and thresholds are
+caller inputs, the optional `model` input is passed through when set, and
+the consumer's entire opencode configuration — provider, model,
+permissions, literal API key — arrives as the `opencode-config` secret,
+exported as `OPENCODE_CONFIG_CONTENT`. The workflow MUST NOT hard-code any
+provider, model, or credentials, and MUST NOT run the caller's tests.
 
 #### Scenario: Consumer runs the report with its own provider
 
-- **GIVEN** a repository calling the workflow with an opencode config
-  and the `provider-key` secret available
+- **GIVEN** a repository calling the workflow with the
+  `opencode-config` secret available
 - **WHEN** the reusable workflow job runs
-- **THEN** `gaze report ./... --ai=opencode` runs with the caller's
-  model and provider, and the report is appended to the job summary
+- **THEN** `gaze report ./... --ai=opencode` runs with the model and
+  provider from the secret's config, and the report is appended to the
+  job summary
 
 #### Scenario: Absent secret skips the report without failing
 
-- **GIVEN** a fork PR where the `provider-key` secret is unavailable
+- **GIVEN** a fork PR where the `opencode-config` secret is unavailable
 - **WHEN** the reusable workflow job runs
 - **THEN** the install and report steps are skipped with a notice and
   the job succeeds
@@ -56,7 +58,7 @@ job.
 
 ### Requirement: AI report MUST run only where secrets are available
 
-The AI report MUST execute only where the `provider-key` secret
+The AI report MUST execute only where the `opencode-config` secret
 resolves (push to main); the `gaze-ai-report` job MAY run on PRs with
 the install and report steps skipped to validate the wiring. The
 PR-safe "Gaze threshold check" step MUST remain unchanged in
@@ -64,10 +66,11 @@ PR-safe "Gaze threshold check" step MUST remain unchanged in
 
 #### Scenario: Push to main runs the EnMaaS report
 
-- **GIVEN** a push to `main` with `ENMAAS_KEY` configured
+- **GIVEN** a push to `main` with the org secret
+  `OPENCODE_CONFIG_CONTENT` configured (EnMaaS, GLM 5.3)
 - **WHEN** the `gaze-ai-report` job runs
-- **THEN** the report runs with `enmaas/rits/zai-org/glm-5-3` and
-  thresholds 38/6/8
+- **THEN** the report runs with the config's
+  `enmaas/rits/zai-org/glm-5-3` model and thresholds 38/6/8
 
 #### Scenario: GCP machinery is gone
 

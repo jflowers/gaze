@@ -26,12 +26,14 @@ report.
    provider-agnostic reusable workflow (`workflow_call`) that installs
    pinned opencode and gaze, downloads a coverage artifact from the
    calling run, and runs `gaze report ./... --ai=opencode` with
-   caller-supplied model, provider config, and thresholds. Threshold
-   breaches fail the job.
+   caller-supplied thresholds and a single `opencode-config` secret
+   carrying the consumer's entire opencode configuration (provider,
+   model, API key, permissions). Threshold breaches fail the job.
 2. Dogfood the workflow from `test.yml`: upload `coverage.out` from the
    Go 1.24 matrix leg and add a `gaze-ai-report` job that calls the
-   reusable workflow with the EnMaaS provider
-   (`enmaas/rits/zai-org/glm-5-3`).
+   reusable workflow with thresholds 38/6/8, sourcing the provider and
+   model from the org-level `OPENCODE_CONFIG_CONTENT` secret (EnMaaS
+   GLM 5.3, `enmaas/rits/zai-org/glm-5-3`).
 3. Remove the GCP-specific machinery from `unit-and-integration` (WIF
    auth, setup-gcloud, opencode install, in-job AI report), the GCP env
    vars, and the `id-token: write` permission. The PR-safe "Gaze
@@ -61,8 +63,9 @@ report.
 - `.github/workflows/reusable_gaze_ai_report.yml` — added
 - `.github/workflows/test.yml` — modified
 - `docs/guides/ci-integration.md` — modified
-- Repository secret `ENMAAS_KEY` — added by the maintainer (not in
-  files)
+- Organization secret `OPENCODE_CONFIG_CONTENT` — added by the org
+  maintainer; carries the full opencode config including the literal
+  API key (not in files)
 
 ## Constitution Alignment
 

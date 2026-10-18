@@ -35,25 +35,38 @@ complytime/org-infra/.github/workflows/reusable_crapload_analysis.yml.
 ### D1: Provider-agnostic contract
 
 `reusable_gaze_ai_report.yml` exposes `workflow_call` with inputs
-`model` (required), `opencode-config` (required), `coverage-artifact`
-(required), `coverprofile` (default `coverage.out`), `max-crapload`,
-`max-gaze-crapload`, `min-contract-coverage` (optional),
-`opencode-version` (default `1.19.0`), `gaze-version` (default
-`v2.2.0`), `go-version` (default `1.25`), and one optional secret
-`provider-key`.
+`model` (optional), `coverage-artifact` (required), `coverprofile`
+(default `coverage.out`), `max-crapload`, `max-gaze-crapload`,
+`min-contract-coverage` (optional), `opencode-version` (default
+`1.19.0`), `gaze-version` (default `v2.2.0`), `go-version` (default
+`1.25`), and one optional secret `opencode-config`.
 
-The provider config JSON travels as a plain input because it contains
-no secret material: the API key is referenced as
-`{env:OPENCODE_PROVIDER_KEY}` and resolves from the runner environment.
-The workflow exports the `provider-key` secret under that fixed env
-name (GitHub Actions cannot create dynamically named env vars). The
-config is reviewable in the caller's workflow file; the key never
-appears in YAML.
+The `opencode-config` secret carries the consumer's entire opencode
+configuration as strict JSON — provider, model, permissions, and the
+literal API key. The workflow exports it verbatim as
+`OPENCODE_CONFIG_CONTENT` for the report step, so the consumer
+controls everything the report needs and the workflow dictates as
+little as possible. Because the key lives inside the config, no
+second secret, no fixed env-var name (`OPENCODE_PROVIDER_KEY`), and
+no repo-level key setup exists for any consumer.
+
+The `model` input stays optional: when set it is passed as `--model`;
+when unset gaze omits the flag and opencode resolves the model from
+the config's top-level `model` field (validated end-to-end in the
+dry run). The recommended config shape embeds permission denials
+(edit/bash/webfetch/websearch) — with key material inside the config,
+denying tool access is more valuable — and the denials were verified
+harmless in the dry run.
 
 Secrets are not available in job-level `if:` conditions, so
 secret-presence gating uses env indirection at step level
-(`HAS_PROVIDER_KEY`), the same pattern `test.yml` already uses for
+(`HAS_OPENCODE_CONFIG`), the same pattern `test.yml` already uses for
 `HAS_GCP_SECRETS`.
+
+Trade-off: the config leaves code review (a write-only org secret).
+Accepted — the secret is org-admin-controlled and
+`docs/guides/ci-integration.md` documents the canonical shape with a
+placeholder key.
 
 ### D2: Coverage via artifact handoff
 
@@ -69,9 +82,10 @@ the tests; the workflow never runs the test suite itself.
 - `unit-and-integration` uploads `coverage.out` from the Go 1.24 leg
   (the same leg that runs the threshold check).
 - A new `gaze-ai-report` job (`needs: unit-and-integration`,
-  `permissions: contents: read`) calls the reusable workflow with model
-  `enmaas/rits/zai-org/glm-5-3`, the EnMaaS config, and thresholds
-  38/6/8, mapping `ENMAAS_KEY` to `provider-key`.
+  `permissions: contents: read`) calls the reusable workflow with
+  thresholds 38/6/8, mapping the org secret `OPENCODE_CONFIG_CONTENT`
+  to `opencode-config`; the model and provider (EnMaaS GLM 5.3) come
+  from that config.
 - The four GCP-gated steps, the GCP env vars, and `id-token: write` are
   removed from `unit-and-integration`.
 - The job runs on PRs and pushes. On fork PRs the secret is absent and
@@ -99,9 +113,14 @@ the report does not run on PRs.
 
 ## Risks / Trade-offs
 
-- **First real EnMaaS run is post-merge**: fork PRs cannot access
-  `ENMAAS_KEY`, so the report only executes after merge to main. Local
-  dry runs (169 KB payload; end-to-end report verified) mitigate.
+- **First real EnMaaS run is post-merge**: fork PRs cannot access the
+  org secret, so the report only executes after merge to main. Local
+  dry runs (169 KB payload; end-to-end report with the literal-key
+  org-secret config and no `--model` flag verified) mitigate.
+- **Config leaves code review**: the org secret is write-only, so
+  provider/model/key changes are not PR-reviewable. Accepted — the
+  secret is org-admin-controlled and the canonical shape is
+  documented in `docs/guides/ci-integration.md`.
 - **PR overhead**: the `gaze-ai-report` job adds roughly two minutes to
   PR runs (checkout, setup-go, gaze install, artifact download) to
   validate the wiring. Accepted for pre-merge handoff coverage.
