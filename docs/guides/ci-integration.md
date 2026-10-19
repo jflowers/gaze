@@ -399,6 +399,7 @@ Coverage profiles are not portable across machines or runs. Generate the profile
 ### AI report step fails with "empty output"
 
 The AI adapter returned no content. Check that:
+
 - The API key secret is configured correctly
 - The AI CLI binary is installed (the `Install OpenCode` step ran)
 - The model name is valid for your adapter
