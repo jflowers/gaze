@@ -220,7 +220,7 @@ jobs:
     needs: test
     permissions:
       contents: read
-    uses: unbound-force/gaze/.github/workflows/reusable_gaze_ai_report.yml@v2.2.0
+    uses: unbound-force/gaze/.github/workflows/reusable_gaze_ai_report.yml@v2.3.0
     with:
       coverage-artifact: coverage-out
       max-crapload: 38
@@ -229,6 +229,10 @@ jobs:
     secrets:
       opencode-config: ${{ secrets.OPENCODE_CONFIG_CONTENT }}
 ```
+
+Pin `uses:` to a release tag that actually contains the workflow — it
+first ships in `v2.3.0`; older tags predate the file and fail to
+resolve. Pin the latest release tag when adopting.
 
 The coverage profile must come from the same run and commit: both jobs
 check out the same SHA, so the profile's import paths map onto identical
