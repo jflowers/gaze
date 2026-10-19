@@ -134,3 +134,17 @@ secret gate.
 - **Artifact action version pair**: upload v4.6.2 with download v8.0.2
   is exercised on the first PR run of this change; the job runs on PRs
   precisely to validate this pair before merge.
+- **Provider availability gates same-repo PRs**: the report job runs on
+  same-repo PRs (org secrets resolve there), so a provider outage, an
+  expired key, or a misconfigured `OPENCODE_CONFIG_CONTENT` fails those
+  runs — external availability is coupled to CI greenness. Consumers
+  should not mark `gaze-ai-report` required unless they accept that
+  coupling; the actual PR gate remains the secret-free JSON threshold
+  check. Each same-repo PR run also consumes one LLM report (~169 KB
+  payload).
+- **Dogfood runs the released gaze, not HEAD**: the dogfood job installs
+  `gaze@v2.2.0` (the `gaze-version` input default), mirroring the
+  consumer experience — regressions in `internal/aireport` on main
+  surface only after a release plus a default bump. Version defaults
+  are known-good floors, not auto-tracked latest; re-evaluate them
+  whenever a release includes workflow changes.

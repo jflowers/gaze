@@ -54,6 +54,14 @@
   secret carrying the EnMaaS/GLM 5.3 config with permission denials
   and the literal API key).
 
+Amendment (PR review feedback): a workflow-level `concurrency:` group
+(`group: ${{ github.ref }}-${{ github.workflow }}`,
+`cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`) was added
+to `test.yml` per CI-012 — the `gaze-ai-report` job spends LLM API
+budget, so superseded PR runs cancel while main runs queue. The
+reusable workflow itself defines no group; a called workflow joins the
+caller's run, so the policy is caller-owned.
+
 ## 3. Documentation
 
 - [x] 3.1 Add a "Reusable workflow" section to
@@ -71,7 +79,12 @@
 - [x] 4.4 Spec artifacts committed and pushed before implementation.
 - [ ] 4.5 After PR: verify the PR run executes the artifact handoff
   and skips the report steps (fork PR, no secret); after merge, verify
-  the push run produces the EnMaaS quality report.
+  the push run produces the EnMaaS quality report. Also verify once on
+  a same-repo branch (org secret resolves): (a) omitting all threshold
+  inputs runs the report in report-only mode — unset `type: number`
+  inputs render as empty env vars, so the flags are omitted — and
+  (b) a threshold breach (e.g. `max-crapload: 0`) fails the
+  `gaze-ai-report` job.
 
 ## 5. Amendment: config as the single org secret
 

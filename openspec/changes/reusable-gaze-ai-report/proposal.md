@@ -67,6 +67,13 @@ report.
   maintainer; carries the full opencode config including the literal
   API key (not in files)
 
+Website Documentation Gate: satisfied — tracked as
+unbound-force/website#311
+(<https://github.com/unbound-force/website/issues/311>), created during
+PR review; the reusable workflow is a consumer-facing integration
+contract, so the gate applies rather than the CI/CD-pipeline-change
+exemption.
+
 ## Constitution Alignment
 
 Assessed against the Gaze constitution v1.3.0.

@@ -25,8 +25,9 @@ provider, model, or credentials, and MUST NOT run the caller's tests.
 
 - **GIVEN** a fork PR where the `opencode-config` secret is unavailable
 - **WHEN** the reusable workflow job runs
-- **THEN** the install and report steps are skipped with a notice and
-  the job succeeds
+- **THEN** the opencode install and report steps are skipped with a
+  notice, the extracted coverprofile is still validated, and the job
+  succeeds
 
 ### Requirement: Coverage MUST arrive via artifact handoff
 
@@ -61,7 +62,7 @@ job.
 The AI report MUST execute only where the `opencode-config` secret
 resolves (push to main and same-repo PRs; fork PRs never receive org
 secrets); the `gaze-ai-report` job MAY run on fork PRs with the
-install and report steps skipped to validate the wiring. The
+opencode install and report steps skipped to validate the wiring. The
 PR-safe "Gaze threshold check" step MUST remain unchanged in
 `unit-and-integration`.
 
