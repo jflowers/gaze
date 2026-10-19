@@ -66,7 +66,7 @@ Key points:
 
 ## Full Example with AI Reports
 
-This workflow adds an AI-powered quality report that appears in the GitHub Actions Step Summary:
+This workflow adds an AI-powered quality report that appears in the GitHub Actions Step Summary. This is the manual path; for less maintenance, prefer the [Reusable Workflow](#reusable-workflow) below, which centralizes the opencode installation and provider configuration:
 
 ```yaml
 name: Test & Quality
@@ -101,14 +101,15 @@ jobs:
             --format=json \
             --coverprofile=coverage.out \
             --max-crapload=38 \
-            --max-gaze-crapload=5 \
+            --max-gaze-crapload=6 \
             --min-contract-coverage=8 \
             > /dev/null
 
-      # AI report — push-only (requires API key secret)
+      # AI report — push-only in this example; the reusable workflow
+      # also runs it on same-repo PRs
       - name: Install OpenCode
         if: github.event_name == 'push'
-        run: npm install -g opencode-ai@latest
+        run: npm install -g opencode-ai@1.19.0
 
       - name: Gaze quality report
         if: github.event_name == 'push'
@@ -120,14 +121,14 @@ jobs:
             --model=opencode/claude-sonnet-4-6 \
             --coverprofile=coverage.out \
             --max-crapload=38 \
-            --max-gaze-crapload=5 \
+            --max-gaze-crapload=6 \
             --min-contract-coverage=8
 ```
 
 This pattern splits the quality gate into two steps:
 
 1. **Threshold check** (`--format=json`) — runs on every PR, no secrets needed, fails the build if thresholds are exceeded
-2. **AI report** (`--ai=opencode`) — runs on push to main and same-repo PRs (org secrets resolve there; fork PRs skip it), requires an API key secret, produces a human-readable report in the GitHub Step Summary
+2. **AI report** (`--ai=opencode`) — runs on push to main only in this example (gated on `github.event_name == 'push'`); the [Reusable Workflow](#reusable-workflow) also runs it on same-repo PRs, where org secrets resolve. Requires an API key secret, produces a human-readable report in the GitHub Step Summary
 
 ## Reusable Workflow
 
@@ -147,7 +148,7 @@ thresholds.
 |-------|------|----------|---------|-------------|
 | `model` | string | no | — | Optional model override; when unset, opencode uses the config's top-level `model`. |
 | `coverage-artifact` | string | yes | — | Artifact name (uploaded earlier in the same run) containing the coverprofile. |
-| `coverprofile` | string | no | `coverage.out` | Coverprofile path inside the checked-out repository. |
+| `coverprofile` | string | no | `coverage.out` | Path to the coverprofile after artifact extraction, relative to the workspace root; must match the artifact's internal layout. |
 | `max-crapload` | number | no | — | Fail when the CRAPload exceeds this value. |
 | `max-gaze-crapload` | number | no | — | Fail when the GazeCRAPload exceeds this value. |
 | `min-contract-coverage` | number | no | — | Fail when average contract coverage falls below this percentage. |
@@ -194,8 +195,11 @@ secret controlled by the org or repo administrator.
 
 When `opencode-config` is unavailable (for example on fork PRs, where secrets
 are never exposed), the workflow downloads the artifact and installs gaze,
-then skips the opencode install and report with a notice — so every PR run
-still validates the artifact handoff wiring.
+then skips the opencode install and report with a notice — so every run that
+reaches the job still validates the artifact handoff, including that the
+coverprofile file exists inside the downloaded artifact. On non-fork runs
+where the secret is missing, the skip step emits a warning annotation
+pointing at the secret name and scope.
 
 ### Consumer example
 
@@ -238,6 +242,32 @@ The coverage profile must come from the same run and commit: both jobs
 check out the same SHA, so the profile's import paths map onto identical
 source files. See [Troubleshooting](#troubleshooting) for the limits of
 profile portability.
+
+### Concurrency
+
+The reusable workflow defines no concurrency group of its own — a called
+workflow joins the caller's run, so the supersede/cancel policy is
+caller-owned. Callers SHOULD define a workflow-level `concurrency:` group
+so rapid pushes don't stack AI-report runs (each report is a paid LLM
+call). The pattern gaze's own CI uses:
+
+```yaml
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+```
+
+### Requirements and limitations
+
+- The calling job must grant at least `contents: read` — a called
+  workflow can only downgrade permissions, never elevate them.
+- The workflow analyzes `./...` from the repository root: the caller
+  must be a Go module rooted at the repo root.
+- Providers that authenticate via the GitHub token (for example GitHub
+  Models) cannot work — the report step unsets `GITHUB_TOKEN` and
+  `GH_TOKEN` before invoking the AI CLI.
+- Supply-chain-sensitive consumers may pin `uses:` to the release tag's
+  commit SHA instead of the mutable tag.
 
 ## Coverage Profile Reuse
 
@@ -403,5 +433,6 @@ The AI adapter returned no content. Check that:
 - The API key secret is configured correctly
 - The AI CLI binary is installed (the `Install OpenCode` step ran)
 - The model name is valid for your adapter
+- The `opencode-config` secret (reusable workflow) parses as strict JSON — a malformed config surfaces as "empty output"; validate it locally with `jq` before storing it
 
 See [AI Reports](ai-reports.md) for adapter-specific setup.
