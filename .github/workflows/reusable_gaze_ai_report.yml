@@ -17,6 +17,8 @@
 # - When `opencode-config` is unavailable (e.g. fork PRs), the
 #   install and report steps are skipped with a notice so the
 #   wiring still validates without secrets.
+# - Concurrency and cancellation policy is caller-owned: callers
+#   SHOULD define a concurrency group (CI-012).
 name: Reusable Gaze AI Report
 
 on:
