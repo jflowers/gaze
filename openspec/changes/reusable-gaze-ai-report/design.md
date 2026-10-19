@@ -107,16 +107,23 @@ compatible.
 ### D5: Threshold enforcement
 
 The report command carries the same thresholds as the JSON check; gaze
-exits non-zero on breach and fails the push-to-main job. This is a
-backstop to the PR-side threshold check; PR gating is unchanged because
-the report does not run on PRs.
+exits non-zero on breach and fails the job. This is a backstop to the
+PR-side threshold check; PR gating is unchanged because threshold
+enforcement on PRs comes from the PR-safe JSON check, not the report.
+The report itself runs wherever the `opencode-config` secret resolves:
+push to main and same-repo PRs (org secrets are available to
+`pull_request` runs from same-repo branches); fork PRs skip it via the
+secret gate.
 
 ## Risks / Trade-offs
 
-- **First real EnMaaS run is post-merge**: fork PRs cannot access the
-  org secret, so the report only executes after merge to main. Local
-  dry runs (169 KB payload; end-to-end report with the literal-key
-  org-secret config and no `--model` flag verified) mitigate.
+- **First real EnMaaS run is post-merge**: fork PRs (including this
+  change's own PR, whose branch lives on a fork) cannot access the org
+  secret, so the first real report executes after merge to main.
+  Same-repo PRs — where org secrets resolve — do run the full report.
+  Local dry runs (169 KB payload; end-to-end report with the
+  literal-key org-secret config and no `--model` flag verified)
+  mitigate.
 - **Config leaves code review**: the org secret is write-only, so
   provider/model/key changes are not PR-reviewable. Accepted — the
   secret is org-admin-controlled and the canonical shape is

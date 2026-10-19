@@ -59,8 +59,9 @@ job.
 ### Requirement: AI report MUST run only where secrets are available
 
 The AI report MUST execute only where the `opencode-config` secret
-resolves (push to main); the `gaze-ai-report` job MAY run on PRs with
-the install and report steps skipped to validate the wiring. The
+resolves (push to main and same-repo PRs; fork PRs never receive org
+secrets); the `gaze-ai-report` job MAY run on fork PRs with the
+install and report steps skipped to validate the wiring. The
 PR-safe "Gaze threshold check" step MUST remain unchanged in
 `unit-and-integration`.
 

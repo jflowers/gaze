@@ -127,7 +127,7 @@ jobs:
 This pattern splits the quality gate into two steps:
 
 1. **Threshold check** (`--format=json`) — runs on every PR, no secrets needed, fails the build if thresholds are exceeded
-2. **AI report** (`--ai=opencode`) — runs only on push to main, requires an API key secret, produces a human-readable report in the GitHub Step Summary
+2. **AI report** (`--ai=opencode`) — runs on push to main and same-repo PRs (org secrets resolve there; fork PRs skip it), requires an API key secret, produces a human-readable report in the GitHub Step Summary
 
 ## Reusable Workflow
 
