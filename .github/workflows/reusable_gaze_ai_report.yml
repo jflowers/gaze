@@ -15,8 +15,8 @@
 #   specifics. Permission denials (edit/bash/webfetch/websearch)
 #   are recommended since the config carries key material.
 # - When `opencode-config` is unavailable (e.g. fork PRs), the
-#   install and report steps are skipped with a notice so the
-#   wiring still validates without secrets.
+#   opencode install and report steps are skipped with a notice so
+#   the wiring still validates without secrets.
 # - Concurrency and cancellation policy is caller-owned: callers
 #   SHOULD define a concurrency group (CI-012).
 name: Reusable Gaze AI Report
@@ -33,7 +33,7 @@ on:
         required: true
         type: string
       coverprofile:
-        description: "Coverprofile path inside the checked-out repository."
+        description: "Path to the coverprofile after artifact extraction, relative to the workspace root; must match the artifact's internal layout."
         required: false
         default: "coverage.out"
         type: string
@@ -84,6 +84,10 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          # The job never pushes or commits; do not leave the job token
+          # persisted in .git/config for the AI subprocess to read.
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
@@ -122,6 +126,11 @@ jobs:
           if [ -n "$GAZE_MODEL" ]; then
             MODEL_ARG="--model=$GAZE_MODEL"
           fi
+          # Threshold inputs are optional: unset `type: number` inputs
+          # render as empty strings in env, so the guards below omit the
+          # flags and the report runs in report-only mode. An explicit 0
+          # is NOT treated as unset — it passes through as a live
+          # threshold (gaze enforces thresholds set to 0).
           THRESHOLDS=""
           if [ -n "$MAX_CRAPLOAD" ]; then
             THRESHOLDS="$THRESHOLDS --max-crapload=$MAX_CRAPLOAD"
@@ -140,5 +149,22 @@ jobs:
 
       - name: Report skipped
         if: env.HAS_OPENCODE_CONFIG != 'true'
+        env:
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}
+          COVERPROFILE: ${{ inputs.coverprofile }}
+          ARTIFACT_NAME: ${{ inputs.coverage-artifact }}
         run: |
-          echo "Skipping the gaze AI report: no opencode config secret available (secrets are unavailable on fork PRs)." | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$IS_FORK" = "true" ]; then
+            echo "Skipping the gaze AI report: no opencode config secret available (secrets are unavailable on fork PRs)." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::opencode-config secret missing on a non-fork run — check the secret name and scope."
+            echo "Skipping the gaze AI report: no opencode config secret available (the opencode-config secret is unset; check its name and scope)." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          # Validate the artifact handoff contract even when the report
+          # is skipped: every run that reaches this job asserts the
+          # coverprofile file exists inside the downloaded artifact
+          # (name, content, and path) instead of only the artifact name.
+          test -f "$COVERPROFILE" || {
+            echo "::error::coverprofile '$COVERPROFILE' not found after downloading artifact '$ARTIFACT_NAME'; check the artifact's internal layout and the coverprofile input"
+            exit 1
+          }
