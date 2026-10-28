@@ -3,7 +3,7 @@ pack_id: content
 language: Any
 version: 1.0.0
 ---
-<!-- scaffolded by uf v0.17.0 -->
+<!-- scaffolded by uf vdev -->
 
 # Convention Pack: Content (Documentation, Blog, PR/Comms)
 
