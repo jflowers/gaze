@@ -31,15 +31,15 @@ advisor:
     - divisor-curator
     - divisor-guard
     - divisor-sre
-    - divisor-testing
     - divisor-entropy
+    - divisor-gaze-testing
   spec:
     - divisor-adversary
     - divisor-architect
     - divisor-curator
     - divisor-guard
     - divisor-sre
-    - divisor-testing
+    - divisor-gaze-testing
   triage:
     - divisor-adversary
     - divisor-architect
@@ -53,8 +53,8 @@ advisor:
     - divisor-curator
     - divisor-guard
     - divisor-sre
-    - divisor-testing
     - divisor-entropy
+    - divisor-gaze-testing
 
 # Explicit mode/agent arrays are authoritative and preserve
 # declaration order.

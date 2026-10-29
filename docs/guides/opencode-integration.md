@@ -13,15 +13,19 @@ gaze init
 Output:
 
 ```text
+Notice: no .uf directory found; skipping Divisor review-config registration.
+Gaze never creates .uf files; unbound-force projects register the persona automatically.
+
 Gaze OpenCode integration initialized:
+  created: .opencode/agents/divisor-gaze-testing.md
   created: .opencode/agents/gaze-reporter.md
   created: .opencode/agents/gaze-test-generator.md
-  created: .opencode/agents/reviewer-testing.md
-  created: .opencode/commands/gaze.md
   created: .opencode/commands/gaze-fix.md
+  created: .opencode/commands/gaze.md
   created: .opencode/commands/speckit.testreview.md
-  created: .opencode/references/example-report.md
+  created: .opencode/dcp.jsonc
   created: .opencode/references/doc-scoring-model.md
+  created: .opencode/references/example-report.md
 
 Run /gaze for quality reports and /speckit.testreview for testability analysis.
 ```
@@ -34,7 +38,7 @@ gaze init --force
 
 ## Scaffolded Files
 
-The scaffold creates 8 files organized into three directories:
+The scaffold creates 9 files: three subdirectories plus the DCP configuration at the `.opencode/` root:
 
 ### Agents
 
@@ -42,7 +46,7 @@ The scaffold creates 8 files organized into three directories:
 |------|-------------|-----------|
 | `agents/gaze-reporter.md` | Quality report agent — interprets Gaze JSON output and produces formatted markdown reports with actionable recommendations | User-owned |
 | `agents/gaze-test-generator.md` | Test generation agent — generates Go test functions from Gaze quality data (gap hints, gaps, fix strategies) | Tool-owned |
-| `agents/reviewer-testing.md` | Testing persona for the review council — audits test quality and testability | Tool-owned (via `gaze-fix.md` command) |
+| `agents/divisor-gaze-testing.md` | Testing persona for review councils — universal gaze test-quality rubric with conditional Go-native and external-analyzer sections | Tool-owned |
 
 ### Commands
 
@@ -51,6 +55,12 @@ The scaffold creates 8 files organized into three directories:
 | `commands/gaze.md` | `/gaze` command — runs Gaze CLI with `--format=json` and delegates to the gaze-reporter agent for formatting | User-owned |
 | `commands/gaze-fix.md` | `/gaze fix` command — batch remediation using the gaze-test-generator agent | Tool-owned |
 | `commands/speckit.testreview.md` | `/speckit.testreview` command — read-only spec testability analysis | Tool-owned |
+
+### Configuration
+
+| File | Description | Ownership |
+|------|-------------|-----------|
+| `dcp.jsonc` | DCP context-preservation configuration for OpenCode | Tool-owned |
 
 ### References
 
@@ -65,9 +75,30 @@ Gaze distinguishes between two ownership models for scaffolded files:
 
 **User-owned files** (`agents/gaze-reporter.md`, `commands/gaze.md`) are written once and never overwritten on subsequent `gaze init` runs. You can customize these files — add project-specific instructions, change formatting preferences, adjust the agent's behavior. Your changes are preserved.
 
-**Tool-owned files** (everything under `references/`, plus `agents/gaze-test-generator.md`, `agents/reviewer-testing.md`, `commands/gaze-fix.md`, `commands/speckit.testreview.md`) use overwrite-on-diff behavior. When you run `gaze init`, these files are compared against the version embedded in the Gaze binary. If the content differs (e.g., because you upgraded Gaze), the file is silently updated. If the content is identical, the file is skipped. This ensures reference materials and tool-managed agents stay current without requiring `--force`.
+**Tool-owned files** (everything under `references/`, plus `agents/gaze-test-generator.md`, `agents/divisor-gaze-testing.md`, `commands/gaze-fix.md`, `commands/speckit.testreview.md`, and `dcp.jsonc`) use overwrite-on-diff behavior. When you run `gaze init`, these files are compared against the version embedded in the Gaze binary. If the content differs (e.g., because you upgraded Gaze), the file is silently updated. If the content is identical, the file is skipped. This ensures reference materials and tool-managed agents stay current without requiring `--force`.
 
 The `--force` flag overrides both behaviors and overwrites all files unconditionally.
+
+## Divisor Review-Config Registration
+
+When `gaze init` runs in a project that already uses unbound-force tooling (a `.uf/` directory exists), it registers the `divisor-gaze-testing` persona in the existing review configuration:
+
+- `.uf/reviewer-capabilities.yaml` — appends the `{agent: divisor-gaze-testing, capability: review, scopes: [test-quality]}` entry
+- `.uf/review-matrix.yaml` — swaps the generic `divisor-testing` advisor for `divisor-gaze-testing` in the `code`, `spec`, and `feedback` advisor lists (the `triage` list is untouched)
+
+The merge is idempotent and comment-preserving: files are rewritten only when the registration actually changes them, and operational comments (including the `# scaffolded by uf` marker) survive verbatim. Malformed or missing expected keys warn and are skipped — `gaze init` never fails on them.
+
+Projects without a `.uf/` directory get a notice instead, and **no `.uf` files are ever created** — a minimal capabilities file missing unbound-force's canonical reviewers would be rejected by uf tooling.
+
+### Orphan Cleanup
+
+`gaze init` also removes a legacy `.opencode/agents/reviewer-testing.md` when its content carries the `<!-- scaffolded by gaze ... -->` version marker — that file was superseded by `agents/divisor-gaze-testing.md`. The removal is reported in the init summary:
+
+```text
+  removed: .opencode/agents/reviewer-testing.md (superseded by agents/divisor-gaze-testing.md)
+```
+
+Copies without the marker (user-authored or heavily customized) are left untouched — preserve any customizations manually before upgrading if you want to keep them.
 
 ## Using the `/gaze` Command
 

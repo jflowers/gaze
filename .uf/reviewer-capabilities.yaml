@@ -48,4 +48,8 @@ reviewers:
   - agent: divisor-scribe
     capability: content
     scopes: []
+  - agent: divisor-gaze-testing
+    capability: review
+    scopes:
+      - test-quality
 # scaffolded by uf vdev

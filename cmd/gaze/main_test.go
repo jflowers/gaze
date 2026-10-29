@@ -2573,7 +2573,7 @@ func TestRunInit_CreatesFiles(t *testing.T) {
 	// Verify files exist.
 	expected := []string{
 		".opencode/agents/gaze-reporter.md",
-		".opencode/agents/reviewer-testing.md",
+		".opencode/agents/divisor-gaze-testing.md",
 		".opencode/commands/gaze.md",
 		".opencode/commands/speckit.testreview.md",
 		".opencode/references/doc-scoring-model.md",
