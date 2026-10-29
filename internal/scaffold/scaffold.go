@@ -1,5 +1,7 @@
 // Package scaffold embeds distributable OpenCode agent and command
-// files and writes them to a target project directory.
+// files, writes them to a target project directory, registers the
+// divisor-gaze-testing persona in existing unbound-force .uf review
+// configuration, and removes superseded gaze-scaffolded orphans.
 package scaffold
 
 import (
@@ -55,14 +57,26 @@ type Result struct {
 	// content and were overwritten via overwrite-on-diff (Force
 	// was false, but content differed from the embedded version).
 	Updated []string
+
+	// Registered lists .uf review-config files that the
+	// divisor-gaze-testing persona registration was merged into.
+	// Only projects that already use unbound-force (have a .uf
+	// directory) are registered; gaze never creates .uf files.
+	Registered []string
+
+	// Removed lists legacy scaffold files deleted as superseded
+	// orphans: gaze-marked .opencode/agents/reviewer-testing.md
+	// copies replaced by agents/divisor-gaze-testing.md. Marker-less
+	// (user-customized) copies are never removed.
+	Removed []string
 }
 
 // isToolOwned reports whether the given relative path (under
 // .opencode/) is a tool-owned file. Tool-owned files use
 // overwrite-on-diff behavior: they are replaced when their
 // content differs from the embedded version, even without --force.
-// User-owned files (agents/, most of commands/) retain
-// skip-if-present behavior.
+// User-owned files (agents/gaze-reporter.md, commands/gaze.md)
+// retain skip-if-present behavior.
 //
 // Ownership is determined by an explicit list: all files under
 // references/ are tool-owned by directory convention, and specific
@@ -77,6 +91,7 @@ func isToolOwned(relPath string) bool {
 	switch relPath {
 	case "commands/speckit.testreview.md",
 		"agents/gaze-test-generator.md",
+		"agents/divisor-gaze-testing.md",
 		"commands/gaze-fix.md",
 		"dcp.jsonc":
 		return true
@@ -94,16 +109,26 @@ func versionMarker(version string) string {
 	return fmt.Sprintf("<!-- scaffolded by gaze %s -->\n", version)
 }
 
+// isMarkerLine reports whether line is a gaze version-marker comment
+// ("<!-- scaffolded by gaze ... -->"), ignoring surrounding
+// whitespace. Marker detection (orphan cleanup) and marker removal
+// (re-scaffolding) share this single predicate so the two cannot
+// drift.
+func isMarkerLine(line string) bool {
+	const prefix = "<!-- scaffolded by gaze "
+	const suffix = "-->"
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(trimmed, prefix) && strings.HasSuffix(trimmed, suffix)
+}
+
 // removeExistingMarker strips any "<!-- scaffolded by gaze ... -->"
 // line from content. This prevents marker duplication when
 // re-scaffolding with a different version (issue #279).
 func removeExistingMarker(content []byte) []byte {
-	const prefix = "<!-- scaffolded by gaze "
 	lines := strings.Split(string(content), "\n")
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, prefix) && strings.HasSuffix(trimmed, "-->") {
+		if isMarkerLine(line) {
 			continue
 		}
 		out = append(out, line)
@@ -275,8 +300,14 @@ func processAssetFile(embeddedPath, relPath string, opts Options, marker string)
 // opts.Force is true, all files are overwritten regardless of
 // ownership.
 //
+// After the asset walk, Run registers the divisor-gaze-testing
+// persona in an existing .uf review configuration (a project
+// without a .uf directory gets a notice; .uf files are never
+// created) and removes gaze-marked .opencode/agents/reviewer-testing.md
+// orphans superseded by the renamed agent file.
+//
 // Run returns a Result summarizing what was created, skipped,
-// overwritten, or updated.
+// overwritten, updated, registered, or removed.
 func Run(opts Options) (*Result, error) {
 	if err := applyDefaults(&opts); err != nil {
 		return nil, err
@@ -324,6 +355,13 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	// Register the divisor-gaze-testing persona in an existing .uf
+	// review configuration (projects already using unbound-force)
+	// and clean up gaze-marked reviewer-testing.md orphans
+	// superseded by the renamed agent file.
+	result.Registered = append(result.Registered, syncUFReviewConfig(opts)...)
+	result.Removed = append(result.Removed, cleanupOrphanedTestingReviewer(opts)...)
+
 	printSummary(opts.Stdout, result)
 	return result, nil
 }
@@ -331,7 +369,8 @@ func Run(opts Options) (*Result, error) {
 // printSummary writes a human-readable summary of the scaffold
 // operation to w.
 func printSummary(w io.Writer, r *Result) {
-	if len(r.Created) > 0 || len(r.Overwritten) > 0 || len(r.Updated) > 0 {
+	if len(r.Created) > 0 || len(r.Overwritten) > 0 || len(r.Updated) > 0 ||
+		len(r.Registered) > 0 || len(r.Removed) > 0 {
 		_, _ = fmt.Fprintln(w, "Gaze OpenCode integration initialized:")
 	} else {
 		_, _ = fmt.Fprintln(w, "Gaze OpenCode integration already up to date:")
@@ -348,6 +387,12 @@ func printSummary(w io.Writer, r *Result) {
 	}
 	for _, f := range r.Updated {
 		_, _ = fmt.Fprintf(w, "  updated: %s (content changed)\n", f)
+	}
+	for _, f := range r.Registered {
+		_, _ = fmt.Fprintf(w, "  registered: %s (divisor-gaze-testing)\n", f)
+	}
+	for _, f := range r.Removed {
+		_, _ = fmt.Fprintf(w, "  removed: %s (superseded by agents/divisor-gaze-testing.md)\n", f)
 	}
 
 	_, _ = fmt.Fprintln(w)

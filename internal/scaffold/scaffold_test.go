@@ -47,7 +47,7 @@ func TestRun_CreatesFiles(t *testing.T) {
 	// Verify all expected files exist on disk.
 	expected := []string{
 		".opencode/agents/gaze-reporter.md",
-		".opencode/agents/reviewer-testing.md",
+		".opencode/agents/divisor-gaze-testing.md",
 		".opencode/commands/gaze.md",
 		".opencode/commands/speckit.testreview.md",
 		".opencode/references/doc-scoring-model.md",
@@ -93,8 +93,8 @@ func TestRun_SkipsExisting(t *testing.T) {
 	}
 
 	// Second run without --force: tool-owned files have identical
-	// content, so all 9 files land in Skipped (3 user-owned +
-	// 6 tool-owned identical).
+	// content, so all 9 files land in Skipped (2 user-owned +
+	// 7 tool-owned identical).
 	var buf2 bytes.Buffer
 	result, err := Run(Options{
 		TargetDir: dir,
@@ -122,8 +122,8 @@ func TestRun_SkipsExisting(t *testing.T) {
 	if !strings.Contains(output, "skipped:") {
 		t.Errorf("summary should mention 'skipped:', got:\n%s", output)
 	}
-	if !strings.Contains(output, "3 files skipped (use --force to overwrite)") {
-		t.Errorf("summary should mention 3 user-owned files skipped, got:\n%s", output)
+	if !strings.Contains(output, "2 files skipped (use --force to overwrite)") {
+		t.Errorf("summary should mention 2 user-owned files skipped, got:\n%s", output)
 	}
 }
 
@@ -387,7 +387,7 @@ func TestAssetPaths_Returns9Files(t *testing.T) {
 	expected := map[string]bool{
 		"agents/gaze-reporter.md":         true,
 		"agents/gaze-test-generator.md":   true,
-		"agents/reviewer-testing.md":      true,
+		"agents/divisor-gaze-testing.md":  true,
 		"commands/gaze-fix.md":            true,
 		"commands/gaze.md":                true,
 		"commands/speckit.testreview.md":  true,
@@ -461,8 +461,8 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 	}
 
 	// Third run without --force: the 2 modified tool-owned files
-	// should be overwritten (Updated), the other 4 tool-owned files
-	// skipped (identical), and 3 user-owned files skipped.
+	// should be overwritten (Updated), the other 5 tool-owned files
+	// skipped (identical), and 2 user-owned files skipped.
 	var buf3 bytes.Buffer
 	result3, err := Run(Options{
 		TargetDir: dir,
@@ -476,7 +476,7 @@ func TestRun_OverwriteOnDiff_ToolOwned(t *testing.T) {
 	if len(result3.Updated) != 2 {
 		t.Errorf("expected 2 updated, got %d: %v", len(result3.Updated), result3.Updated)
 	}
-	// 3 user-owned + 4 identical tool-owned = 7 skipped.
+	// 2 user-owned + 5 identical tool-owned = 7 skipped.
 	if len(result3.Skipped) != 7 {
 		t.Errorf("expected 7 skipped, got %d: %v", len(result3.Skipped), result3.Skipped)
 	}
@@ -601,8 +601,11 @@ func TestIsToolOwned(t *testing.T) {
 		{"commands/gaze-fix.md", true},
 		// Tool-owned: DCP configuration.
 		{"dcp.jsonc", true},
+		// Tool-owned: gaze-managed agent file.
+		{"agents/divisor-gaze-testing.md", true},
 		// User-owned: agents.
 		{"agents/gaze-reporter.md", false},
+		// Legacy retired name must not match the tool-owned list.
 		{"agents/reviewer-testing.md", false},
 		// User-owned: other commands.
 		{"commands/gaze.md", false},
