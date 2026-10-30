@@ -201,6 +201,61 @@ coverprofile file exists inside the downloaded artifact. On non-fork runs
 where the secret is missing, the skip step emits a warning annotation
 pointing at the secret name and scope.
 
+### Secret hygiene and stderr redaction
+
+The `opencode-config` secret embeds the literal API key inside a larger JSON
+document. GitHub's automatic masking hides the full secret value in job logs,
+but a bare key fragment echoed on its own — for example, an AI CLI printing a
+config parse error — would appear unmasked. Two defense-in-depth layers
+address this: gaze scrubs adapter stderr before surfacing it, and you can
+register the bare key for platform-side masking in the calling job.
+
+When `gaze report` surfaces the AI CLI's stderr in an error message, gaze
+first replaces every sensitive inherited env-var value with a
+`[REDACTED:<VAR_NAME>]` marker — for example,
+`[REDACTED:OPENCODE_CONFIG_CONTENT]`. Both surfacing paths are covered:
+adapter-failure errors and empty-output errors each embed up to 512 bytes of
+child stderr. A value is scrubbed when its variable name contains `KEY`,
+`TOKEN`, `SECRET`, or `CONFIG_CONTENT` (case-insensitive), or when the value
+is at least 32 bytes long regardless of name — so the whole
+`OPENCODE_CONFIG_CONTENT` document is caught by both rules. The marker names
+the variable — env-var names are not secret — keeping the error diagnosable.
+The scrub runs on the full stderr buffer before the 512-byte truncation, so a
+value straddling the truncation boundary cannot leak a prefix.
+
+The scrub is verbatim-value replacement, so it has known limits. Values
+shorter than 4 bytes are never replaced — replacing them would garble the
+surrounding error text — and oddly-named secrets below the 32-byte threshold
+are not caught. The bare `apiKey` inside the config is not an env-var value
+by itself, so an echo of that fragment alone evades the scrub, as does a
+transformed value — a child process that base64-encodes or rewraps the
+secret. The second-secret pattern below closes the fragment gap at the
+platform layer; transformed values remain a residual risk.
+
+Register the bare API key as a second secret — for example, `OPENCODE_API_KEY`
+— and reference it in an unused env var on any step of the calling job.
+GitHub then masks verbatim occurrences of the bare key anywhere in that job's
+logs, covering fragment echoes the scrub cannot see:
+
+```yaml
+- name: Test with coverage
+  run: go test -race -count=1 -short -coverprofile=coverage.out ./...
+  env:
+    # Unused by the step: referencing the bare key registers it
+    # with GitHub's log masking for the job.
+    OPENCODE_API_KEY_MASK: ${{ secrets.OPENCODE_API_KEY }}
+```
+
+Prefer a single-line strict-JSON value for the `opencode-config` secret.
+GitHub's multiline secret masking is unreliable, so a pretty-printed config
+echoed into a log may appear unmasked; gaze's byte-exact scrub is unaffected
+by line breaks, so the single-line shape costs nothing. Minify the JSON
+before storing it — `jq -c .` emits the single-line form. The pretty-printed
+example above is for readability; the actual secret value you store should be
+the same JSON minified to one line. See
+[Troubleshooting](#troubleshooting) for validating the config with `jq`
+before storing it.
+
 ### Consumer example
 
 ```yaml
