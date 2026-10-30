@@ -1,0 +1,10 @@
+---
+tag: review-dispatch
+author: jay-flowers
+category: gotcha
+created_at: 2026-10-30T20:12:45Z
+identity: review-dispatch-20261030T201245-jay-flowers
+tier: draft
+---
+
+When a review dispatch plan carries a host-fallback entry (source "host", model null — the plan gives the persona no advisor model), dispatch_review_runs can write the resolved host model into the run file's requested_model/provider/model_id fields while leaving resolved_parent_model and resolved_parent_variant null. That inverted shape fails consolidate_dispatch finalization with four validation errors ("host run must retain null requested model provenance", "model provenance does not match its plan entry", "model_mismatch does not match reported provenance", "successful host run requires resolved parent model and variant"), even though every reviewer succeeded and the verdict computed cleanly. Recovery verified on gaze's opsx/redact-env-values-from-adapter-stderr code review (2026-10-30, branch of issue #301): surgically rewrite the run record in the dispatch store (tmp dir dispatch-<correlation_id>/run-<agent>.json) to the canonical host-run shape that prior finalized artifacts record — requested_model, provider, model_id, variant all null; resolved_parent_model set to the host model slug; resolved_parent_variant "default"; model_mismatch false — then re-run consolidate_dispatch with provenance; findings, verdicts, statuses, usage, and timestamps stay byte-identical, and finalization succeeds. Note the payload builder reconstructs requested_model from provider/model_id, so nulling requested_model alone is insufficient — all three fields must be nulled together. Separately: a child reviewer failing with child_prompt_failed ("Unexpected server error", retryable) twice through redispatch_failed_runs is a persistent server-side spawn failure, not transient — after two attempts, consolidate without that persona; its zero-findings run is excluded cleanly by RD-FR-025 and the verdict remains valid as long as at least one reviewer assessment succeeded.
