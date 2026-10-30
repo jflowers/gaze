@@ -38,9 +38,12 @@ fake_opencode
 .opencode/package-lock.json
 .opencode/bun.lock
 .opencode/.gitignore
+.opencode/opencode.json
 
 # Unbound Force — managed by uf init
 # Runtime data under .uf/ (databases, caches, locks, logs)
+.uf/review-matrix.override.yaml
+.uf/progress/
 .uf/workflows/
 .uf/artifacts/
 .uf/feedback/
