@@ -2,7 +2,7 @@
 
 ## 1. Redaction helper (internal/aireport)
 
-- [ ] 1.1 Add `internal/aireport/redact.go` with the redaction
+- [x] 1.1 Add `internal/aireport/redact.go` with the redaction
   primitives from design D2/D3: an extensible case-insensitive
   sensitive-name marker slice (`KEY`, `TOKEN`, `SECRET`,
   `CONFIG_CONTENT`), a length-threshold constant (32), a minimum
@@ -13,7 +13,7 @@
   (first name in environ order wins), and replacing longest values
   first. Include the GoDoc note on the post-`Wait()` env-snapshot
   assumption (design D4).
-- [ ] 1.2 [P] Add table-driven unit tests for `redactEnvValues` in
+- [x] 1.2 [P] Add table-driven unit tests for `redactEnvValues` in
   `internal/aireport/redact_test.go` (package `aireport`) with a
   synthetic environ covering: name-marker redaction (including
   `OPENCODE_CONFIG_CONTENT` and lowercase var names), threshold
@@ -22,14 +22,14 @@
   longest-first replacement of overlapping values, dedupe with
   first-name-wins, the `[REDACTED:<VAR>]` marker format, and
   non-redaction of text that merely resembles a marker.
-- [ ] 1.3 Wire the scrub into `runSubprocess` (`adapter.go`) as the
+- [x] 1.3 Wire the scrub into `runSubprocess` (`adapter.go`) as the
   single choke point (design D1): scrub the stderr buffer once after
   `cmd.Wait()` returns and use the scrubbed string for both the
   non-zero-exit error embed and the success-path returned bytes, so
   redaction precedes the `maxAdapterStderrBytes` truncation on every
   path. Update the `runSubprocess` and `maxAdapterStderrBytes`
   GoDoc comments to describe the scrub.
-- [ ] 1.4 Add subprocess-level integration tests (existing
+- [x] 1.4 Add subprocess-level integration tests (existing
   `subprocess_test.go` `sh`/`echo` patterns plus `t.Setenv`): (a)
   non-zero exit with a sensitive value echoed to stderr yields an
   error containing the marker and not the value; (b) exit-0
@@ -77,5 +77,5 @@
   Assumptions), markers keep errors diagnosable (Actionable Output),
   and the pure helper with injected environ is testable in isolation
   (Testability); no analysis behavior changed (Accuracy N/A).
-- [ ] 3.5 Spec artifacts committed and pushed before implementation
+- [x] 3.5 Spec artifacts committed and pushed before implementation
   begins (Spec Commit Gate).
