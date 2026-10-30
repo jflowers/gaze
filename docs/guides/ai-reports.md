@@ -243,7 +243,7 @@ The Ollama adapter does not perform pre-flight validation because it uses HTTP r
 
 The AI adapter ran successfully (exit code 0) but produced no output. Common causes:
 
-- **Invalid API key** — the CLI may write the error to stderr while exiting 0. Gaze includes truncated stderr in the error message to help diagnose this.
+- **Invalid API key** — the CLI may write the error to stderr while exiting 0. Gaze includes truncated stderr in the error message to help diagnose this. Sensitive environment-variable values in that stderr are replaced with `[REDACTED:<VAR>]` markers before the snippet is included (see [Secret hygiene and stderr redaction](ci-integration.md#secret-hygiene-and-stderr-redaction)).
 - **Model not found** — verify the model name is correct for your adapter
 - **Rate limiting** — wait and retry
 

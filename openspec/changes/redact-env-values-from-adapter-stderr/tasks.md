@@ -41,7 +41,7 @@
 
 ## 2. Documentation
 
-- [ ] 2.1 [P] Add a defense-in-depth subsection to the Reusable
+- [x] 2.1 [P] Add a defense-in-depth subsection to the Reusable
   Workflow section of `docs/guides/ci-integration.md` (design D5):
   gaze's automatic adapter-stderr scrubbing (what triggers it, the
   `[REDACTED:<VAR>]` marker format, the known limits — sub-threshold
@@ -55,23 +55,23 @@
 
 ## 3. Verification
 
-- [ ] 3.1 [P] `openspec validate redact-env-values-from-adapter-stderr`
+- [x] 3.1 [P] `openspec validate redact-env-values-from-adapter-stderr`
   passes with no issues other than the expected advisory for the
   `originating_issue` metadata key (required by /uf.finale for PR-body
   issue threading; unrecognized — and ignored — by openspec 1.14.1).
   Any requirement, scenario, or artifact issue is a failure.
-- [ ] 3.2 [P] CI parity per the CI Parity Gate (derive exact commands
+- [x] 3.2 [P] CI parity per the CI Parity Gate (derive exact commands
   from `.github/workflows/test.yml` and
   `.github/workflows/mega-linter.yml`): at minimum `go build ./...`,
   `go test -race -count=1 -short ./internal/aireport/...`, the full
   `go test -race -count=1 -short ./...`, and `golangci-lint run` all
   pass.
-- [ ] 3.3 [P] Documentation impact assessed per the Documentation
+- [x] 3.3 [P] Documentation impact assessed per the Documentation
   Validation Gate: all new symbols are unexported with GoDoc comments;
   README.md and AGENTS.md reviewed with updates made only if
   implementation reveals a user-visible behavior worth documenting
   beyond task 2.1.
-- [ ] 3.4 [P] Constitution alignment re-verified against the
+- [x] 3.4 [P] Constitution alignment re-verified against the
   implemented code: the proposal's assessments hold — the redaction set
   derives solely from gaze's own inherited environment (Minimal
   Assumptions), markers keep errors diagnosable (Actionable Output),
