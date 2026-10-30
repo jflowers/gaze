@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -16,7 +17,10 @@ import (
 const maxAdapterOutputBytes = 64 << 20 // 64 MiB
 
 // maxAdapterStderrBytes caps stderr included in error messages at 512 bytes
-// to avoid leaking secrets from AI CLI output into error strings.
+// to avoid leaking secrets from AI CLI output into error strings. The cap is
+// applied to already-scrubbed stderr — runSubprocess passes the captured
+// buffer through redactEnvValues before truncating — so no prefix of a
+// sensitive value can survive by straddling the truncation boundary.
 const maxAdapterStderrBytes = 512
 
 // AIAdapter formats an analysis payload using an external AI CLI or API.
@@ -33,6 +37,21 @@ type AIAdapter interface {
 // resolution (exec.LookPath), stdout capture with size limiting
 // (maxAdapterOutputBytes), stderr capture with truncation
 // (maxAdapterStderrBytes), and error formatting.
+//
+// Stderr is redacted before it is surfaced: immediately after
+// cmd.Wait() returns, the complete stderr buffer is passed through
+// redactEnvValues with os.Environ() as the environ snapshot, and both
+// the non-zero-exit error embed and the success-path returned stderr
+// bytes carry the scrubbed content — the single redaction choke point
+// for subprocess stderr (design D1 of the
+// redact-env-values-from-adapter-stderr change), so consumers such as
+// formatStderrSuffix inherit redaction automatically. The scrub runs
+// before the maxAdapterStderrBytes truncation on every path, so a
+// sensitive value cannot survive by straddling the truncation
+// boundary. Reading os.Environ() after cmd.Wait() equals the
+// environment the child inherited, because gaze blocks inside
+// cmd.Wait() for the child's entire lifetime and never mutates its
+// own environment during adapter execution (design D4).
 //
 // If cmdDir is non-empty, cmd.Dir is set to that directory. This is
 // used by the Gemini adapter which places GEMINI.md in a temp
@@ -81,8 +100,16 @@ func runSubprocess(
 	outBytes, readErr := io.ReadAll(io.LimitReader(stdoutPipe, maxAdapterOutputBytes))
 	waitErr := cmd.Wait()
 
+	// The stderr buffer is complete once Wait returns, and os.Environ()
+	// read here equals the environment the child inherited: gaze blocks
+	// inside Wait for the child's entire lifetime and never mutates its
+	// own environment (design D4). Scrub once, before truncation and
+	// before any bytes are surfaced, so a sensitive value straddling the
+	// maxAdapterStderrBytes cap cannot survive (design D1/D3).
+	scrubbedStderr := redactEnvValues(stderrBuf.String(), os.Environ())
+
 	if waitErr != nil {
-		stderrSnippet := stderrBuf.String()
+		stderrSnippet := scrubbedStderr
 		if len(stderrSnippet) > maxAdapterStderrBytes {
 			stderrSnippet = stderrSnippet[:maxAdapterStderrBytes] + "... (truncated)"
 		}
@@ -92,7 +119,7 @@ func runSubprocess(
 		return nil, nil, fmt.Errorf("reading %s output: %w", binaryName, readErr)
 	}
 
-	return outBytes, stderrBuf.Bytes(), nil
+	return outBytes, []byte(scrubbedStderr), nil
 }
 
 // formatStderrSuffix returns a "\nstderr: <snippet>" suffix for error
