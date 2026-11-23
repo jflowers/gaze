@@ -25,19 +25,21 @@ runs when a `Release` run completes.
 ### Caller contract asserted in tests
 
 `cmd/gaze/release_workflow_test.go` guards what the caller still decides:
-the workflow name, the SHA-pinned call, gate ordering (`needs:`), the six
-`MACOS_*` secret mappings, the `HOMEBREW_TAP_TOKEN` rename, the six
-forwarded `with:` inputs, and the forbidden patterns
-(`vars.MACOS_SIGN_IDENTITY`, `Developer ID Application:`,
+the workflow name, the exact job set, the SHA-pinned call, gate ordering
+(`needs:`), the six `MACOS_*` secret mappings, the `HOMEBREW_TAP_TOKEN`
+rename, the seven forwarded `with:` inputs, and the forbidden patterns
+(`vars.MACOS_SIGN_IDENTITY`, `Developer ID Application:`; the secrets
+block must be a name mapping, which structurally rules out
 `secrets: inherit`).
 
 ### Prerelease decision recorded
 
 The previous inline pipeline passed `allow_prerelease: true` to
 org-infra's preflight. Ship v0.2.1 declares the same input with
-`default: true` and forwards it to that same preflight, so the caller
-omits it — a verified, behavior-preserving omission documented in a
-comment at the `with:` block.
+`default: true` (verified at the pinned SHA), and the call forwards
+`allow_prerelease: true` explicitly, with a comment naming the verified
+default — so rc tags (vX.Y.Z-rc.N) keep working even if ship's default
+ever changes.
 
 ## Capabilities
 

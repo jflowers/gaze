@@ -29,26 +29,26 @@ its completion).
 ### Requirement: Caller contract is asserted
 
 `TestReleaseWorkflow_CallsShip` MUST assert the caller side of the
-delegation: the workflow name, the SHA-pinned call, the `needs:`
-ordering, every forwarded `with:` input, the six `MACOS_*` secret
-mappings, the `HOMEBREW_TAP_TOKEN` rename, and the absence of
-`secrets: inherit`, `vars.MACOS_SIGN_IDENTITY`, and
+delegation: the workflow name, the exact job set, the SHA-pinned call,
+the `needs:` ordering, every forwarded `with:` input, the six
+`MACOS_*` secret mappings, the `HOMEBREW_TAP_TOKEN` rename, and the
+absence of `secrets: inherit`, `vars.MACOS_SIGN_IDENTITY`, and
 `Developer ID Application:`.
 
 #### Scenario: A dropped with: input fails the guard
 
 - **GIVEN** the release job's `with:` block
-- **WHEN** any forwarded input (`tag`, `ci_checks`, `skip_semver_check`, `skip_ci_checks`, `skip_unreleased_check`, `tap`) is removed or mistyped
+- **WHEN** any forwarded input (`tag`, `ci_checks`, `allow_prerelease`, `skip_semver_check`, `skip_ci_checks`, `skip_unreleased_check`, `tap`) is removed or mistyped
 - **THEN** `TestReleaseWorkflow_CallsShip` MUST fail
 
 ### Requirement: Prerelease decision is recorded
 
-The release workflow MUST document the `allow_prerelease` decision at the
-`with:` block: the omission is deliberate and behavior-preserving against
-ship's declared default.
+The release workflow MUST pass `allow_prerelease: true` explicitly and
+carry a comment at the `with:` block naming ship's declared default, so
+prerelease tags do not depend on that default.
 
-#### Scenario: Omission documented
+#### Scenario: Explicit pass documented
 
 - **GIVEN** ship v0.2.1 declares `allow_prerelease` with `default: true`
-- **WHEN** the caller omits the input
-- **THEN** the `with:` block MUST carry a comment recording the verified default and the deliberate omission
+- **WHEN** the caller forwards the input
+- **THEN** the `with:` block MUST carry `allow_prerelease: true` plus a comment recording the verified default

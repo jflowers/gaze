@@ -1,9 +1,10 @@
 <!--
   Retroactive record for PR #362 (unbound-force/unbound-force#428).
-  Implementation predates this artifact; tasks are complete as written
-  except the tracked documentation follow-up. The with:-input assertions
-  and the allow_prerelease decision comment were added during
-  review-feedback triage.
+  Implementation predates this artifact; tasks are complete as written.
+  The with:-input guard, the allow_prerelease decision, and the AGENTS.md
+  CI/CD refresh landed during review-feedback triage — the caller-guard
+  rewrite and explicit allow_prerelease pass in 01504be superseded the
+  triage draft's omission-and-comment approach.
 -->
 
 ## 1. Local Gates Retained
@@ -21,8 +22,8 @@
 
 ## 3. Review-Feedback Fixes (PR #362 triage)
 
-- [x] 3.1 Assert every forwarded `with:` input in `TestReleaseWorkflow_CallsShip` (table-driven `strings.Contains` loop).
-- [x] 3.2 Record the `allow_prerelease` decision at the `with:` block: verified ship v0.2.1 default `true` matches the old explicit `true`; omission is behavior-preserving.
+- [x] 3.1 Assert every forwarded `with:` input in `TestReleaseWorkflow_CallsShip` (exact-map assertion over the parsed workflow, both directions, so a dropped, mistyped, or added input fails).
+- [x] 3.2 Record the `allow_prerelease` decision at the `with:` block: ship v0.2.1's default is verified `true`, and the call passes `allow_prerelease: true` explicitly with a comment naming that default, so rc tags keep working even if ship's default changes.
 
 ## 4. Verification
 
@@ -33,5 +34,5 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 Refresh `AGENTS.md` CI/CD section item 3 for the ship delegation (tracked as a filed follow-up issue from PR #362 review).
+- [x] 5.1 Refresh `AGENTS.md` CI/CD section item 3 for the ship delegation (landed in 01504be; also tracked as a filed follow-up issue from PR #362 review).
 - [x] 5.2 No website issue — release pipeline internals; no user-facing CLI, flag, or workflow change.

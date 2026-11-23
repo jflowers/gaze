@@ -41,27 +41,27 @@ org-infra directly (every repo then re-pins org-infra independently).
 ### D2: Caller/callee test-coverage boundary
 
 `TestReleaseWorkflow_CallsShip` asserts only what the caller decides:
-the workflow name, the SHA pin, `needs:` gate ordering, the six
-`MACOS_*` secret mappings, the `HOMEBREW_TAP_TOKEN` rename, the six
-forwarded `with:` inputs, and the forbidden patterns. Ship's pipeline —
+the workflow name, the exact job set, the SHA pin, `needs:` gate
+ordering, the six `MACOS_*` secret mappings, the `HOMEBREW_TAP_TOKEN`
+rename, the seven forwarded `with:` inputs, and the forbidden patterns. Ship's pipeline —
 including the partial-signing-secrets fail-before-tagging behavior — is
 tested in jflowers/ship, whose `scripts/test-steps.sh` and
 `scripts/test-audit-cask.sh` exercise the cask steps via yq. This repo
 documents that boundary rather than duplicating the callee's coverage
 (Constitution IV: test the contract, not the implementation).
 
-### D3: allow_prerelease omitted deliberately
+### D3: allow_prerelease passed explicitly
 
 The old inline pipeline passed `allow_prerelease: true` to org-infra's
 preflight. Ship v0.2.1 declares `allow_prerelease` (boolean,
 `default: true`) and forwards it to that same preflight, so omitting the
-input is behavior-preserving — verified against ship's workflow file at
-the pinned SHA. The decision is recorded in a comment at the `with:`
-block rather than by forwarding `allow_prerelease: true` explicitly:
-restating ship's default at every caller would drift silently if ship's
-default changed, while the comment names the verified fact. Prerelease
-tags stay valid at the local gates (`validate-workflow-floor.sh` accepts
-canonical prerelease suffixes; only prerelease floors are rejected).
+input would also be behavior-preserving — verified against ship's
+workflow file at the pinned SHA. The call passes `true` explicitly
+anyway, with a comment naming the verified default: an explicit value
+keeps rc tags (vX.Y.Z-rc.N) working even if ship's default changes,
+where an omission would silently flip behavior. Prerelease tags stay
+valid at the local gates (`validate-workflow-floor.sh` accepts canonical
+prerelease suffixes; only prerelease floors are rejected).
 
 ### D4: Secrets mapped by name, never inherited
 
